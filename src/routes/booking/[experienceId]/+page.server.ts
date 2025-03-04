@@ -20,7 +20,18 @@ export async function load({ params }) {
         error(400, "Invalid experience type");
     }
 
+    // Fetch start locations for this experience
+    const { data: startLocations, error: startLocationsError } = await supabase
+        .from("start_locations")
+        .select("*")
+        .eq("experience_id", experienceId);
+
+    if (startLocationsError) {
+        error(500, "Failed to load start locations");
+    }
+
     return {
-        experience: data
+        experience: data,
+        startLocations
     };
 }

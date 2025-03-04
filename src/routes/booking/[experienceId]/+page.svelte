@@ -9,7 +9,17 @@
 		name: string;
 	}
 
-	let { data } = $props<{ experience: Experience }>();
+	interface StartLocation {
+		id: number;
+		experience_id: number;
+		name: string;
+		price_per_person: number;
+	}
+
+	let { data } = $props<{
+		experience: Experience;
+		startLocations: StartLocation[];
+	}>();
 	console.log(data);
 </script>
 
@@ -18,7 +28,7 @@
 </svelte:head>
 
 {#if data.experience.type === 'private'}
-	<PrivateBooking experience={data.experience} />
+	<PrivateBooking experience={data.experience} startLocations={data.startLocations} />
 {:else if data.experience.type === 'school'}
 	<SchoolBooking experience={data.experience} />
 {:else if data.experience.type === 'company'}
