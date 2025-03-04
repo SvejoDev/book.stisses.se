@@ -29,6 +29,8 @@
 	},
 	"dependencies": {
 		"@inlang/paraglide-sveltekit": "^0.15.5",
-		"@supabase/supabase-js": "^2.49.1"
+		"@supabase/supabase-js": "^2.49.1",
+		"dotenv": "^16.4.7",
+		"pg": "^8.13.3"
 	}
 }
