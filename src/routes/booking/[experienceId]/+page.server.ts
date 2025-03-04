@@ -14,6 +14,12 @@ export async function load({ params }) {
         error(500, "Failed to load experience");
     }
 
+    // Add type validation
+    const validTypes = ['private', 'school', 'company'];
+    if (!validTypes.includes(data.type)) {
+        error(400, "Invalid experience type");
+    }
+
     return {
         experience: data
     };
