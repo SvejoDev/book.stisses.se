@@ -23,6 +23,6 @@
 <h2>{experience.name}</h2>
 
 <div class="mt-4">
-	<h3 class="mb-2 text-lg font-semibold">Choose your start location</h3>
+	<h3 class="mb-2 text-lg font-semibold">Välj en startplats</h3>
 	<StartLocations {startLocations} />
 </div>
