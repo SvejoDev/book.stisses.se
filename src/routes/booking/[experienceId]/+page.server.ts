@@ -30,8 +30,22 @@ export async function load({ params }) {
         error(500, "Failed to load start locations");
     }
 
+    // Get image URLs for each start location
+    const locationsWithImages = await Promise.all(
+        startLocations.map(async (location) => {
+            const { data: imageUrl } = supabase.storage
+                .from('start-locations')
+                .getPublicUrl(`${location.id}.jpg`);
+            
+            return {
+                ...location,
+                imageUrl: imageUrl.publicUrl
+            };
+        })
+    );
+
     return {
         experience: data,
-        startLocations
+        startLocations: locationsWithImages
     };
 }
