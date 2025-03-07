@@ -21,9 +21,13 @@
 	}>();
 
 	let selectedStartLocation = $state('');
+	let durationsSection = $state<HTMLElement | null>(null);
 
 	function handleStartLocationSelect(locationId: string) {
 		selectedStartLocation = locationId;
+		setTimeout(() => {
+			durationsSection?.scrollIntoView({ behavior: 'smooth' });
+		}, 100);
 	}
 </script>
 
@@ -38,7 +42,7 @@
 	</section>
 
 	{#if selectedStartLocation}
-		<section class="space-y-4">
+		<section class="space-y-4" bind:this={durationsSection}>
 			<h2 class="text-center text-2xl font-semibold">Välj längd på bokning</h2>
 			<div class="flex justify-center">
 				<BookingDurations startLocationId={selectedStartLocation} />
