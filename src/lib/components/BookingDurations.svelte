@@ -11,9 +11,13 @@
 		extra_price: number;
 	}
 
-	let { startLocationId } = $props<{ startLocationId: string }>();
+	let {
+		startLocationId,
+		selectedDuration = $bindable(''),
+		onDurationSelect = (duration: { type: string; value: number }) => {}
+	} = $props();
+
 	let durations = $state<Duration[]>([]);
-	let selectedDuration = $state('');
 	let displayText = $state('Välj längd på bokning');
 
 	async function fetchDurations(locationId: string) {
@@ -34,11 +38,17 @@
 	});
 
 	$effect(() => {
-		console.log('Selected duration:', selectedDuration);
 		const selected = durations.find((d) => d.id.toString() === selectedDuration);
 		displayText = selected
 			? `${selected.duration_value} ${getDurationTypeText(selected.duration_type, selected.duration_value)}`
 			: 'Välj längd på bokning';
+
+		if (selected) {
+			onDurationSelect({
+				type: selected.duration_type,
+				value: selected.duration_value
+			});
+		}
 	});
 
 	function handleValueChange(value: string) {

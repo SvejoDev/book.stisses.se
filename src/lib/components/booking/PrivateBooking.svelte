@@ -1,6 +1,7 @@
 <script lang="ts">
 	import StartLocations from '$lib/components/StartLocations.svelte';
 	import BookingDurations from '$lib/components/BookingDurations.svelte';
+	import Calendar from './Calendar.svelte';
 
 	interface Experience {
 		id: string;
@@ -21,6 +22,9 @@
 	}>();
 
 	let selectedStartLocation = $state('');
+	let selectedDuration = $state('');
+	let durationType = $state('');
+	let durationValue = $state(0);
 	let durationsSection = $state<HTMLElement | null>(null);
 
 	function handleStartLocationSelect(locationId: string) {
@@ -29,6 +33,19 @@
 			durationsSection?.scrollIntoView({ behavior: 'smooth' });
 		}, 100);
 	}
+
+	function handleDurationSelect(duration: { type: string; value: number }) {
+		durationType = duration.type;
+		durationValue = duration.value;
+	}
+
+	// Example blocked dates - replace with your actual data
+	const blockedDates = [
+		{
+			start: new Date(2024, 3, 1), // April 1, 2024
+			end: new Date(2024, 3, 5) // April 5, 2024
+		}
+	];
 </script>
 
 <div class="space-y-8">
@@ -45,8 +62,21 @@
 		<section class="space-y-4" bind:this={durationsSection}>
 			<h2 class="text-center text-2xl font-semibold">Välj längd på bokning</h2>
 			<div class="flex justify-center">
-				<BookingDurations startLocationId={selectedStartLocation} />
+				<BookingDurations
+					startLocationId={selectedStartLocation}
+					bind:selectedDuration
+					onDurationSelect={handleDurationSelect}
+				/>
 			</div>
 		</section>
+
+		{#if selectedDuration}
+			<section class="space-y-4">
+				<h2 class="text-center text-2xl font-semibold">Välj startdatum</h2>
+				<div class="flex justify-center">
+					<Calendar {selectedDuration} {durationType} {durationValue} {blockedDates} />
+				</div>
+			</section>
+		{/if}
 	{/if}
 </div>
