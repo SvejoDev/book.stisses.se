@@ -22,37 +22,39 @@
 	}
 </script>
 
-<div class="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-	{#each startLocations as location}
-		<div
-			role="button"
-			tabindex={0}
-			onkeydown={(e: KeyboardEvent) => e.key === 'Enter' && handleSelect(location.id.toString())}
-			onclick={() => handleSelect(location.id.toString())}
-		>
-			<Card.Root
-				class={cn(
-					'cursor-pointer transition-all hover:scale-105',
-					value === location.id.toString() && 'ring-2 ring-primary'
-				)}
+<div class="grid w-full place-items-center">
+	<div class="grid w-full grid-cols-[repeat(auto-fit,minmax(0,320px))] justify-center gap-6">
+		{#each startLocations as location}
+			<div
+				role="button"
+				tabindex={0}
+				onkeydown={(e: KeyboardEvent) => e.key === 'Enter' && handleSelect(location.id.toString())}
+				onclick={() => handleSelect(location.id.toString())}
 			>
-				<Card.Header>
-					<img
-						src={location.imageUrl}
-						alt={location.name}
-						class="h-48 w-full rounded-t-lg object-cover"
-					/>
-				</Card.Header>
-				<Card.Content class="pt-4">
-					<h3 class="mb-2 text-lg font-semibold">{location.name}</h3>
-					<p class="text-sm text-muted-foreground">
-						Pris per person: {location.price_per_person} kr
-					</p>
-					<!-- Add a short description here when available in the StartLocation interface -->
-				</Card.Content>
-			</Card.Root>
-		</div>
-	{/each}
+				<Card.Root
+					class={cn(
+						'h-full w-full cursor-pointer transition-all hover:scale-[1.02] hover:shadow-lg',
+						value === location.id.toString() && 'ring-2 ring-primary'
+					)}
+				>
+					<Card.Header class="p-0">
+						<img
+							src={location.imageUrl}
+							alt={location.name}
+							class="aspect-[4/3] w-full rounded-t-lg object-cover"
+						/>
+					</Card.Header>
+					<Card.Content class="p-6">
+						<h3 class="mb-2 text-xl font-semibold">{location.name}</h3>
+						<p class="text-base text-muted-foreground">
+							Pris per person: {location.price_per_person} kr
+						</p>
+						<!-- Add a short description here when available in the StartLocation interface -->
+					</Card.Content>
+				</Card.Root>
+			</div>
+		{/each}
+	</div>
 </div>
 
 <input type="hidden" name="startLocation" {value} />

@@ -20,9 +20,13 @@
 	}>();
 </script>
 
-<h2>{experience.name}</h2>
+<div class="space-y-8">
+	<header class="text-center">
+		<h1 class="text-4xl font-bold tracking-tight">{experience.name}</h1>
+	</header>
 
-<div class="mt-4">
-	<h3 class="mb-2 text-lg font-semibold">Välj en startplats</h3>
-	<StartLocations {startLocations} />
+	<section class="space-y-4">
+		<h2 class="text-2xl font-semibold text-center">Välj en startplats</h2>
+		<StartLocations {startLocations} />
+	</section>
 </div>
