@@ -10,11 +10,17 @@
 		imageUrl: string;
 	}
 
-	let { startLocations } = $props<{ startLocations: StartLocation[] }>();
+	let { startLocations, onSelect } = $props<{
+		startLocations: StartLocation[];
+		onSelect: (locationId: string) => void;
+	}>();
 	let value = $state('');
 
 	$effect(() => {
 		console.log('Selected start location ID:', value);
+		if (value) {
+			onSelect(value);
+		}
 	});
 
 	function handleSelect(locationId: string) {
