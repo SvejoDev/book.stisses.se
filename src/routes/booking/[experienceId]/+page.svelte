@@ -27,12 +27,14 @@
 	<title>{data.experience.name}</title>
 </svelte:head>
 
-{#if data.experience.type === 'private'}
-	<PrivateBooking experience={data.experience} startLocations={data.startLocations} />
-{:else if data.experience.type === 'school'}
-	<SchoolBooking experience={data.experience} />
-{:else if data.experience.type === 'company'}
-	<CompanyBooking experience={data.experience} />
-{:else}
-	<p>Invalid experience type</p>
-{/if}
+<div class="container mx-auto max-w-7xl px-4 py-8">
+	{#if data.experience.type === 'private'}
+		<PrivateBooking experience={data.experience} startLocations={data.startLocations} />
+	{:else if data.experience.type === 'school'}
+		<SchoolBooking experience={data.experience} />
+	{:else if data.experience.type === 'company'}
+		<CompanyBooking experience={data.experience} />
+	{:else}
+		<p>Invalid experience type</p>
+	{/if}
+</div>
