@@ -48,7 +48,7 @@
 	function getDurationTypeText(type: string, value: number): string {
 		if (type === 'hours') {
 			return value === 1 ? 'timme' : 'timmar';
-		} else if (type === 'overnight') {
+		} else if (type === 'overnights') {
 			return value === 1 ? 'övernattning' : 'övernattningar';
 		}
 		return type;
