@@ -37,7 +37,7 @@
 		console.log('Selected duration:', selectedDuration);
 		const selected = durations.find((d) => d.id.toString() === selectedDuration);
 		displayText = selected
-			? `${selected.duration_value} ${selected.duration_type}`
+			? `${selected.duration_value} ${getDurationTypeText(selected.duration_type, selected.duration_value)}`
 			: 'Välj längd på bokning';
 	});
 
