@@ -1,5 +1,6 @@
 <script lang="ts">
 	import StartLocations from '$lib/components/StartLocations.svelte';
+	import BookingDurations from '$lib/components/BookingDurations.svelte';
 
 	interface Experience {
 		id: string;
@@ -18,6 +19,12 @@
 		experience: Experience;
 		startLocations: StartLocation[];
 	}>();
+
+	let selectedStartLocation = $state('');
+
+	function handleStartLocationSelect(locationId: string) {
+		selectedStartLocation = locationId;
+	}
 </script>
 
 <div class="space-y-8">
@@ -26,7 +33,16 @@
 	</header>
 
 	<section class="space-y-4">
-		<h2 class="text-2xl font-semibold text-center">Välj en startplats</h2>
-		<StartLocations {startLocations} />
+		<h2 class="text-center text-2xl font-semibold">Välj en startplats</h2>
+		<StartLocations {startLocations} onSelect={handleStartLocationSelect} />
 	</section>
+
+	{#if selectedStartLocation}
+		<section class="space-y-4">
+			<h2 class="text-center text-2xl font-semibold">Välj längd på bokning</h2>
+			<div class="flex justify-center">
+				<BookingDurations startLocationId={selectedStartLocation} />
+			</div>
+		</section>
+	{/if}
 </div>
