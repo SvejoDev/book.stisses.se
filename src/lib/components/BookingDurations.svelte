@@ -44,6 +44,15 @@
 	function handleValueChange(value: string) {
 		selectedDuration = value;
 	}
+
+	function getDurationTypeText(type: string, value: number): string {
+		if (type === 'hours') {
+			return value === 1 ? 'timme' : 'timmar';
+		} else if (type === 'overnight') {
+			return value === 1 ? 'övernattning' : 'övernattningar';
+		}
+		return type;
+	}
 </script>
 
 <div class="w-full max-w-xs">
@@ -55,7 +64,7 @@
 			{#each durations as duration}
 				<Select.Item value={duration.id.toString()}>
 					{duration.duration_value}
-					{duration.duration_type}
+					{getDurationTypeText(duration.duration_type, duration.duration_value)}
 					{#if duration.extra_price > 0}
 						(+{duration.extra_price} kr)
 					{/if}
