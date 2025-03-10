@@ -49,18 +49,20 @@
 
 	// Check if a date is open for booking
 	function isDateOpen(date: Date): boolean {
-		const dateStr = date.toISOString().split('T')[0];
+		// Convert local date to UTC date string (YYYY-MM-DD)
+		const localDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+		const utcDate = new Date(localDate.getTime() - localDate.getTimezoneOffset() * 60000);
+		const dateStr = utcDate.toISOString().split('T')[0];
 
 		return openDates.some((openDate: OpenDate) => {
 			if (openDate.type === 'specific') {
-				return openDate.specific_date === dateStr;
+				const specificDate = openDate.specific_date?.split('T')[0];
+				return specificDate === dateStr;
 			}
-			return (
-				openDate.start_date &&
-				openDate.end_date &&
-				dateStr >= openDate.start_date &&
-				dateStr <= openDate.end_date
-			);
+			const startDate = openDate.start_date?.split('T')[0];
+			const endDate = openDate.end_date?.split('T')[0];
+
+			return startDate && endDate && dateStr >= startDate && dateStr <= endDate;
 		});
 	}
 
@@ -76,10 +78,15 @@
 		if (!isDateOpen(date)) return true;
 
 		// Check if date is in blocked dates
-		const dateStr = date.toISOString().split('T')[0];
-		return blockedDates.some(
-			(blocked: BlockedDate) => dateStr >= blocked.start_date && dateStr <= blocked.end_date
-		);
+		const localDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+		const utcDate = new Date(localDate.getTime() - localDate.getTimezoneOffset() * 60000);
+		const dateStr = utcDate.toISOString().split('T')[0];
+
+		return blockedDates.some((blocked: BlockedDate) => {
+			const startDate = blocked.start_date.split('T')[0];
+			const endDate = blocked.end_date.split('T')[0];
+			return dateStr >= startDate && dateStr <= endDate;
+		});
 	}
 
 	// Check if a date is part of the selected range
@@ -179,7 +186,7 @@
 			>
 				<span class="date-number">{date.getDate()}</span>
 				{#if isDateOpen(date) && !isDateDisabled(date)}
-					<span class="open-indicator" />
+					<span class="open-indicator"></span>
 				{/if}
 			</button>
 		{/each}
