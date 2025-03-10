@@ -44,6 +44,13 @@
 			: 'Välj längd på bokning';
 
 		if (selected) {
+			console.log({
+				durationType: selected.duration_type,
+				durationValue: selected.duration_value,
+				durationText: getDurationTypeText(selected.duration_type, selected.duration_value),
+				extraPrice: selected.extra_price
+			});
+
 			onDurationSelect({
 				type: selected.duration_type,
 				value: selected.duration_value

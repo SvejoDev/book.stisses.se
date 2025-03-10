@@ -52,6 +52,7 @@
 	let durationType = $state('');
 	let durationValue = $state(0);
 	let durationsSection = $state<HTMLElement | null>(null);
+	let calendarSection = $state<HTMLElement | null>(null);
 
 	function handleStartLocationSelect(locationId: string) {
 		selectedStartLocation = locationId;
@@ -61,6 +62,7 @@
 	function handleDurationSelect(duration: { type: string; value: number }) {
 		durationType = duration.type;
 		durationValue = duration.value;
+		calendarSection?.scrollIntoView({ behavior: 'smooth' });
 	}
 </script>
 
@@ -87,7 +89,7 @@
 		</section>
 
 		{#if selectedDuration}
-			<section class="space-y-4">
+			<section class="space-y-4" bind:this={calendarSection}>
 				<h2 class="text-center text-2xl font-semibold">Välj startdatum</h2>
 				<div class="flex justify-center">
 					<Calendar {selectedDuration} {durationType} {durationValue} {openDates} {blockedDates} />
