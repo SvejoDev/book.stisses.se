@@ -1,7 +1,7 @@
 <script lang="ts">
 	import StartLocations from '$lib/components/StartLocations.svelte';
 	import BookingDurations from '$lib/components/BookingDurations.svelte';
-	import Calendar from './Calendar.svelte';
+	import Calendar from '$lib/components/Calendar.svelte';
 
 	interface Experience {
 		id: string;
@@ -16,9 +16,35 @@
 		price_per_person: number;
 	}
 
-	let { experience, startLocations } = $props<{
+	interface OpenDate {
+		id: number;
+		experience_id: number;
+		type: 'interval' | 'specific';
+		start_date: string | null;
+		end_date: string | null;
+		specific_date: string | null;
+		created_at: string;
+	}
+
+	interface BlockedDate {
+		id: number;
+		experience_id: number;
+		start_date: string;
+		end_date: string;
+		reason: string | null;
+		created_at: string;
+	}
+
+	let {
+		experience,
+		startLocations,
+		openDates = [],
+		blockedDates = []
+	} = $props<{
 		experience: Experience;
 		startLocations: StartLocation[];
+		openDates: OpenDate[];
+		blockedDates: BlockedDate[];
 	}>();
 
 	let selectedStartLocation = $state('');
@@ -29,23 +55,13 @@
 
 	function handleStartLocationSelect(locationId: string) {
 		selectedStartLocation = locationId;
-		setTimeout(() => {
-			durationsSection?.scrollIntoView({ behavior: 'smooth' });
-		}, 100);
+		durationsSection?.scrollIntoView({ behavior: 'smooth' });
 	}
 
 	function handleDurationSelect(duration: { type: string; value: number }) {
 		durationType = duration.type;
 		durationValue = duration.value;
 	}
-
-	// Example blocked dates - replace with your actual data
-	const blockedDates = [
-		{
-			start: new Date(2024, 3, 1), // April 1, 2024
-			end: new Date(2024, 3, 5) // April 5, 2024
-		}
-	];
 </script>
 
 <div class="space-y-8">
@@ -74,7 +90,7 @@
 			<section class="space-y-4">
 				<h2 class="text-center text-2xl font-semibold">Välj startdatum</h2>
 				<div class="flex justify-center">
-					<Calendar {selectedDuration} {durationType} {durationValue} {blockedDates} />
+					<Calendar {selectedDuration} {durationType} {durationValue} {openDates} {blockedDates} />
 				</div>
 			</section>
 		{/if}

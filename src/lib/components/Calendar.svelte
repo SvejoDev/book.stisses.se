@@ -1,22 +1,38 @@
 <script lang="ts">
-	import { format, addDays, isWithinInterval, isSameDay } from 'date-fns';
+	import { format, addDays, isWithinInterval, parseISO } from 'date-fns';
 	import { sv } from 'date-fns/locale';
 
 	interface BlockedDate {
-		start: Date;
-		end: Date;
+		id: number;
+		experience_id: number;
+		start_date: string;
+		end_date: string;
+		reason: string | null;
+		created_at: string;
+	}
+
+	interface OpenDate {
+		id: number;
+		experience_id: number;
+		type: 'interval' | 'specific';
+		start_date: string | null;
+		end_date: string | null;
+		specific_date: string | null;
+		created_at: string;
 	}
 
 	let {
 		selectedDuration,
 		durationType,
 		durationValue,
-		blockedDates = []
+		blockedDates = [],
+		openDates = []
 	} = $props<{
 		selectedDuration: string;
 		durationType: string;
 		durationValue: number;
-		blockedDates?: BlockedDate[];
+		blockedDates: BlockedDate[];
+		openDates: OpenDate[];
 	}>();
 
 	let selectedDate = $state<Date | null>(null);
@@ -31,10 +47,38 @@
 		return 1;
 	}
 
+	// Check if a date is open for booking
+	function isDateOpen(date: Date): boolean {
+		const dateStr = date.toISOString().split('T')[0];
+
+		return openDates.some((openDate: OpenDate) => {
+			if (openDate.type === 'specific') {
+				return openDate.specific_date === dateStr;
+			}
+			return (
+				openDate.start_date &&
+				openDate.end_date &&
+				dateStr >= openDate.start_date &&
+				dateStr <= openDate.end_date
+			);
+		});
+	}
+
 	// Check if a date should be disabled
-	function isDateDisabled(date: Date) {
-		return blockedDates.some((blocked) =>
-			isWithinInterval(date, { start: blocked.start, end: blocked.end })
+	function isDateDisabled(date: Date): boolean {
+		const today = new Date();
+		today.setHours(0, 0, 0, 0);
+
+		// Don't allow dates in the past
+		if (date < today) return true;
+
+		// Check if date is not in any open dates
+		if (!isDateOpen(date)) return true;
+
+		// Check if date is in blocked dates
+		const dateStr = date.toISOString().split('T')[0];
+		return blockedDates.some(
+			(blocked: BlockedDate) => dateStr >= blocked.start_date && dateStr <= blocked.end_date
 		);
 	}
 
@@ -54,21 +98,18 @@
 		return isWithinInterval(date, { start: hoveredDate, end: endDate });
 	}
 
-	// Handle date selection
 	function handleDateSelect(date: Date) {
 		if (isDateDisabled(date)) return;
 		selectedDate = date;
 	}
 
-	// Generate calendar grid
 	function getCalendarDays() {
 		const start = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1);
 		const end = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0);
-
 		const days = [];
-		const startDay = start.getDay();
 
 		// Add previous month's days
+		const startDay = start.getDay();
 		for (let i = 0; i < startDay; i++) {
 			days.push({
 				date: addDays(start, -startDay + i),
@@ -84,7 +125,7 @@
 			});
 		}
 
-		// Add next month's days to complete the grid
+		// Add next month's days
 		const remainingDays = 42 - days.length;
 		for (let i = 1; i <= remainingDays; i++) {
 			days.push({
@@ -96,22 +137,26 @@
 		return days;
 	}
 
-	function previousMonth() {
-		currentMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1);
-	}
-
-	function nextMonth() {
-		currentMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1);
-	}
-
 	const weekDays = ['Mån', 'Tis', 'Ons', 'Tor', 'Fre', 'Lör', 'Sön'];
 </script>
 
 <div class="calendar">
 	<div class="calendar-header">
-		<button class="month-nav" onclick={previousMonth}>&lt;</button>
+		<button
+			class="month-nav"
+			onclick={() =>
+				(currentMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1))}
+		>
+			&lt;
+		</button>
 		<h2>{format(currentMonth, 'MMMM yyyy', { locale: sv })}</h2>
-		<button class="month-nav" onclick={nextMonth}>&gt;</button>
+		<button
+			class="month-nav"
+			onclick={() =>
+				(currentMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1))}
+		>
+			&gt;
+		</button>
 	</div>
 
 	<div class="calendar-grid">
@@ -126,12 +171,16 @@
 				class:selected={selectedDate && isInSelectedRange(date)}
 				class:hovered={!selectedDate && isInHoveredRange(date)}
 				class:disabled={isDateDisabled(date)}
+				class:open={isDateOpen(date) && !isDateDisabled(date)}
 				onclick={() => handleDateSelect(date)}
 				onmouseenter={() => (hoveredDate = date)}
 				onmouseleave={() => (hoveredDate = null)}
 				disabled={isDateDisabled(date)}
 			>
-				{date.getDate()}
+				<span class="date-number">{date.getDate()}</span>
+				{#if isDateOpen(date) && !isDateDisabled(date)}
+					<span class="open-indicator" />
+				{/if}
 			</button>
 		{/each}
 	</div>
@@ -163,7 +212,7 @@
 	}
 
 	.day {
-		@apply flex h-10 w-10 items-center justify-center rounded-full text-sm;
+		@apply relative flex h-10 w-10 flex-col items-center justify-center rounded-full text-sm;
 	}
 
 	.day:hover:not(.disabled) {
@@ -178,19 +227,19 @@
 		@apply bg-primary text-white;
 	}
 
-	.selected:hover {
-		@apply bg-primary/90;
-	}
-
-	.hovered {
-		@apply bg-primary/20;
-	}
-
 	.disabled {
 		@apply cursor-not-allowed text-gray-300;
 	}
 
 	.disabled:hover {
 		@apply bg-transparent;
+	}
+
+	.open-indicator {
+		@apply absolute bottom-1 h-1.5 w-1.5 rounded-full bg-green-500;
+	}
+
+	.selected .open-indicator {
+		@apply bg-white;
 	}
 </style>
