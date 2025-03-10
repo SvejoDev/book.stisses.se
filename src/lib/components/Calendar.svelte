@@ -215,7 +215,7 @@
 		@apply relative flex h-10 w-10 flex-col items-center justify-center rounded-full text-sm;
 	}
 
-	.day:hover:not(.disabled) {
+	.day:not(.selected):hover:not(.disabled) {
 		@apply bg-gray-100;
 	}
 
