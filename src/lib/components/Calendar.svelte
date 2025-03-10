@@ -108,6 +108,20 @@
 	function handleDateSelect(date: Date) {
 		if (isDateDisabled(date)) return;
 		selectedDate = date;
+
+		// Calculate end date based on duration
+		const durationDays = getDurationDays();
+		const endDate = addDays(date, durationDays - 1);
+
+		// Format dates for consistent display
+		const formattedStartDate = format(date, 'yyyy-MM-dd');
+		const formattedEndDate = format(endDate, 'yyyy-MM-dd');
+
+		console.log({
+			startDate: formattedStartDate,
+			endDate: formattedEndDate,
+			nights: durationDays - 1
+		});
 	}
 
 	function getCalendarDays() {
