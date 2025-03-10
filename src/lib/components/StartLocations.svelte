@@ -15,6 +15,14 @@
 		onSelect: (locationId: string) => void;
 	}>();
 	let value = $state('');
+	let isSingleLocation = $derived(startLocations.length === 1);
+
+	$effect(() => {
+		// Auto-select if there's only one start location
+		if (isSingleLocation && !value) {
+			handleSelect(startLocations[0].id.toString());
+		}
+	});
 
 	$effect(() => {
 		console.log('Selected start location ID:', value);
@@ -31,34 +39,54 @@
 <div class="grid w-full place-items-center">
 	<div class="grid w-full grid-cols-[repeat(auto-fit,minmax(0,320px))] justify-center gap-6">
 		{#each startLocations as location}
-			<div
-				role="button"
-				tabindex={0}
-				onkeydown={(e: KeyboardEvent) => e.key === 'Enter' && handleSelect(location.id.toString())}
-				onclick={() => handleSelect(location.id.toString())}
-			>
-				<Card.Root
-					class={cn(
-						'h-full w-full cursor-pointer transition-all hover:scale-[1.02] hover:shadow-lg',
-						value === location.id.toString() && 'ring-2 ring-primary'
-					)}
+			{#if isSingleLocation}
+				<div>
+					<Card.Root
+						class={cn('h-full w-full', value === location.id.toString() && 'ring-1 ring-muted')}
+					>
+						<Card.Header class="p-0">
+							<img
+								src={location.imageUrl}
+								alt={location.name}
+								class="aspect-[4/3] w-full rounded-t-lg object-cover"
+							/>
+						</Card.Header>
+						<Card.Content class="p-6">
+							<h3 class="mb-2 text-xl font-semibold">{location.name}</h3>
+							<p class="text-base text-muted-foreground">
+								Pris per person: {location.price_per_person} kr
+							</p>
+						</Card.Content>
+					</Card.Root>
+				</div>
+			{:else}
+				<button
+					type="button"
+					class="text-left"
+					onclick={() => handleSelect(location.id.toString())}
 				>
-					<Card.Header class="p-0">
-						<img
-							src={location.imageUrl}
-							alt={location.name}
-							class="aspect-[4/3] w-full rounded-t-lg object-cover"
-						/>
-					</Card.Header>
-					<Card.Content class="p-6">
-						<h3 class="mb-2 text-xl font-semibold">{location.name}</h3>
-						<p class="text-base text-muted-foreground">
-							Pris per person: {location.price_per_person} kr
-						</p>
-						<!-- Add a short description here when available in the StartLocation interface -->
-					</Card.Content>
-				</Card.Root>
-			</div>
+					<Card.Root
+						class={cn(
+							'h-full w-full transition-all hover:scale-[1.02] hover:shadow-lg',
+							value === location.id.toString() && 'ring-2 ring-primary'
+						)}
+					>
+						<Card.Header class="p-0">
+							<img
+								src={location.imageUrl}
+								alt={location.name}
+								class="aspect-[4/3] w-full rounded-t-lg object-cover"
+							/>
+						</Card.Header>
+						<Card.Content class="p-6">
+							<h3 class="mb-2 text-xl font-semibold">{location.name}</h3>
+							<p class="text-base text-muted-foreground">
+								Pris per person: {location.price_per_person} kr
+							</p>
+						</Card.Content>
+					</Card.Root>
+				</button>
+			{/if}
 		{/each}
 	</div>
 </div>
