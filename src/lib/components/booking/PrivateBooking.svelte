@@ -2,6 +2,7 @@
 	import StartLocations from '$lib/components/StartLocations.svelte';
 	import BookingDurations from '$lib/components/BookingDurations.svelte';
 	import Calendar from '$lib/components/Calendar.svelte';
+	import ProductSelection from '$lib/components/ProductSelection.svelte';
 
 	interface Experience {
 		id: string;
@@ -35,41 +36,87 @@
 		created_at: string;
 	}
 
+	interface Product {
+		id: number;
+		name: string;
+		description: string;
+		total_quantity: number;
+		imageUrl: string;
+	}
+
 	let {
 		experience,
 		startLocations,
 		openDates = [],
-		blockedDates = []
+		blockedDates = [],
+		productsByLocation = {}
 	} = $props<{
 		experience: Experience;
 		startLocations: StartLocation[];
 		openDates: OpenDate[];
 		blockedDates: BlockedDate[];
+		productsByLocation: Record<number, Product[]>;
 	}>();
 
-	let selectedStartLocation = $state('');
+	let selectedStartLocation = $state<string | null>(null);
 	let selectedDuration = $state('');
 	let durationType = $state('');
 	let durationValue = $state(0);
+	let selectedDate = $state<Date | null>(null);
 	let durationsSection = $state<HTMLElement | null>(null);
 	let calendarSection = $state<HTMLElement | null>(null);
+	let productsSection: HTMLElement;
 	let durations = $state<any[]>([]);
 	let isLoadingDurations = $state(false);
+	let preloadedImages = $state(new Set<string>());
 
 	let isSingleLocation = $derived(startLocations.length === 1);
-	let shouldShowDurations = $derived(isSingleLocation || selectedStartLocation !== '');
+	let shouldShowDurations = $derived(isSingleLocation || selectedStartLocation !== null);
+	let shouldShowProducts = $derived(selectedDate !== null);
+
+	// Start preloading images for all products immediately
+	$effect(() => {
+		// Preload all product images in the background
+		(Object.values(productsByLocation) as Product[][]).forEach((products) => {
+			products.forEach((product) => {
+				if (!preloadedImages.has(product.imageUrl)) {
+					const img = new Image();
+					img.src = product.imageUrl;
+					img.onload = () => {
+						preloadedImages.add(product.imageUrl);
+					};
+				}
+			});
+		});
+	});
 
 	function handleStartLocationSelect(locationId: string) {
 		selectedStartLocation = locationId;
 		if (!isSingleLocation) {
 			durationsSection?.scrollIntoView({ behavior: 'smooth' });
 		}
+		// Prioritize loading images for selected location
+		const productsForLocation = productsByLocation[Number(locationId)] || [];
+		productsForLocation.forEach((product: Product) => {
+			if (!preloadedImages.has(product.imageUrl)) {
+				const img = new Image();
+				img.onload = () => {
+					preloadedImages.add(product.imageUrl);
+				};
+				img.src = product.imageUrl;
+			}
+		});
 	}
 
 	function handleDurationSelect(duration: { type: string; value: number }) {
 		durationType = duration.type;
 		durationValue = duration.value;
 		calendarSection?.scrollIntoView({ behavior: 'smooth' });
+	}
+
+	function handleDateSelect(date: Date) {
+		selectedDate = date;
+		productsSection?.scrollIntoView({ behavior: 'smooth' });
 	}
 
 	function getStartLocationHeading() {
@@ -79,6 +126,23 @@
 	function getDurationHeading() {
 		return durations.length === 1 ? 'Din bokningslängd' : 'Välj längd på bokning';
 	}
+
+	$effect(() => {
+		if (selectedDate) {
+			console.log('Selected date:', selectedDate);
+		}
+	});
+
+	$effect(() => {
+		if (shouldShowProducts && productsSection) {
+			setTimeout(() => {
+				window.scrollTo({
+					top: document.documentElement.scrollHeight,
+					behavior: 'smooth'
+				});
+			}, 100); // Small delay to ensure DOM is updated
+		}
+	});
 </script>
 
 <div class="space-y-8">
@@ -109,9 +173,28 @@
 			<section class="space-y-4" bind:this={calendarSection}>
 				<h2 class="text-center text-2xl font-semibold">Välj startdatum</h2>
 				<div class="flex justify-center">
-					<Calendar {selectedDuration} {durationType} {durationValue} {openDates} {blockedDates} />
+					<Calendar
+						{selectedDuration}
+						{durationType}
+						{durationValue}
+						{openDates}
+						{blockedDates}
+						onDateSelect={handleDateSelect}
+					/>
 				</div>
 			</section>
+
+			{#if shouldShowProducts}
+				<section class="space-y-4" bind:this={productsSection}>
+					<h2 class="text-center text-2xl font-semibold">Välj utrustning</h2>
+					<div class="mx-auto max-w-2xl">
+						<ProductSelection
+							products={productsByLocation[Number(selectedStartLocation)] || []}
+							{preloadedImages}
+						/>
+					</div>
+				</section>
+			{/if}
 		{/if}
 	{/if}
 </div>

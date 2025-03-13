@@ -83,12 +83,55 @@ export async function load({ params }) {
         error(500, "Failed to load blocked dates");
     }
 
+    // Fetch products for all start locations
+    const { data: startLocationProducts, error: productsError } = await supabase
+        .from("start_location_products")
+        .select(`
+            start_location_id,
+            products (
+                id,
+                name,
+                description,
+                total_quantity,
+                image_url
+            )
+        `)
+        .eq("start_location_id", startLocations.map(loc => loc.id));
+
+    if (productsError) {
+        console.error('Products error:', productsError);
+        error(500, "Failed to load products");
+    }
+
+    // Add image URLs to products
+    const productsWithImages = startLocationProducts.map(slp => ({
+        start_location_id: slp.start_location_id,
+        products: {
+            ...(slp.products as any),
+            imageUrl: (slp.products as any).image_url || 
+                supabase.storage
+                    .from('products')
+                    .getPublicUrl(`${(slp.products as any).id}.jpg`)
+                    .data.publicUrl
+        }
+    }));
+
+    // Group products by start location
+    const productsByLocation = productsWithImages.reduce<Record<number, any[]>>((acc, curr) => {
+        if (!acc[curr.start_location_id]) {
+            acc[curr.start_location_id] = [];
+        }
+        acc[curr.start_location_id].push(curr.products);
+        return acc;
+    }, {});
+
     // Create the return data
     const returnData = {
         experience,
         startLocations: locationsWithImages,
         openDates: filteredOpenDates,
-        blockedDates: blockedDates || []
+        blockedDates: blockedDates || [],
+        productsByLocation
     };
 
     // Log the final data structure

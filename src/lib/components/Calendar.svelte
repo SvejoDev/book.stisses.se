@@ -26,13 +26,15 @@
 		durationType,
 		durationValue,
 		blockedDates = [],
-		openDates = []
+		openDates = [],
+		onDateSelect = (date: Date) => {}
 	} = $props<{
 		selectedDuration: string;
 		durationType: string;
 		durationValue: number;
 		blockedDates: BlockedDate[];
 		openDates: OpenDate[];
+		onDateSelect?: (date: Date) => void;
 	}>();
 
 	let selectedDate = $state<Date | null>(null);
@@ -138,6 +140,8 @@
 			endDate: formattedEndDate,
 			nights: durationDays - 1
 		});
+
+		onDateSelect(date);
 	}
 
 	function getCalendarDays() {
