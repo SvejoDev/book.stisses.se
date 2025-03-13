@@ -39,6 +39,22 @@
 	let hoveredDate = $state<Date | null>(null);
 	let currentMonth = $state(new Date());
 
+	// Add effect to log dates when duration changes
+	$effect(() => {
+		if (selectedDate && durationValue) {
+			const durationDays = getDurationDays();
+			const endDate = addDays(selectedDate, durationDays - 1);
+			const formattedStartDate = format(selectedDate, 'yyyy-MM-dd');
+			const formattedEndDate = format(endDate, 'yyyy-MM-dd');
+
+			console.log({
+				startDate: formattedStartDate,
+				endDate: formattedEndDate,
+				nights: durationDays - 1
+			});
+		}
+	});
+
 	// Calculate the number of days to highlight based on duration
 	function getDurationDays() {
 		if (!durationValue) return 1;
