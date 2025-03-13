@@ -1,6 +1,18 @@
 import { supabase } from "$lib/supabaseClient";
 import { error } from '@sveltejs/kit';
 
+interface Product {
+    id: number;
+    name: string;
+    description: string;
+    total_quantity: number;
+    image_url: string;
+}
+
+interface StartLocationProduct {
+    start_location_id: number;
+    products: Product[];
+}
 
 export async function load({ params }) {
     const { experienceId } = params;
@@ -95,33 +107,34 @@ export async function load({ params }) {
                 total_quantity,
                 image_url
             )
-        `)
-        .eq("start_location_id", startLocations.map(loc => loc.id));
+        `);
 
     if (productsError) {
         console.error('Products error:', productsError);
         error(500, "Failed to load products");
     }
 
-    // Add image URLs to products
-    const productsWithImages = startLocationProducts.map(slp => ({
-        start_location_id: slp.start_location_id,
-        products: {
-            ...(slp.products as any),
-            imageUrl: (slp.products as any).image_url || 
-                supabase.storage
-                    .from('products')
-                    .getPublicUrl(`${(slp.products as any).id}.jpg`)
-                    .data.publicUrl
+    // Add image URLs to products and group by start location
+    const productsByLocation = (startLocationProducts || []).reduce<Record<number, Product[]>>((acc, slp) => {
+        if (!acc[slp.start_location_id]) {
+            acc[slp.start_location_id] = [];
         }
-    }));
-
-    // Group products by start location
-    const productsByLocation = productsWithImages.reduce<Record<number, any[]>>((acc, curr) => {
-        if (!acc[curr.start_location_id]) {
-            acc[curr.start_location_id] = [];
-        }
-        acc[curr.start_location_id].push(curr.products);
+        
+        // Handle both single product and array of products
+        const products = Array.isArray(slp.products) ? slp.products : [slp.products];
+        products.forEach(product => {
+            if (product) {
+                const productWithImage = {
+                    ...product,
+                    imageUrl: product.image_url || 
+                        supabase.storage
+                            .from('products')
+                            .getPublicUrl(`${product.id}.jpg`)
+                            .data.publicUrl
+                };
+                acc[slp.start_location_id].push(productWithImage);
+            }
+        });
         return acc;
     }, {});
 

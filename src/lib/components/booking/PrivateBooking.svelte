@@ -72,13 +72,18 @@
 
 	let isSingleLocation = $derived(startLocations.length === 1);
 	let shouldShowDurations = $derived(isSingleLocation || selectedStartLocation !== null);
-	let shouldShowProducts = $derived(selectedDate !== null);
+	let shouldShowProducts = $derived(
+		selectedDate !== null &&
+			selectedStartLocation !== null &&
+			productsByLocation[Number(selectedStartLocation)]?.length > 0
+	);
 
 	// Start preloading images for all products immediately
 	$effect(() => {
-		// Preload all product images in the background
-		(Object.values(productsByLocation) as Product[][]).forEach((products) => {
-			products.forEach((product) => {
+		if (selectedStartLocation) {
+			// Only preload images for the selected location
+			const productsForLocation = productsByLocation[Number(selectedStartLocation)] || [];
+			productsForLocation.forEach((product: Product) => {
 				if (!preloadedImages.has(product.imageUrl)) {
 					const img = new Image();
 					img.src = product.imageUrl;
@@ -87,7 +92,7 @@
 					};
 				}
 			});
-		});
+		}
 	});
 
 	function handleStartLocationSelect(locationId: string) {
@@ -187,12 +192,18 @@
 			{#if shouldShowProducts}
 				<section class="space-y-4" bind:this={productsSection}>
 					<h2 class="text-center text-2xl font-semibold">Välj utrustning</h2>
-					<div class="mx-auto max-w-2xl">
-						<ProductSelection
-							products={productsByLocation[Number(selectedStartLocation)] || []}
-							{preloadedImages}
-						/>
-					</div>
+					{#if productsByLocation[Number(selectedStartLocation)]?.length > 0}
+						<div class="mx-auto max-w-2xl">
+							<ProductSelection
+								products={productsByLocation[Number(selectedStartLocation)] || []}
+								{preloadedImages}
+							/>
+						</div>
+					{:else}
+						<p class="text-center text-muted-foreground">
+							Ingen utrustning tillgänglig för denna startplats.
+						</p>
+					{/if}
 				</section>
 			{/if}
 		{/if}
