@@ -65,7 +65,7 @@
 	let selectedDate = $state<Date | null>(null);
 	let durationsSection = $state<HTMLElement | null>(null);
 	let calendarSection = $state<HTMLElement | null>(null);
-	let productsSection: HTMLElement;
+	let productsSection = $state<HTMLElement | null>(null);
 	let durations = $state<any[]>([]);
 	let isLoadingDurations = $state(false);
 	let preloadedImages = $state(new Set<string>());

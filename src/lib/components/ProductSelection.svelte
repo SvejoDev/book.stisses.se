@@ -22,6 +22,31 @@
 	}>();
 
 	let selectedProducts = $state<Record<number, number>>({});
+	let allImagesLoaded = $state(false);
+	let loadingPromises: Promise<void>[] = [];
+
+	// Load all images simultaneously
+	$effect(() => {
+		if (products.length > 0) {
+			loadingPromises = products.map((product: Product) => {
+				if (!preloadedImages.has(product.imageUrl)) {
+					return new Promise<void>((resolve) => {
+						const img = new Image();
+						img.onload = () => {
+							preloadedImages.add(product.imageUrl);
+							resolve();
+						};
+						img.src = product.imageUrl;
+					});
+				}
+				return Promise.resolve();
+			});
+
+			Promise.all(loadingPromises).then(() => {
+				allImagesLoaded = true;
+			});
+		}
+	});
 
 	function incrementProduct(productId: number) {
 		const currentQuantity = selectedProducts[productId] || 0;
@@ -59,17 +84,25 @@
 	{#each products as product, index (product.id)}
 		<Card>
 			<CardHeader class="flex flex-row gap-4">
-				{#if preloadedImages.has(product.imageUrl)}
+				<div class="relative h-24 w-24">
 					<img
 						src={product.imageUrl}
 						alt={product.name}
-						class="h-24 w-24 rounded-lg object-cover"
-						loading={shouldEagerLoad(index) ? 'eager' : 'lazy'}
-						fetchpriority={shouldEagerLoad(index) ? 'high' : 'auto'}
+						class="absolute h-full w-full rounded-lg object-cover transition-opacity duration-300"
+						style="opacity: {allImagesLoaded ? '1' : '0'}"
+						loading="eager"
+						fetchpriority="high"
 					/>
-				{:else}
-					<div class="h-24 w-24 animate-pulse rounded-lg bg-muted" />
-				{/if}
+					{#if !allImagesLoaded}
+						<div class="absolute h-full w-full animate-pulse rounded-lg bg-muted">
+							<div class="flex h-full items-center justify-center">
+								<div
+									class="h-6 w-6 animate-spin rounded-full border-4 border-primary border-t-transparent"
+								/>
+							</div>
+						</div>
+					{/if}
+				</div>
 				<div>
 					<CardTitle>{product.name}</CardTitle>
 					<CardDescription>{product.description}</CardDescription>
