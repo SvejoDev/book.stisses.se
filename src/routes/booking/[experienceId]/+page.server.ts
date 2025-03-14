@@ -1,6 +1,18 @@
 import { supabase } from "$lib/supabaseClient";
 import { error } from '@sveltejs/kit';
 
+interface Product {
+    id: number;
+    name: string;
+    description: string;
+    total_quantity: number;
+    image_url: string;
+}
+
+interface StartLocationProduct {
+    start_location_id: number;
+    products: Product[];
+}
 
 export async function load({ params }) {
     const { experienceId } = params;
@@ -83,12 +95,56 @@ export async function load({ params }) {
         error(500, "Failed to load blocked dates");
     }
 
+    // Fetch products for all start locations
+    const { data: startLocationProducts, error: productsError } = await supabase
+        .from("start_location_products")
+        .select(`
+            start_location_id,
+            products (
+                id,
+                name,
+                description,
+                total_quantity,
+                image_url
+            )
+        `);
+
+    if (productsError) {
+        console.error('Products error:', productsError);
+        error(500, "Failed to load products");
+    }
+
+    // Add image URLs to products and group by start location
+    const productsByLocation = (startLocationProducts || []).reduce<Record<number, Product[]>>((acc, slp) => {
+        if (!acc[slp.start_location_id]) {
+            acc[slp.start_location_id] = [];
+        }
+        
+        // Handle both single product and array of products
+        const products = Array.isArray(slp.products) ? slp.products : [slp.products];
+        products.forEach(product => {
+            if (product) {
+                const productWithImage = {
+                    ...product,
+                    imageUrl: product.image_url || 
+                        supabase.storage
+                            .from('products')
+                            .getPublicUrl(`${product.id}.jpg`)
+                            .data.publicUrl
+                };
+                acc[slp.start_location_id].push(productWithImage);
+            }
+        });
+        return acc;
+    }, {});
+
     // Create the return data
     const returnData = {
         experience,
         startLocations: locationsWithImages,
         openDates: filteredOpenDates,
-        blockedDates: blockedDates || []
+        blockedDates: blockedDates || [],
+        productsByLocation
     };
 
     // Log the final data structure

@@ -17,6 +17,14 @@
 	let value = $state('');
 	let isSingleLocation = $derived(startLocations.length === 1);
 
+	// Preload images
+	$effect(() => {
+		startLocations.forEach((location: StartLocation) => {
+			const img = new Image();
+			img.src = location.imageUrl;
+		});
+	});
+
 	$effect(() => {
 		// Auto-select if there's only one start location
 		if (isSingleLocation && !value) {
@@ -49,6 +57,8 @@
 								src={location.imageUrl}
 								alt={location.name}
 								class="aspect-[4/3] w-full rounded-t-lg object-cover"
+								loading="eager"
+								fetchpriority="high"
 							/>
 						</Card.Header>
 						<Card.Content class="p-6">
@@ -76,6 +86,8 @@
 								src={location.imageUrl}
 								alt={location.name}
 								class="aspect-[4/3] w-full rounded-t-lg object-cover"
+								loading="eager"
+								fetchpriority="high"
 							/>
 						</Card.Header>
 						<Card.Content class="p-6">
