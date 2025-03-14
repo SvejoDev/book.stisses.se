@@ -16,68 +16,83 @@
 		imageUrl: string;
 	}
 
-	let { products, preloadedImages } = $props<{
+	let {
+		products,
+		preloadedImages,
+		onProductsSelected = (products: Array<{ productId: number; quantity: number }>) => {}
+	} = $props<{
 		products: Product[];
 		preloadedImages: Set<string>;
+		onProductsSelected?: (products: Array<{ productId: number; quantity: number }>) => void;
 	}>();
 
-	let selectedProducts = $state<Record<number, number>>({});
+	let selectedQuantities = $state<Record<number, number>>({});
 	let allImagesLoaded = $state(false);
-	let loadingPromises: Promise<void>[] = [];
+	let initialLoadDone = $state(false);
 
-	// Load all images simultaneously
+	// Handle image loading once when products change
 	$effect(() => {
-		if (products.length > 0) {
-			loadingPromises = products.map((product: Product) => {
-				if (!preloadedImages.has(product.imageUrl)) {
-					return new Promise<void>((resolve) => {
-						const img = new Image();
-						img.onload = () => {
-							preloadedImages.add(product.imageUrl);
-							resolve();
-						};
-						img.src = product.imageUrl;
-					});
-				}
-				return Promise.resolve();
-			});
+		if (products.length > 0 && !initialLoadDone) {
+			initialLoadDone = true;
+			const unloadedImages = products.filter(
+				(product: Product) => !preloadedImages.has(product.imageUrl)
+			);
 
-			Promise.all(loadingPromises).then(() => {
+			if (unloadedImages.length === 0) {
+				allImagesLoaded = true;
+				return;
+			}
+
+			Promise.all(
+				unloadedImages.map(
+					(product: Product) =>
+						new Promise<void>((resolve) => {
+							if (preloadedImages.has(product.imageUrl)) {
+								resolve();
+								return;
+							}
+							const img = new Image();
+							img.onload = () => {
+								preloadedImages.add(product.imageUrl);
+								resolve();
+							};
+							img.src = product.imageUrl;
+						})
+				)
+			).then(() => {
 				allImagesLoaded = true;
 			});
 		}
 	});
 
 	function incrementProduct(productId: number) {
-		const currentQuantity = selectedProducts[productId] || 0;
+		const currentQuantity = selectedQuantities[productId] || 0;
 		const product = products.find((p: Product) => p.id === productId);
 
 		if (product && currentQuantity < product.total_quantity) {
-			selectedProducts[productId] = currentQuantity + 1;
+			selectedQuantities[productId] = currentQuantity + 1;
 		}
 	}
 
 	function decrementProduct(productId: number) {
-		const currentQuantity = selectedProducts[productId] || 0;
+		const currentQuantity = selectedQuantities[productId] || 0;
 
 		if (currentQuantity > 0) {
-			selectedProducts[productId] = currentQuantity - 1;
+			selectedQuantities[productId] = currentQuantity - 1;
 		}
 	}
 
+	// Notify parent of quantity changes
 	$effect(() => {
-		Object.entries(selectedProducts).forEach(([productId, quantity]) => {
-			if (quantity > 0) {
-				const product = products.find((p: Product) => p.id === Number(productId));
-				console.log(`Product: ${product?.name}, Quantity: ${quantity}`);
-			}
-		});
-	});
+		const selectedProducts = Object.entries(selectedQuantities)
+			.filter(([_, quantity]) => quantity > 0)
+			.map(([productId, quantity]) => ({
+				productId: parseInt(productId),
+				quantity
+			}));
 
-	// Determine if a product should be eagerly loaded (first 2 products)
-	function shouldEagerLoad(index: number): boolean {
-		return index < 2;
-	}
+		onProductsSelected(selectedProducts);
+	});
 </script>
 
 <div class="grid gap-4">
@@ -90,8 +105,8 @@
 						alt={product.name}
 						class="absolute h-full w-full rounded-lg object-cover transition-opacity duration-300"
 						style="opacity: {allImagesLoaded ? '1' : '0'}"
-						loading="eager"
-						fetchpriority="high"
+						loading={index < 2 ? 'eager' : 'lazy'}
+						fetchpriority={index < 2 ? 'high' : 'auto'}
 					/>
 					{#if !allImagesLoaded}
 						<div class="absolute h-full w-full animate-pulse rounded-lg bg-muted">
@@ -115,16 +130,16 @@
 							variant="outline"
 							size="icon"
 							onclick={() => decrementProduct(product.id)}
-							disabled={!selectedProducts[product.id]}
+							disabled={!selectedQuantities[product.id]}
 						>
 							-
 						</Button>
-						<span class="w-8 text-center">{selectedProducts[product.id] || 0}</span>
+						<span class="w-8 text-center">{selectedQuantities[product.id] || 0}</span>
 						<Button
 							variant="outline"
 							size="icon"
 							onclick={() => incrementProduct(product.id)}
-							disabled={selectedProducts[product.id] >= product.total_quantity}
+							disabled={selectedQuantities[product.id] >= product.total_quantity}
 						>
 							+
 						</Button>
