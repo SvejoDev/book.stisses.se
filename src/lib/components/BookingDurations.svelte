@@ -31,11 +31,11 @@
 			// Add a small delay if there's only one duration for better UX
 			if (durations.length === 1) {
 				await new Promise((resolve) => setTimeout(resolve, 500));
-			}
-
-			// Auto-select if there's only one duration
-			if (durations.length === 1 && !selectedDuration) {
+				// Auto-select if there's only one duration
 				handleValueChange(durations[0].id.toString());
+			} else {
+				// Reset selection when changing to a location with multiple durations
+				selectedDuration = '';
 			}
 		} catch (error) {
 			console.error('Error fetching durations:', error);
