@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { Button } from '$lib/components/ui/button';
 	import type { AvailableTime } from '$lib/types';
+	import { cn } from '$lib/utils';
+	import { addHours, addDays, format } from 'date-fns';
 
 	let {
 		experienceId,
@@ -33,6 +35,7 @@
 	let availableTimes = $state<AvailableTime[]>([]);
 	let error = $state<string | null>(null);
 	let isLocked = $state(false);
+	let selectedTime = $state<AvailableTime | null>(null);
 
 	let totalProductQuantity = $derived(
 		selectedProducts.reduce(
@@ -41,6 +44,35 @@
 		)
 	);
 	let canGenerateTimes = $derived(totalProductQuantity > 0);
+
+	$effect(() => {
+		if (selectedTime) {
+			const [hours, minutes] = selectedTime.startTime.split(':').map(Number);
+			const startDateTime = new Date(selectedDate);
+			startDateTime.setHours(hours, minutes, 0, 0);
+
+			let endDateTime;
+			if (durationType === 'hours') {
+				endDateTime = addHours(startDateTime, durationValue);
+			} else {
+				// For overnight bookings, end time is the closing time of the last day
+				endDateTime = addDays(startDateTime, durationValue);
+				const [endHours, endMinutes] = selectedTime.endTime.split(':').map(Number);
+				endDateTime.setHours(endHours, endMinutes, 0, 0);
+			}
+
+			$inspect(
+				{
+					selectedTime,
+					startDateTime: format(startDateTime, 'yyyy-MM-dd HH:mm'),
+					endDateTime: format(endDateTime, 'yyyy-MM-dd HH:mm'),
+					durationType,
+					durationValue
+				},
+				'Booking details'
+			);
+		}
+	});
 
 	async function generateStartTimes() {
 		console.log('=== generateStartTimes START ===');
@@ -114,11 +146,16 @@
 		}
 	}
 
+	function handleTimeSelect(time: AvailableTime) {
+		selectedTime = time;
+	}
+
 	function handleReset() {
 		isLocked = false;
 		hasAttemptedLoad = false;
 		availableTimes = [];
 		error = null;
+		selectedTime = null;
 		onLockStateChange(false);
 	}
 </script>
@@ -155,8 +192,11 @@
 		<div class="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-5">
 			{#each availableTimes as time}
 				<button
-					class="inline-flex h-10 items-center justify-center whitespace-nowrap rounded-md border border-input bg-background px-4 py-2 text-sm font-medium ring-offset-background transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50"
-					onclick={() => $inspect(time)}
+					class={cn(
+						'inline-flex h-10 items-center justify-center whitespace-nowrap rounded-md border border-input bg-background px-4 py-2 text-sm font-medium ring-offset-background transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50',
+						selectedTime === time && 'bg-primary text-primary-foreground hover:bg-primary/90'
+					)}
+					onclick={() => handleTimeSelect(time)}
 				>
 					{time.startTime}
 				</button>
