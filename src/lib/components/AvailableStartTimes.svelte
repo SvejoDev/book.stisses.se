@@ -31,6 +31,14 @@
 	let availableTimes = $state<AvailableTime[]>([]);
 	let error = $state<string | null>(null);
 
+	let totalProductQuantity = $derived(
+		selectedProducts.reduce(
+			(sum: number, product: { quantity: number }) => sum + product.quantity,
+			0
+		)
+	);
+	let canGenerateTimes = $derived(totalProductQuantity > 0);
+
 	async function generateStartTimes() {
 		console.log('=== generateStartTimes START ===');
 		console.log('Function called with props:', {
@@ -80,6 +88,16 @@
 			const data = await response.json();
 			console.log('Response data:', data);
 			availableTimes = data.availableTimes;
+
+			// Scroll to bottom after times are loaded
+			if (data.availableTimes.length > 0) {
+				setTimeout(() => {
+					window.scrollTo({
+						top: document.documentElement.scrollHeight,
+						behavior: 'smooth'
+					});
+				}, 100); // Small delay to ensure DOM is updated
+			}
 		} catch (e) {
 			console.error('Error in generateStartTimes:', e);
 			error = e instanceof Error ? e.message : 'An error occurred';
@@ -92,12 +110,14 @@
 
 <div class="space-y-4">
 	<button
-		class="h-10 w-full rounded-md bg-primary px-4 py-2 text-primary-foreground hover:bg-primary/90"
+		class="h-10 w-full rounded-md bg-primary px-4 py-2 text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
 		onclick={generateStartTimes}
-		disabled={isLoading}
+		disabled={isLoading || !canGenerateTimes}
 	>
 		{#if isLoading}
 			Genererar starttider...
+		{:else if !canGenerateTimes}
+			Välj minst en produkt för att generera starttider
 		{:else}
 			Generera starttider
 		{/if}

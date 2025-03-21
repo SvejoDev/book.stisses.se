@@ -208,7 +208,7 @@
 							/>
 						</div>
 
-						{#if selectedProducts.length > 0 && selectedDate}
+						{#if selectedDate}
 							{@const props = {
 								experienceId: parseInt(experience.id),
 								selectedDate,
@@ -216,7 +216,7 @@
 								durationValue,
 								selectedProducts
 							}}
-							<div class="mx-auto max-w-2xl">
+							<div class="mx-auto mt-4 max-w-2xl">
 								<AvailableStartTimes {...props} />
 							</div>
 						{/if}
