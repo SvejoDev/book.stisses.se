@@ -117,9 +117,15 @@
 			{/each}
 		</div>
 	{:else if !isLoading && !error}
-		<p class="text-center text-muted-foreground">
-			Klicka på knappen för att se tillgängliga starttider
-		</p>
+		<div class="space-y-2 text-center">
+			<p class="font-medium text-destructive">Inga tillgängliga tider hittades</p>
+			<p class="text-sm text-muted-foreground">Vänligen prova att:</p>
+			<ul class="list-inside list-disc text-sm text-muted-foreground">
+				<li>Välja ett annat datum</li>
+				<li>Ändra antalet produkter</li>
+				<li>Justera bokningslängden</li>
+			</ul>
+		</div>
 	{/if}
 </div>
 
