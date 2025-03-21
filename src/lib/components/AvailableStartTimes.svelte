@@ -7,13 +7,15 @@
 		selectedDate,
 		durationType,
 		durationValue,
-		selectedProducts = []
+		selectedProducts = [],
+		onLockStateChange = (locked: boolean) => {}
 	} = $props<{
 		experienceId: number;
 		selectedDate: Date;
 		durationType: 'hours' | 'overnights';
 		durationValue: number;
 		selectedProducts: Array<{ productId: number; quantity: number }>;
+		onLockStateChange?: (locked: boolean) => void;
 	}>();
 
 	$effect(() => {
@@ -30,6 +32,7 @@
 	let hasAttemptedLoad = $state(false);
 	let availableTimes = $state<AvailableTime[]>([]);
 	let error = $state<string | null>(null);
+	let isLocked = $state(false);
 
 	let totalProductQuantity = $derived(
 		selectedProducts.reduce(
@@ -53,6 +56,8 @@
 			isLoading = true;
 			hasAttemptedLoad = true;
 			error = null;
+			isLocked = true;
+			onLockStateChange(true);
 
 			const requestData = {
 				date: selectedDate.toISOString().split('T')[0],
@@ -101,27 +106,46 @@
 		} catch (e) {
 			console.error('Error in generateStartTimes:', e);
 			error = e instanceof Error ? e.message : 'An error occurred';
+			isLocked = true;
+			onLockStateChange(true);
 		} finally {
 			isLoading = false;
 			console.log('=== generateStartTimes END ===');
 		}
 	}
+
+	function handleReset() {
+		isLocked = false;
+		hasAttemptedLoad = false;
+		availableTimes = [];
+		error = null;
+		onLockStateChange(false);
+	}
 </script>
 
 <div class="space-y-4">
-	<button
-		class="h-10 w-full rounded-md bg-primary px-4 py-2 text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
-		onclick={generateStartTimes}
-		disabled={isLoading || !canGenerateTimes}
-	>
-		{#if isLoading}
-			Genererar starttider...
-		{:else if !canGenerateTimes}
-			Välj minst en produkt för att generera starttider
-		{:else}
-			Generera starttider
-		{/if}
-	</button>
+	{#if !hasAttemptedLoad}
+		<button
+			class="h-10 w-full rounded-md bg-primary px-4 py-2 text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+			onclick={generateStartTimes}
+			disabled={isLoading || !canGenerateTimes}
+		>
+			{#if isLoading}
+				Genererar starttider...
+			{:else if !canGenerateTimes}
+				Välj minst en produkt för att generera starttider
+			{:else}
+				Generera starttider
+			{/if}
+		</button>
+	{:else}
+		<button
+			class="h-10 w-full rounded-md border border-primary bg-background px-4 py-2 text-primary hover:bg-primary/10"
+			onclick={handleReset}
+		>
+			Ändra din bokning
+		</button>
+	{/if}
 
 	{#if error && hasAttemptedLoad}
 		<p class="text-sm text-destructive">{error}</p>
@@ -132,7 +156,7 @@
 			{#each availableTimes as time}
 				<button
 					class="inline-flex h-10 items-center justify-center whitespace-nowrap rounded-md border border-input bg-background px-4 py-2 text-sm font-medium ring-offset-background transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50"
-					onclick={() => console.log('Selected time:', time)}
+					onclick={() => $inspect(time)}
 				>
 					{time.startTime}
 				</button>

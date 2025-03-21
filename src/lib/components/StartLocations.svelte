@@ -10,9 +10,14 @@
 		imageUrl: string;
 	}
 
-	let { startLocations, onSelect } = $props<{
+	let {
+		startLocations,
+		onSelect,
+		isLocked = $bindable(false)
+	} = $props<{
 		startLocations: StartLocation[];
 		onSelect: (locationId: string) => void;
+		isLocked?: boolean;
 	}>();
 	let value = $state('');
 	let isSingleLocation = $derived(startLocations.length === 1);
@@ -40,6 +45,7 @@
 	});
 
 	function handleSelect(locationId: string) {
+		if (isLocked) return;
 		value = locationId;
 	}
 </script>
@@ -74,11 +80,13 @@
 					type="button"
 					class="text-left"
 					onclick={() => handleSelect(location.id.toString())}
+					disabled={isLocked}
 				>
 					<Card.Root
 						class={cn(
 							'h-full w-full transition-all hover:scale-[1.02] hover:shadow-lg',
-							value === location.id.toString() && 'ring-2 ring-primary'
+							value === location.id.toString() && 'ring-2 ring-primary',
+							isLocked && 'cursor-not-allowed opacity-50'
 						)}
 					>
 						<Card.Header class="p-0">

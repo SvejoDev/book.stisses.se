@@ -36,7 +36,8 @@
 		durationValue,
 		blockedDates = [],
 		openDates = [],
-		onDateSelect = (date: Date) => {}
+		onDateSelect = (date: Date) => {},
+		isLocked = $bindable(false)
 	} = $props<{
 		selectedDuration: string;
 		durationType: string;
@@ -44,6 +45,7 @@
 		blockedDates: BlockedDate[];
 		openDates: OpenDate[];
 		onDateSelect?: (date: Date) => void;
+		isLocked?: boolean;
 	}>();
 
 	let selectedDate = $state<Date | null>(null);
@@ -184,7 +186,7 @@
 	}
 
 	function handleDateSelect(date: Date) {
-		if (isDateDisabled(date)) return;
+		if (isDateDisabled(date) || isLocked) return;
 		selectedDate = date;
 
 		// Calculate end date based on duration
@@ -273,12 +275,12 @@
 					class="day"
 					class:selected={selectedDate && isInSelectedRange(date)}
 					class:hovered={!selectedDate && isInHoveredRange(date)}
-					class:disabled={isDateDisabled(date)}
+					class:disabled={isDateDisabled(date) || isLocked}
 					class:open={isDateOpen(date) && !isDateDisabled(date)}
 					onclick={() => handleDateSelect(date)}
 					onmouseenter={() => (hoveredDate = date)}
 					onmouseleave={() => (hoveredDate = null)}
-					disabled={isDateDisabled(date)}
+					disabled={isDateDisabled(date) || isLocked}
 				>
 					<span class="date-number">{date.getDate()}</span>
 					{#if isDateOpen(date) && !isDateDisabled(date)}
