@@ -16,6 +16,7 @@
 		selectedDuration = $bindable(''),
 		durations = $bindable<Duration[]>([]),
 		isLoading = $bindable(false),
+		isLocked = $bindable(false),
 		onDurationSelect = (duration: { type: string; value: number }) => {}
 	} = $props();
 
@@ -31,11 +32,11 @@
 			// Add a small delay if there's only one duration for better UX
 			if (durations.length === 1) {
 				await new Promise((resolve) => setTimeout(resolve, 500));
-			}
-
-			// Auto-select if there's only one duration
-			if (durations.length === 1 && !selectedDuration) {
+				// Auto-select if there's only one duration
 				handleValueChange(durations[0].id.toString());
+			} else {
+				// Reset selection when changing to a location with multiple durations
+				selectedDuration = '';
 			}
 		} catch (error) {
 			console.error('Error fetching durations:', error);
@@ -73,6 +74,7 @@
 	});
 
 	function handleValueChange(value: string) {
+		if (isLocked) return;
 		selectedDuration = value;
 	}
 
@@ -94,8 +96,13 @@
 			<span class="text-sm text-muted-foreground">Laddar...</span>
 		</div>
 	{:else}
-		<Select.Root type="single" onValueChange={handleValueChange} value={selectedDuration}>
-			<Select.Trigger>
+		<Select.Root
+			type="single"
+			onValueChange={handleValueChange}
+			value={selectedDuration}
+			disabled={isLocked}
+		>
+			<Select.Trigger class={cn(isLocked && 'cursor-not-allowed opacity-50')}>
 				<span>{displayText}</span>
 			</Select.Trigger>
 			<Select.Content>

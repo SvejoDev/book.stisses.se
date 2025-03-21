@@ -71,6 +71,7 @@
 	let isLoadingDurations = $state(false);
 	let preloadedImages = $state(new Set<string>());
 	let selectedProducts = $state<Array<{ productId: number; quantity: number }>>([]);
+	let isBookingLocked = $state(false);
 
 	let isSingleLocation = $derived(startLocations.length === 1);
 	let shouldShowDurations = $derived(isSingleLocation || selectedStartLocation !== null);
@@ -131,6 +132,10 @@
 		$inspect(selectedProducts, 'Selected products');
 	}
 
+	function handleLockStateChange(locked: boolean) {
+		isBookingLocked = locked;
+	}
+
 	function getStartLocationHeading() {
 		return startLocations.length === 1 ? 'Din startplats' : 'Välj en startplats';
 	}
@@ -164,7 +169,11 @@
 
 	<section class="space-y-4">
 		<h2 class="text-center text-2xl font-semibold">{getStartLocationHeading()}</h2>
-		<StartLocations {startLocations} onSelect={handleStartLocationSelect} />
+		<StartLocations
+			{startLocations}
+			onSelect={handleStartLocationSelect}
+			isLocked={isBookingLocked}
+		/>
 	</section>
 
 	{#if shouldShowDurations}
@@ -177,6 +186,7 @@
 					bind:durations
 					bind:isLoading={isLoadingDurations}
 					onDurationSelect={handleDurationSelect}
+					isLocked={isBookingLocked}
 				/>
 			</div>
 		</section>
@@ -192,6 +202,7 @@
 						{openDates}
 						{blockedDates}
 						onDateSelect={handleDateSelect}
+						isLocked={isBookingLocked}
 					/>
 				</div>
 			</section>
@@ -205,18 +216,20 @@
 								products={productsByLocation[Number(selectedStartLocation)] || []}
 								{preloadedImages}
 								onProductsSelected={handleProductSelection}
+								isLocked={isBookingLocked}
 							/>
 						</div>
 
-						{#if selectedProducts.length > 0 && selectedDate}
+						{#if selectedDate}
 							{@const props = {
 								experienceId: parseInt(experience.id),
 								selectedDate,
 								durationType,
 								durationValue,
-								selectedProducts
+								selectedProducts,
+								onLockStateChange: handleLockStateChange
 							}}
-							<div class="mx-auto max-w-2xl">
+							<div class="mx-auto mt-4 max-w-2xl">
 								<AvailableStartTimes {...props} />
 							</div>
 						{/if}

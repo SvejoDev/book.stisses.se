@@ -1,6 +1,16 @@
 <script lang="ts">
-	import { format, addDays, isWithinInterval, parseISO } from 'date-fns';
+	import {
+		format,
+		addDays,
+		isWithinInterval,
+		parseISO,
+		startOfMonth,
+		endOfMonth,
+		isBefore,
+		isAfter
+	} from 'date-fns';
 	import { sv } from 'date-fns/locale';
+	import { cn } from '$lib/utils';
 
 	interface BlockedDate {
 		id: number;
@@ -27,7 +37,8 @@
 		durationValue,
 		blockedDates = [],
 		openDates = [],
-		onDateSelect = (date: Date) => {}
+		onDateSelect = (date: Date) => {},
+		isLocked = $bindable(false)
 	} = $props<{
 		selectedDuration: string;
 		durationType: string;
@@ -35,11 +46,63 @@
 		blockedDates: BlockedDate[];
 		openDates: OpenDate[];
 		onDateSelect?: (date: Date) => void;
+		isLocked?: boolean;
 	}>();
 
 	let selectedDate = $state<Date | null>(null);
 	let hoveredDate = $state<Date | null>(null);
+	let hasFutureOpenDates = $state(false);
+	let firstAvailableMonth = $state<Date | null>(null);
+
+	// Find the first month with available dates
+	function findFirstAvailableMonth(): Date | null {
+		const today = new Date();
+		let futureDate = today;
+
+		// Look ahead up to 24 months
+		for (let i = 0; i < 24; i++) {
+			const monthStart = startOfMonth(futureDate);
+			const monthEnd = endOfMonth(futureDate);
+
+			// Check each day in the month
+			let currentCheck = monthStart;
+			while (isBefore(currentCheck, monthEnd)) {
+				if (isDateOpen(currentCheck) && !isDateDisabled(currentCheck)) {
+					return monthStart;
+				}
+				currentCheck = addDays(currentCheck, 1);
+			}
+
+			futureDate = addDays(monthEnd, 1);
+		}
+
+		return null;
+	}
+
+	// Initialize the calendar
+	function initializeCalendar() {
+		// Always start with current month
+		currentMonth = new Date();
+
+		// Store the first available month for reference
+		firstAvailableMonth = findFirstAvailableMonth();
+
+		// Check if there are any future open dates
+		hasFutureOpenDates = openDates.some((date: OpenDate) => {
+			if (date.type === 'specific' && date.specific_date) {
+				return isAfter(parseISO(date.specific_date), currentMonth);
+			}
+			if (date.type === 'interval' && date.end_date) {
+				return isAfter(parseISO(date.end_date), currentMonth);
+			}
+			return false;
+		});
+	}
+
 	let currentMonth = $state(new Date());
+
+	// Initialize when component mounts
+	initializeCalendar();
 
 	// Add effect to log dates when duration changes
 	$effect(() => {
@@ -124,7 +187,7 @@
 	}
 
 	function handleDateSelect(date: Date) {
-		if (isDateDisabled(date)) return;
+		if (isDateDisabled(date) || isLocked) return;
 		selectedDate = date;
 
 		// Calculate end date based on duration
@@ -154,29 +217,11 @@
 		const end = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0);
 		const days = [];
 
-		// Add previous month's days
-		const startDay = start.getDay();
-		for (let i = 0; i < startDay; i++) {
-			days.push({
-				date: addDays(start, -startDay + i),
-				isCurrentMonth: false
-			});
-		}
-
-		// Add current month's days
+		// Only add current month's days
 		for (let i = 1; i <= end.getDate(); i++) {
 			days.push({
 				date: new Date(currentMonth.getFullYear(), currentMonth.getMonth(), i),
 				isCurrentMonth: true
-			});
-		}
-
-		// Add next month's days
-		const remainingDays = 42 - days.length;
-		for (let i = 1; i <= remainingDays; i++) {
-			days.push({
-				date: addDays(end, i),
-				isCurrentMonth: false
 			});
 		}
 
@@ -189,84 +234,125 @@
 <div class="calendar">
 	<div class="calendar-header">
 		<button
-			class="month-nav"
-			onclick={() =>
-				(currentMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1))}
+			class={cn('month-nav', isLocked && 'cursor-not-allowed opacity-50')}
+			onclick={() => {
+				if (!isLocked) {
+					currentMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1);
+				}
+			}}
+			disabled={isLocked}
 		>
 			&lt;
 		</button>
 		<h2>{format(currentMonth, 'MMMM yyyy', { locale: sv })}</h2>
 		<button
-			class="month-nav"
-			onclick={() =>
-				(currentMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1))}
+			class={cn('month-nav', isLocked && 'cursor-not-allowed opacity-50')}
+			onclick={() => {
+				if (!isLocked) {
+					currentMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1);
+				}
+			}}
+			disabled={isLocked}
 		>
 			&gt;
 		</button>
 	</div>
 
-	<div class="calendar-grid">
-		{#each weekDays as day}
-			<div class="weekday">{day}</div>
-		{/each}
+	{#if hasFutureOpenDates && !getCalendarDays().some(({ date }) => isDateOpen(date) && !isDateDisabled(date))}
+		<div class="future-dates-notice">
+			<svg xmlns="http://www.w3.org/2000/svg" class="icon" viewBox="0 0 20 20" fill="currentColor">
+				<path
+					fill-rule="evenodd"
+					d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-8.707l-3-3a1 1 0 00-1.414 0l-3 3a1 1 0 001.414 1.414L9 9.414V13a1 1 0 102 0V9.414l1.293 1.293a1 1 0 001.414-1.414z"
+					clip-rule="evenodd"
+				/>
+			</svg>
+			<span>Det finns lediga datum längre fram - bläddra framåt för att se dem</span>
+		</div>
+	{/if}
 
-		{#each getCalendarDays() as { date, isCurrentMonth }}
-			<button
-				class="day"
-				class:other-month={!isCurrentMonth}
-				class:selected={selectedDate && isInSelectedRange(date)}
-				class:hovered={!selectedDate && isInHoveredRange(date)}
-				class:disabled={isDateDisabled(date)}
-				class:open={isDateOpen(date) && !isDateDisabled(date)}
-				onclick={() => handleDateSelect(date)}
-				onmouseenter={() => (hoveredDate = date)}
-				onmouseleave={() => (hoveredDate = null)}
-				disabled={isDateDisabled(date)}
-			>
-				<span class="date-number">{date.getDate()}</span>
-				{#if isDateOpen(date) && !isDateDisabled(date)}
-					<span class="open-indicator"></span>
-				{/if}
-			</button>
-		{/each}
+	<div class="calendar-grid">
+		<div class="weekdays-grid">
+			{#each weekDays as day}
+				<div class="weekday">{day}</div>
+			{/each}
+		</div>
+
+		<div class="days-grid">
+			{#each getCalendarDays() as { date }}
+				<button
+					class="day"
+					class:selected={selectedDate && isInSelectedRange(date)}
+					class:hovered={!selectedDate && isInHoveredRange(date)}
+					class:disabled={isDateDisabled(date) || isLocked}
+					class:open={isDateOpen(date) && !isDateDisabled(date)}
+					onclick={() => handleDateSelect(date)}
+					onmouseenter={() => (hoveredDate = date)}
+					onmouseleave={() => (hoveredDate = null)}
+					disabled={isDateDisabled(date) || isLocked}
+				>
+					<span class="date-number">{date.getDate()}</span>
+					{#if isDateOpen(date) && !isDateDisabled(date)}
+						<span class="open-indicator"></span>
+					{/if}
+				</button>
+			{/each}
+		</div>
 	</div>
 </div>
 
 <style lang="postcss">
 	.calendar {
-		@apply mx-auto max-w-sm rounded-lg bg-white p-4 shadow;
+		@apply mx-auto w-[320px] rounded-lg bg-white p-4 shadow md:w-[400px] lg:w-[480px];
+		min-height: 400px;
+		display: flex;
+		flex-direction: column;
 	}
 
 	.calendar-header {
-		@apply mb-4 flex items-center justify-between;
+		@apply flex items-center justify-between;
+		height: 40px;
 	}
 
 	.calendar-header h2 {
-		@apply text-lg font-semibold capitalize;
+		@apply text-lg font-semibold capitalize md:text-xl;
 	}
 
 	.month-nav {
 		@apply rounded-full p-2 hover:bg-gray-100;
+		width: 32px;
+		height: 32px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
 	}
 
 	.calendar-grid {
+		@apply flex flex-1 flex-col;
+		margin-top: 1rem;
+	}
+
+	.weekdays-grid {
 		@apply grid grid-cols-7 gap-1;
+		height: 32px;
 	}
 
 	.weekday {
-		@apply py-2 text-center text-sm font-medium text-gray-500;
+		@apply flex items-center justify-center text-center text-sm font-medium text-gray-500 md:text-base;
+	}
+
+	.days-grid {
+		@apply grid grid-cols-7 gap-1 md:gap-2;
+		flex: 1;
+		margin-top: 0.5rem;
 	}
 
 	.day {
-		@apply relative flex h-10 w-10 flex-col items-center justify-center rounded-full text-sm;
+		@apply relative flex aspect-square w-full flex-col items-center justify-center rounded-full text-sm md:text-base;
 	}
 
 	.day:not(.selected):hover:not(.disabled) {
 		@apply bg-gray-100;
-	}
-
-	.other-month {
-		@apply text-gray-400;
 	}
 
 	.selected {
@@ -282,10 +368,20 @@
 	}
 
 	.open-indicator {
-		@apply absolute bottom-1 h-1.5 w-1.5 rounded-full bg-green-500;
+		@apply absolute bottom-1 h-1.5 w-1.5 rounded-full bg-green-500 md:h-2 md:w-2;
 	}
 
 	.selected .open-indicator {
 		@apply bg-white;
+	}
+
+	.future-dates-notice {
+		height: 56px;
+		@apply flex items-center gap-2 rounded-md bg-blue-50 p-3 text-sm text-blue-700 md:text-base;
+		margin: 1rem 0;
+	}
+
+	.future-dates-notice .icon {
+		@apply h-5 w-5 flex-shrink-0 md:h-6 md:w-6;
 	}
 </style>

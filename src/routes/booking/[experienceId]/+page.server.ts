@@ -40,7 +40,7 @@ export async function load({ params }) {
     // Fetch start locations for this experience
     const { data: startLocations, error: startLocationsError } = await supabase
         .from("start_locations")
-        .select("*")
+        .select("*, image_url")
         .eq("experience_id", experienceId);
 
     if (startLocationsError) {
@@ -48,19 +48,11 @@ export async function load({ params }) {
         error(500, "Failed to load start locations");
     }
 
-    // Get image URLs for each start location
-    const locationsWithImages = await Promise.all(
-        startLocations.map(async (location) => {
-            const { data: imageUrl } = supabase.storage
-                .from('start-locations')
-                .getPublicUrl(`${location.id}.jpg`);
-            
-            return {
-                ...location,
-                imageUrl: imageUrl.publicUrl
-            };
-        })
-    );
+    // Simplified location processing - no need for bucket operations
+    const locationsWithImages = startLocations.map((location) => ({
+        ...location,
+        imageUrl: location.image_url
+    }));
 
     // Fetch open dates for this experience using simpler query first
     const { data: openDates, error: openDatesError } = await supabase

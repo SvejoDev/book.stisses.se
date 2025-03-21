@@ -7,6 +7,7 @@
 		CardHeader,
 		CardTitle
 	} from '$lib/components/ui/card';
+	import { cn } from '$lib/utils';
 
 	interface Product {
 		id: number;
@@ -19,10 +20,12 @@
 	let {
 		products,
 		preloadedImages,
+		isLocked = $bindable(false),
 		onProductsSelected = (products: Array<{ productId: number; quantity: number }>) => {}
 	} = $props<{
 		products: Product[];
 		preloadedImages: Set<string>;
+		isLocked?: boolean;
 		onProductsSelected?: (products: Array<{ productId: number; quantity: number }>) => void;
 	}>();
 
@@ -66,6 +69,7 @@
 	});
 
 	function incrementProduct(productId: number) {
+		if (isLocked) return;
 		const currentQuantity = selectedQuantities[productId] || 0;
 		const product = products.find((p: Product) => p.id === productId);
 
@@ -75,6 +79,7 @@
 	}
 
 	function decrementProduct(productId: number) {
+		if (isLocked) return;
 		const currentQuantity = selectedQuantities[productId] || 0;
 
 		if (currentQuantity > 0) {
@@ -130,7 +135,8 @@
 							variant="outline"
 							size="icon"
 							onclick={() => decrementProduct(product.id)}
-							disabled={!selectedQuantities[product.id]}
+							disabled={!selectedQuantities[product.id] || isLocked}
+							class={cn(isLocked && 'cursor-not-allowed opacity-50')}
 						>
 							-
 						</Button>
@@ -139,7 +145,8 @@
 							variant="outline"
 							size="icon"
 							onclick={() => incrementProduct(product.id)}
-							disabled={selectedQuantities[product.id] >= product.total_quantity}
+							disabled={selectedQuantities[product.id] >= product.total_quantity || isLocked}
+							class={cn(isLocked && 'cursor-not-allowed opacity-50')}
 						>
 							+
 						</Button>
