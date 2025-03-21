@@ -113,22 +113,34 @@ export const POST: RequestHandler = async ({ request }) => {
         
         // Calculate last possible start time based on duration
         const durationInMinutes = durationType === 'hours' ? durationValue * 60 : closeMinutes - openMinutes;
-        const lastPossibleStartMinute = closeMinutes - durationInMinutes;
+        const lastPossibleStartMinute = durationType === 'overnights' ? closeMinutes - 15 : closeMinutes - durationInMinutes;
 
         console.log('Time calculations:', {
             openMinutes,
             closeMinutes,
             durationInMinutes,
-            lastPossibleStartMinute
+            lastPossibleStartMinute,
+            durationType
         });
 
         const availableTimes = [];
 
         // Check every 15-minute interval
         for (let currentMinute = openMinutes; currentMinute <= lastPossibleStartMinute; currentMinute += 15) {
-            const endMinute = currentMinute + durationInMinutes;
+            const endMinute = durationType === 'overnights' 
+                ? openMinutes  // For overnights, we'll check availability until opening time next day
+                : currentMinute + durationInMinutes;
             
-            // Check availability for all products
+            // For overnight bookings, we don't need to check availability since return time is next day
+            if (durationType === 'overnights') {
+                availableTimes.push({
+                    startTime: minutesToTime(currentMinute),
+                    endTime: '09:00' // Default to 9 AM next day
+                });
+                continue;
+            }
+
+            // Check availability for all products for non-overnight bookings
             let isTimeSlotAvailable = true;
             for (const { productId, quantity } of products) {
                 const isAvailable = await checkProductAvailability(
