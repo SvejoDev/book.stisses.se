@@ -77,7 +77,7 @@
 
 			const data = await response.json();
 			console.log('Response data:', data);
-			availableTimes = data;
+			availableTimes = data.availableTimes;
 		} catch (e) {
 			console.error('Error in generateStartTimes:', e);
 			error = e instanceof Error ? e.message : 'An error occurred';
@@ -88,7 +88,7 @@
 	}
 </script>
 
-<div class="space-y-4" onclick={() => console.log('Container clicked')}>
+<div class="space-y-4">
 	<button
 		class="h-10 w-full rounded-md bg-primary px-4 py-2 text-primary-foreground hover:bg-primary/90"
 		onclick={generateStartTimes}
@@ -122,3 +122,13 @@
 		</p>
 	{/if}
 </div>
+
+<style>
+	button {
+		transition: all 0.2s ease-in-out;
+	}
+
+	button:hover {
+		transform: scale(1.02);
+	}
+</style>

@@ -14,6 +14,28 @@ interface AvailabilityRequest {
     experienceId: number;
 }
 
+// Cache for product availability data
+interface AvailabilityCache {
+    [productId: number]: {
+        maxQuantity: number;
+        availability: {
+            [date: string]: {
+                [minute: string]: number | null;
+            };
+        };
+    };
+}
+
+interface AvailableTime {
+    startTime: string;
+    endTime: string;
+}
+
+interface AvailabilityResult {
+    minute: number;
+    isAvailable: boolean;
+}
+
 async function getOpeningHours(experienceId: number, date: string) {
     // First try to find a specific date entry
     let { data, error } = await supabase
@@ -56,52 +78,70 @@ function minutesToTime(minutes: number): string {
     return `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`;
 }
 
-async function checkProductAvailability(
-    productId: number,
-    date: string,
-    requestedQuantity: number,
-    startMinute: number,
-    endMinute: number,
-    isDebug: boolean = false
-) {
-    if (isDebug) {
-        console.log(`Checking availability for ${date} from ${minutesToTime(startMinute)} to ${minutesToTime(endMinute)}`);
-    }
+async function loadProductData(productId: number, dates: string[]) {
+    // Get max quantity and availability data in parallel
+    const [maxQuantityResult, ...availabilityResults] = await Promise.all([
+        supabase
+            .from('products')
+            .select('total_quantity')
+            .eq('id', productId)
+            .single(),
+        ...dates.map(date => supabase
+            .from(`availability_product_${productId}`)
+            .select('*')
+            .eq('datum', date)
+            .single())
+    ]);
 
-    const { data: product } = await supabase
-        .from('products')
-        .select('total_quantity')
-        .eq('id', productId)
-        .single();
+    const maxQuantity = maxQuantityResult.data?.total_quantity || 0;
+    const availability: { [date: string]: { [minute: string]: number | null } } = {};
 
-    if (!product) throw new Error(`Product ${productId} not found`);
-    const maxQuantity = product.total_quantity;
-
-    const { data: availability } = await supabase
-        .from(`availability_product_${productId}`)
-        .select('*')
-        .eq('datum', date)
-        .single();
-
-    // If no availability data found, it means no bookings (all slots available)
-    if (!availability) return true;
-
-    for (let minute = startMinute; minute <= endMinute; minute += 15) {
-        const minuteKey = minute.toString();
-        // If the slot is NULL or undefined, treat it as 0 bookings
-        const bookedQuantity = availability[minuteKey] === null ? 0 : Math.abs(availability[minuteKey] || 0);
-        
-        if (isDebug) {
-            console.log(`Slot ${minutesToTime(minute)}:`, {
-                booked: bookedQuantity,
-                available: maxQuantity - bookedQuantity,
-                requested: requestedQuantity
+    // Process availability data
+    dates.forEach((date, index) => {
+        const result = availabilityResults[index];
+        availability[date] = {};
+        if (result.data) {
+            Object.entries(result.data).forEach(([key, value]) => {
+                if (key !== 'datum') {
+                    availability[date][key] = value as number | null;
+                }
             });
         }
+    });
+
+    return { maxQuantity, availability };
+}
+
+async function checkProductAvailability(
+    cache: AvailabilityCache,
+    productId: number,
+    requestedQuantity: number,
+    date: string,
+    startMinute: number,
+    endMinute: number,
+    isDebug = false
+): Promise<boolean> {
+    const productData = cache[productId];
+    if (!productData) {
+        throw new Error(`Product ${productId} data not found in cache`);
+    }
+
+    const { maxQuantity, availability } = productData;
+    const dateAvailability = availability[date];
+
+    // If no availability data exists, all slots are available
+    if (!dateAvailability) {
+        return true;
+    }
+
+    // Check each 15-minute slot
+    for (let minute = startMinute; minute < endMinute; minute += 15) {
+        const minuteKey = minute.toString();
+        const bookedQuantity = dateAvailability[minuteKey] === null ? 0 : Math.abs(dateAvailability[minuteKey] || 0);
 
         if (bookedQuantity + requestedQuantity > maxQuantity) {
             if (isDebug) {
-                console.log(`Not available at ${minutesToTime(minute)} - Booked: ${bookedQuantity}, Available: ${maxQuantity - bookedQuantity}`);
+                console.log(`  Not available at ${minutesToTime(minute)} - Booked: ${bookedQuantity}, Max: ${maxQuantity}, Requested: ${requestedQuantity}`);
             }
             return false;
         }
@@ -111,59 +151,67 @@ async function checkProductAvailability(
 }
 
 async function checkOvernightAvailability(
+    cache: AvailabilityCache,
     startDate: string,
     durationValue: number,
     products: Array<{ productId: number; quantity: number }>,
     openTime: string,
     closeTime: string,
     startMinute: number
-) {
-    const dates = [];
+): Promise<boolean> {
+    const dates: string[] = [];
     const startDateObj = parseISO(startDate);
     
-    // Generate all dates we need to check
+    // Generate all required dates
     for (let i = 0; i < durationValue + 1; i++) {
         dates.push(format(addDays(startDateObj, i), 'yyyy-MM-dd'));
     }
 
-    for (const { productId, quantity } of products) {
-        // Check first day (from startMinute to midnight)
-        const firstDayAvailable = await checkProductAvailability(
+    // Check all products in parallel
+    const productChecks = products.map(async ({ productId, quantity }) => {
+        // First day: check from start time to midnight
+        const firstDayCheck = checkProductAvailability(
+            cache,
             productId,
-            dates[0],
             quantity,
+            dates[0],
             startMinute,
-            1440, // 23:59
+            24 * 60,
             true
         );
-        if (!firstDayAvailable) return false;
 
-        // Check middle days if any (full days)
-        for (let i = 1; i < dates.length - 1; i++) {
-            const fullDayAvailable = await checkProductAvailability(
+        // Middle days: check full days
+        const middleDayChecks = dates.slice(1, -1).map(date =>
+            checkProductAvailability(
+                cache,
                 productId,
-                dates[i],
                 quantity,
-                0, // 00:00
-                1440, // 23:59
+                date,
+                0,
+                24 * 60,
                 true
-            );
-            if (!fullDayAvailable) return false;
-        }
+            )
+        );
 
-        // Check last day (midnight to closeTime)
-        const lastDayAvailable = await checkProductAvailability(
+        // Last day: check from midnight to close time
+        const lastDayCheck = checkProductAvailability(
+            cache,
             productId,
-            dates[dates.length - 1],
             quantity,
-            0, // 00:00
+            dates[dates.length - 1],
+            0,
             timeToMinutes(closeTime),
             true
         );
-        if (!lastDayAvailable) return false;
-    }
 
-    return true;
+        // Wait for all checks to complete
+        const results = await Promise.all([firstDayCheck, ...middleDayChecks, lastDayCheck]);
+        return results.every(result => result);
+    });
+
+    // Wait for all product checks to complete
+    const results = await Promise.all(productChecks);
+    return results.every(result => result);
 }
 
 export const POST: RequestHandler = async ({ request }) => {
@@ -182,66 +230,101 @@ export const POST: RequestHandler = async ({ request }) => {
             products
         });
 
-        const availableTimes = [];
+        // Pre-load all required dates and product data
+        const startDateObj = parseISO(date);
+        const dates: string[] = [];
+        for (let i = 0; i < (durationType === 'overnights' ? durationValue + 1 : 1); i++) {
+            dates.push(format(addDays(startDateObj, i), 'yyyy-MM-dd'));
+        }
+
+        // Load all product data in parallel
+        const cache: AvailabilityCache = {};
+        await Promise.all(
+            products.map(async ({ productId }) => {
+                const data = await loadProductData(productId, dates);
+                cache[productId] = data;
+            })
+        );
+
+        const availableTimes: AvailableTime[] = [];
+        const durationInMinutes = durationType === 'hours' ? durationValue * 60 : 0;
+        const lastPossibleStartMinute = closeMinutes - durationInMinutes;
 
         if (durationType === 'overnights') {
-            // For overnight stays, check each start time
+            // Check all start times in parallel for overnight stays
+            const checks: Promise<AvailabilityResult>[] = [];
             for (let currentMinute = openMinutes; currentMinute <= closeMinutes - 15; currentMinute += 15) {
-                console.log(`\nChecking availability for start time: ${minutesToTime(currentMinute)}`);
-                
-                const isAvailable = await checkOvernightAvailability(
-                    date,
-                    durationValue,
-                    products,
-                    openTime,
-                    closeTime,
-                    currentMinute
+                checks.push(
+                    checkOvernightAvailability(
+                        cache,
+                        date,
+                        durationValue,
+                        products,
+                        openTime,
+                        closeTime,
+                        currentMinute
+                    ).then(isAvailable => ({
+                        minute: currentMinute,
+                        isAvailable
+                    }))
                 );
+            }
 
+            // Process results and add available times
+            const results = await Promise.all(checks);
+            results.forEach(({ minute, isAvailable }) => {
                 if (isAvailable) {
                     availableTimes.push({
-                        startTime: minutesToTime(currentMinute),
+                        startTime: minutesToTime(minute),
                         endTime: closeTime
                     });
                 }
-            }
+            });
         } else {
-            // Regular hourly bookings (existing logic)
-            const durationInMinutes = durationValue * 60;
-            const lastPossibleStartMinute = closeMinutes - durationInMinutes;
-
+            // Check all start times in parallel for regular bookings
+            const checks: Promise<AvailabilityResult>[] = [];
             for (let currentMinute = openMinutes; currentMinute <= lastPossibleStartMinute; currentMinute += 15) {
                 const endMinute = currentMinute + durationInMinutes;
-                
-                let isTimeSlotAvailable = true;
-                for (const { productId, quantity } of products) {
-                    const isAvailable = await checkProductAvailability(
-                        productId,
-                        date,
-                        quantity,
-                        currentMinute,
-                        endMinute
-                    );
+                checks.push(
+                    Promise.all(
+                        products.map(({ productId, quantity }) =>
+                            checkProductAvailability(
+                                cache,
+                                productId,
+                                quantity,
+                                date,
+                                currentMinute,
+                                endMinute,
+                                true
+                            )
+                        )
+                    ).then(results => ({
+                        minute: currentMinute,
+                        isAvailable: results.every(result => result)
+                    }))
+                );
+            }
 
-                    if (!isAvailable) {
-                        isTimeSlotAvailable = false;
-                        break;
-                    }
-                }
-
-                if (isTimeSlotAvailable) {
+            // Process results and add available times
+            const results = await Promise.all(checks);
+            results.forEach(({ minute, isAvailable }) => {
+                if (isAvailable) {
                     availableTimes.push({
-                        startTime: minutesToTime(currentMinute),
-                        endTime: minutesToTime(endMinute)
+                        startTime: minutesToTime(minute),
+                        endTime: minutesToTime(minute + durationInMinutes)
                     });
                 }
-            }
+            });
         }
 
-        console.log(`\nFound ${availableTimes.length} available time slots:`, availableTimes);
-        return json(availableTimes);
+        console.log(`\nFound ${availableTimes.length} available time slots`);
+        if (availableTimes.length > 0) {
+            console.log('Available times:', availableTimes);
+        }
+
+        return json({ availableTimes });
     } catch (error) {
-        console.error('Error in check-availability:', error);
-        return new Response(error instanceof Error ? error.message : 'An error occurred', { status: 500 });
+        console.error('Error checking availability:', error);
+        throw error;
     }
 }; 
