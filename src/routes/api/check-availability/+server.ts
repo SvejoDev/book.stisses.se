@@ -1,7 +1,7 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { supabase } from '$lib/supabaseClient';
-import { addHours } from 'date-fns';
+import { addHours, addDays, parseISO, format } from 'date-fns';
 
 interface AvailabilityRequest {
     date: string;
@@ -61,19 +61,13 @@ async function checkProductAvailability(
     date: string,
     requestedQuantity: number,
     startMinute: number,
-    endMinute: number
+    endMinute: number,
+    isDebug: boolean = false
 ) {
-    console.log(`\nChecking availability for:`, {
-        productId,
-        date,
-        requestedQuantity,
-        startMinute,
-        endMinute,
-        startTime: minutesToTime(startMinute),
-        endTime: minutesToTime(endMinute)
-    });
+    if (isDebug) {
+        console.log(`Checking availability for ${date} from ${minutesToTime(startMinute)} to ${minutesToTime(endMinute)}`);
+    }
 
-    // Get product's max quantity
     const { data: product } = await supabase
         .from('products')
         .select('total_quantity')
@@ -82,116 +76,169 @@ async function checkProductAvailability(
 
     if (!product) throw new Error(`Product ${productId} not found`);
     const maxQuantity = product.total_quantity;
-    console.log('Product max quantity:', maxQuantity);
 
-    // Get availability for the date
     const { data: availability } = await supabase
         .from(`availability_product_${productId}`)
         .select('*')
         .eq('datum', date)
         .single();
 
-    if (!availability) {
-        console.log('No availability data found for date, assuming all slots available');
-        return true;
-    }
+    // If no availability data found, it means no bookings (all slots available)
+    if (!availability) return true;
 
-    console.log('Found availability data:', availability);
-
-    // Check each 15-minute slot
     for (let minute = startMinute; minute <= endMinute; minute += 15) {
         const minuteKey = minute.toString();
-        const currentlyBooked = Math.abs(availability[minuteKey] || 0) * -1; // Convert to negative to match data format
+        // If the slot is NULL or undefined, treat it as 0 bookings
+        const bookedQuantity = availability[minuteKey] === null ? 0 : Math.abs(availability[minuteKey] || 0);
         
-        console.log(`Checking slot ${minutesToTime(minute)}:`, {
-            minuteKey,
-            currentlyBooked,
-            requestedQuantity,
-            maxQuantity,
-            availableQuantity: maxQuantity + currentlyBooked, // Since currentlyBooked is negative
-            wouldExceedMax: (maxQuantity + currentlyBooked) < requestedQuantity
-        });
+        if (isDebug) {
+            console.log(`Slot ${minutesToTime(minute)}:`, {
+                booked: bookedQuantity,
+                available: maxQuantity - bookedQuantity,
+                requested: requestedQuantity
+            });
+        }
 
-        if ((maxQuantity + currentlyBooked) < requestedQuantity) {
-            console.log(`❌ Slot ${minutesToTime(minute)} not available - would exceed max quantity`);
+        if (bookedQuantity + requestedQuantity > maxQuantity) {
+            if (isDebug) {
+                console.log(`Not available at ${minutesToTime(minute)} - Booked: ${bookedQuantity}, Available: ${maxQuantity - bookedQuantity}`);
+            }
             return false;
         }
     }
 
-    console.log('✅ All slots available for this time period');
+    return true;
+}
+
+async function checkOvernightAvailability(
+    startDate: string,
+    durationValue: number,
+    products: Array<{ productId: number; quantity: number }>,
+    openTime: string,
+    closeTime: string,
+    startMinute: number
+) {
+    const dates = [];
+    const startDateObj = parseISO(startDate);
+    
+    // Generate all dates we need to check
+    for (let i = 0; i < durationValue + 1; i++) {
+        dates.push(format(addDays(startDateObj, i), 'yyyy-MM-dd'));
+    }
+
+    for (const { productId, quantity } of products) {
+        // Check first day (from startMinute to midnight)
+        const firstDayAvailable = await checkProductAvailability(
+            productId,
+            dates[0],
+            quantity,
+            startMinute,
+            1440, // 23:59
+            true
+        );
+        if (!firstDayAvailable) return false;
+
+        // Check middle days if any (full days)
+        for (let i = 1; i < dates.length - 1; i++) {
+            const fullDayAvailable = await checkProductAvailability(
+                productId,
+                dates[i],
+                quantity,
+                0, // 00:00
+                1440, // 23:59
+                true
+            );
+            if (!fullDayAvailable) return false;
+        }
+
+        // Check last day (midnight to closeTime)
+        const lastDayAvailable = await checkProductAvailability(
+            productId,
+            dates[dates.length - 1],
+            quantity,
+            0, // 00:00
+            timeToMinutes(closeTime),
+            true
+        );
+        if (!lastDayAvailable) return false;
+    }
+
     return true;
 }
 
 export const POST: RequestHandler = async ({ request }) => {
     try {
         const requestData: AvailabilityRequest = await request.json();
-        console.log('Received request:', requestData);
-
         const { date, durationType, durationValue, products, experienceId } = requestData;
-
-        // Get opening hours for the date
+        
         const { openTime, closeTime } = await getOpeningHours(experienceId, date);
-        console.log('Opening hours:', { openTime, closeTime });
-
-        // Convert times to minutes
         const openMinutes = timeToMinutes(openTime);
         const closeMinutes = timeToMinutes(closeTime);
         
-        // Calculate last possible start time based on duration
-        const durationInMinutes = durationType === 'hours' ? durationValue * 60 : closeMinutes - openMinutes;
-        const lastPossibleStartMinute = durationType === 'overnights' ? closeMinutes - 15 : closeMinutes - durationInMinutes;
-
-        console.log('Time calculations:', {
-            openMinutes,
-            closeMinutes,
-            durationInMinutes,
-            lastPossibleStartMinute,
-            durationType
+        console.log('\nProcessing availability request:', {
+            date,
+            durationType,
+            durationValue,
+            products
         });
 
         const availableTimes = [];
 
-        // Check every 15-minute interval
-        for (let currentMinute = openMinutes; currentMinute <= lastPossibleStartMinute; currentMinute += 15) {
-            const endMinute = durationType === 'overnights' 
-                ? openMinutes  // For overnights, we'll check availability until opening time next day
-                : currentMinute + durationInMinutes;
-            
-            // For overnight bookings, we don't need to check availability since return time is next day
-            if (durationType === 'overnights') {
-                availableTimes.push({
-                    startTime: minutesToTime(currentMinute),
-                    endTime: '09:00' // Default to 9 AM next day
-                });
-                continue;
-            }
-
-            // Check availability for all products for non-overnight bookings
-            let isTimeSlotAvailable = true;
-            for (const { productId, quantity } of products) {
-                const isAvailable = await checkProductAvailability(
-                    productId,
+        if (durationType === 'overnights') {
+            // For overnight stays, check each start time
+            for (let currentMinute = openMinutes; currentMinute <= closeMinutes - 15; currentMinute += 15) {
+                console.log(`\nChecking availability for start time: ${minutesToTime(currentMinute)}`);
+                
+                const isAvailable = await checkOvernightAvailability(
                     date,
-                    quantity,
-                    currentMinute,
-                    endMinute
+                    durationValue,
+                    products,
+                    openTime,
+                    closeTime,
+                    currentMinute
                 );
 
-                if (!isAvailable) {
-                    isTimeSlotAvailable = false;
-                    break;
+                if (isAvailable) {
+                    availableTimes.push({
+                        startTime: minutesToTime(currentMinute),
+                        endTime: closeTime
+                    });
                 }
             }
+        } else {
+            // Regular hourly bookings (existing logic)
+            const durationInMinutes = durationValue * 60;
+            const lastPossibleStartMinute = closeMinutes - durationInMinutes;
 
-            if (isTimeSlotAvailable) {
-                availableTimes.push({
-                    startTime: minutesToTime(currentMinute),
-                    endTime: minutesToTime(endMinute)
-                });
+            for (let currentMinute = openMinutes; currentMinute <= lastPossibleStartMinute; currentMinute += 15) {
+                const endMinute = currentMinute + durationInMinutes;
+                
+                let isTimeSlotAvailable = true;
+                for (const { productId, quantity } of products) {
+                    const isAvailable = await checkProductAvailability(
+                        productId,
+                        date,
+                        quantity,
+                        currentMinute,
+                        endMinute
+                    );
+
+                    if (!isAvailable) {
+                        isTimeSlotAvailable = false;
+                        break;
+                    }
+                }
+
+                if (isTimeSlotAvailable) {
+                    availableTimes.push({
+                        startTime: minutesToTime(currentMinute),
+                        endTime: minutesToTime(endMinute)
+                    });
+                }
             }
         }
 
-        console.log('Available times:', availableTimes);
+        console.log(`\nFound ${availableTimes.length} available time slots:`, availableTimes);
         return json(availableTimes);
     } catch (error) {
         console.error('Error in check-availability:', error);
