@@ -27,6 +27,7 @@
 	});
 
 	let isLoading = $state(false);
+	let hasAttemptedLoad = $state(false);
 	let availableTimes = $state<AvailableTime[]>([]);
 	let error = $state<string | null>(null);
 
@@ -42,6 +43,7 @@
 
 		try {
 			isLoading = true;
+			hasAttemptedLoad = true;
 			error = null;
 
 			const requestData = {
@@ -101,7 +103,7 @@
 		{/if}
 	</button>
 
-	{#if error}
+	{#if error && hasAttemptedLoad}
 		<p class="text-sm text-destructive">{error}</p>
 	{/if}
 
@@ -116,7 +118,7 @@
 				</button>
 			{/each}
 		</div>
-	{:else if !isLoading && !error}
+	{:else if !isLoading && !error && hasAttemptedLoad}
 		<div class="space-y-2 text-center">
 			<p class="font-medium text-destructive">Inga tillgängliga tider hittades</p>
 			<p class="text-sm text-muted-foreground">Vänligen prova att:</p>
