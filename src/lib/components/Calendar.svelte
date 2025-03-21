@@ -131,8 +131,13 @@
 		const durationDays = getDurationDays();
 		const endDate = addDays(date, durationDays - 1);
 
+		// Create UTC date at noon to avoid timezone issues
+		const utcDate = new Date(
+			Date.UTC(date.getFullYear(), date.getMonth(), date.getDate(), 12, 0, 0)
+		);
+
 		// Format dates for consistent display
-		const formattedStartDate = format(date, 'yyyy-MM-dd');
+		const formattedStartDate = format(utcDate, 'yyyy-MM-dd');
 		const formattedEndDate = format(endDate, 'yyyy-MM-dd');
 
 		console.log({
@@ -141,7 +146,7 @@
 			nights: durationDays - 1
 		});
 
-		onDateSelect(date);
+		onDateSelect(utcDate);
 	}
 
 	function getCalendarDays() {

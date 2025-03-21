@@ -3,6 +3,7 @@
 	import BookingDurations from '$lib/components/BookingDurations.svelte';
 	import Calendar from '$lib/components/Calendar.svelte';
 	import ProductSelection from '$lib/components/ProductSelection.svelte';
+	import AvailableStartTimes from '$lib/components/AvailableStartTimes.svelte';
 
 	interface Experience {
 		id: string;
@@ -60,7 +61,7 @@
 
 	let selectedStartLocation = $state<string | null>(null);
 	let selectedDuration = $state('');
-	let durationType = $state('');
+	let durationType = $state<'hours' | 'overnights'>('hours');
 	let durationValue = $state(0);
 	let selectedDate = $state<Date | null>(null);
 	let durationsSection = $state<HTMLElement | null>(null);
@@ -69,6 +70,7 @@
 	let durations = $state<any[]>([]);
 	let isLoadingDurations = $state(false);
 	let preloadedImages = $state(new Set<string>());
+	let selectedProducts = $state<Array<{ productId: number; quantity: number }>>([]);
 
 	let isSingleLocation = $derived(startLocations.length === 1);
 	let shouldShowDurations = $derived(isSingleLocation || selectedStartLocation !== null);
@@ -114,7 +116,7 @@
 	}
 
 	function handleDurationSelect(duration: { type: string; value: number }) {
-		durationType = duration.type;
+		durationType = duration.type as 'hours' | 'overnights';
 		durationValue = duration.value;
 		calendarSection?.scrollIntoView({ behavior: 'smooth' });
 	}
@@ -122,6 +124,11 @@
 	function handleDateSelect(date: Date) {
 		selectedDate = date;
 		productsSection?.scrollIntoView({ behavior: 'smooth' });
+	}
+
+	function handleProductSelection(products: Array<{ productId: number; quantity: number }>) {
+		selectedProducts = products;
+		$inspect(selectedProducts, 'Selected products');
 	}
 
 	function getStartLocationHeading() {
@@ -197,8 +204,22 @@
 							<ProductSelection
 								products={productsByLocation[Number(selectedStartLocation)] || []}
 								{preloadedImages}
+								onProductsSelected={handleProductSelection}
 							/>
 						</div>
+
+						{#if selectedProducts.length > 0 && selectedDate}
+							{@const props = {
+								experienceId: parseInt(experience.id),
+								selectedDate,
+								durationType,
+								durationValue,
+								selectedProducts
+							}}
+							<div class="mx-auto max-w-2xl">
+								<AvailableStartTimes {...props} />
+							</div>
+						{/if}
 					{:else}
 						<p class="text-center text-muted-foreground">
 							Ingen utrustning tillgänglig för denna startplats.
