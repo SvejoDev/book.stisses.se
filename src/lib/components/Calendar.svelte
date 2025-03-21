@@ -10,6 +10,7 @@
 		isAfter
 	} from 'date-fns';
 	import { sv } from 'date-fns/locale';
+	import { cn } from '$lib/utils';
 
 	interface BlockedDate {
 		id: number;
@@ -233,17 +234,25 @@
 <div class="calendar">
 	<div class="calendar-header">
 		<button
-			class="month-nav"
-			onclick={() =>
-				(currentMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1))}
+			class={cn('month-nav', isLocked && 'cursor-not-allowed opacity-50')}
+			onclick={() => {
+				if (!isLocked) {
+					currentMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1);
+				}
+			}}
+			disabled={isLocked}
 		>
 			&lt;
 		</button>
 		<h2>{format(currentMonth, 'MMMM yyyy', { locale: sv })}</h2>
 		<button
-			class="month-nav"
-			onclick={() =>
-				(currentMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1))}
+			class={cn('month-nav', isLocked && 'cursor-not-allowed opacity-50')}
+			onclick={() => {
+				if (!isLocked) {
+					currentMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1);
+				}
+			}}
+			disabled={isLocked}
 		>
 			&gt;
 		</button>
