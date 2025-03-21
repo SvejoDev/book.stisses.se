@@ -63,6 +63,16 @@ async function checkProductAvailability(
     startMinute: number,
     endMinute: number
 ) {
+    console.log(`\nChecking availability for:`, {
+        productId,
+        date,
+        requestedQuantity,
+        startMinute,
+        endMinute,
+        startTime: minutesToTime(startMinute),
+        endTime: minutesToTime(endMinute)
+    });
+
     // Get product's max quantity
     const { data: product } = await supabase
         .from('products')
@@ -72,6 +82,7 @@ async function checkProductAvailability(
 
     if (!product) throw new Error(`Product ${productId} not found`);
     const maxQuantity = product.total_quantity;
+    console.log('Product max quantity:', maxQuantity);
 
     // Get availability for the date
     const { data: availability } = await supabase
@@ -81,18 +92,33 @@ async function checkProductAvailability(
         .single();
 
     if (!availability) {
-        // No bookings for this date, all slots are available
+        console.log('No availability data found for date, assuming all slots available');
         return true;
     }
 
+    console.log('Found availability data:', availability);
+
     // Check each 15-minute slot
     for (let minute = startMinute; minute <= endMinute; minute += 15) {
-        const currentlyBooked = Math.abs(availability[minute.toString()] || 0);
-        if (currentlyBooked + requestedQuantity > maxQuantity) {
+        const minuteKey = minute.toString();
+        const currentlyBooked = Math.abs(availability[minuteKey] || 0) * -1; // Convert to negative to match data format
+        
+        console.log(`Checking slot ${minutesToTime(minute)}:`, {
+            minuteKey,
+            currentlyBooked,
+            requestedQuantity,
+            maxQuantity,
+            availableQuantity: maxQuantity + currentlyBooked, // Since currentlyBooked is negative
+            wouldExceedMax: (maxQuantity + currentlyBooked) < requestedQuantity
+        });
+
+        if ((maxQuantity + currentlyBooked) < requestedQuantity) {
+            console.log(`❌ Slot ${minutesToTime(minute)} not available - would exceed max quantity`);
             return false;
         }
     }
 
+    console.log('✅ All slots available for this time period');
     return true;
 }
 
