@@ -74,6 +74,15 @@
 		}
 	});
 
+	function scrollToBottom() {
+		setTimeout(() => {
+			window.scrollTo({
+				top: document.documentElement.scrollHeight,
+				behavior: 'smooth'
+			});
+		}, 100);
+	}
+
 	async function generateStartTimes() {
 		console.log('=== generateStartTimes START ===');
 		console.log('Function called with props:', {
@@ -128,12 +137,10 @@
 
 			// Scroll to bottom after times are loaded
 			if (data.availableTimes.length > 0) {
-				setTimeout(() => {
-					window.scrollTo({
-						top: document.documentElement.scrollHeight,
-						behavior: 'smooth'
-					});
-				}, 100); // Small delay to ensure DOM is updated
+				scrollToBottom();
+			} else {
+				// Also scroll when no times are available
+				scrollToBottom();
 			}
 		} catch (e) {
 			console.error('Error in generateStartTimes:', e);
@@ -168,11 +175,11 @@
 			disabled={isLoading || !canGenerateTimes}
 		>
 			{#if isLoading}
-				Genererar starttider...
+				Laddar...
 			{:else if !canGenerateTimes}
-				Välj minst en produkt för att generera starttider
+				Välj minst en produkt för att gå till nästa steg
 			{:else}
-				Generera starttider
+				Nästa steg
 			{/if}
 		</button>
 	{:else}
