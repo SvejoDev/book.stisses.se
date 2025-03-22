@@ -116,7 +116,20 @@
 	});
 
 	function handleLocationSelect(locationId: string) {
-		selectedLocationId = parseInt(locationId);
+		const newLocationId = parseInt(locationId);
+		// Only reset if location actually changed
+		if (selectedLocationId !== newLocationId) {
+			selectedLocationId = newLocationId;
+			// Reset all dependent state
+			priceGroupQuantities = {};
+			selectedDuration = '';
+			durationType = 'hours';
+			durationValue = 0;
+			selectedDate = null;
+			selectedProducts = [];
+			showDurations = false;
+			isBookingLocked = false;
+		}
 	}
 
 	function handleDurationSelect(duration: { type: string; value: number }) {

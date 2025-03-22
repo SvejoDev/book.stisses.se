@@ -32,6 +32,15 @@
 		}, 0)
 	);
 
+	$effect(() => {
+		// Use startLocationId to make sure the effect tracks it
+		if (startLocationId !== undefined) {
+			// Reset quantities when startLocationId changes
+			quantities = {};
+			onQuantityChange({});
+		}
+	});
+
 	function increment(groupId: number) {
 		if (isLocked) return;
 		quantities[groupId] = (quantities[groupId] || 0) + 1;
