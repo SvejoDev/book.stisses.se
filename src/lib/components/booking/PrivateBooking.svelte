@@ -85,10 +85,11 @@
 	let selectedProducts = $state<Array<{ productId: number; quantity: number }>>([]);
 	let isBookingLocked = $state(false);
 	let priceGroupQuantities = $state<Record<number, number>>({});
+	let showDurations = $state(false);
 
 	let isSingleLocation = $derived(startLocations.length === 1);
 	let shouldShowDurations = $derived(
-		Object.values(priceGroupQuantities).some((quantity) => quantity > 0)
+		showDurations && Object.values(priceGroupQuantities).some((quantity) => quantity > 0)
 	);
 	let shouldShowProducts = $derived(
 		selectedDate !== null &&
@@ -148,6 +149,17 @@
 		priceGroupQuantities = quantities;
 	}
 
+	function handleNextStep() {
+		showDurations = true;
+		// Add small delay to ensure component has rendered
+		setTimeout(() => {
+			window.scrollTo({
+				top: document.documentElement.scrollHeight,
+				behavior: 'smooth'
+			});
+		}, 100);
+	}
+
 	$effect(() => {
 		if (shouldShowProducts && productsSection) {
 			setTimeout(() => {
@@ -183,11 +195,8 @@
 				<div class="flex justify-center">
 					<button
 						class="inline-flex h-10 items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground ring-offset-background transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50"
-						onclick={() => {
-							if (durationsSection) {
-								durationsSection.scrollIntoView({ behavior: 'smooth' });
-							}
-						}}
+						onclick={handleNextStep}
+						disabled={isBookingLocked}
 					>
 						Nästa steg
 					</button>
