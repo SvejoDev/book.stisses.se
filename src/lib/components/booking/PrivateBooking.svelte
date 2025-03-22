@@ -235,20 +235,20 @@
 				</div>
 			</section>
 
-			{#if shouldShowProducts}
-				<section class="space-y-4" bind:this={productsSection}>
-					<h2 class="text-center text-2xl font-semibold">Välj utrustning</h2>
-					{#if productsByLocation[selectedLocationId!]?.length > 0}
-						<div class="mx-auto max-w-2xl">
-							<ProductSelection
-								products={productsByLocation[selectedLocationId!] || []}
-								{preloadedImages}
-								onProductsSelected={handleProductSelection}
-								isLocked={isBookingLocked}
-							/>
-						</div>
+			{#if selectedDate}
+				{#if shouldShowProducts}
+					<section class="space-y-4" bind:this={productsSection}>
+						<h2 class="text-center text-2xl font-semibold">Välj utrustning</h2>
+						{#if productsByLocation[selectedLocationId!]?.length > 0}
+							<div class="mx-auto max-w-2xl">
+								<ProductSelection
+									products={productsByLocation[selectedLocationId!] || []}
+									{preloadedImages}
+									onProductsSelected={handleProductSelection}
+									isLocked={isBookingLocked}
+								/>
+							</div>
 
-						{#if selectedDate}
 							{@const props = {
 								experienceId: parseInt(experience.id),
 								selectedDate,
@@ -260,13 +260,13 @@
 							<div class="mx-auto mt-4 max-w-2xl">
 								<AvailableStartTimes {...props} />
 							</div>
+						{:else}
+							<p class="text-center text-muted-foreground">
+								Ingen utrustning tillgänglig för denna startplats.
+							</p>
 						{/if}
-					{:else}
-						<p class="text-center text-muted-foreground">
-							Ingen utrustning tillgänglig för denna startplats.
-						</p>
-					{/if}
-				</section>
+					</section>
+				{/if}
 			{/if}
 		{/if}
 	{/if}
