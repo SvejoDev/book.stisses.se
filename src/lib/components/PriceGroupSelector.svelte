@@ -14,12 +14,14 @@
 		priceGroups = [],
 		startLocationId,
 		onQuantityChange = () => {},
-		isLocked = $bindable(false)
+		isLocked = $bindable(false),
+		onNextStep = $bindable(() => {})
 	} = $props<{
 		priceGroups: PriceGroup[];
 		startLocationId: number;
 		onQuantityChange: (quantities: Record<number, number>) => void;
 		isLocked?: boolean;
+		onNextStep?: () => void;
 	}>();
 
 	let quantities = $state<Record<number, number>>({});
@@ -84,9 +86,16 @@
 		</div>
 	</div>
 
-	{#if totalAmount > 0}
-		<div class="text-center">
+	<div class="flex flex-col items-center gap-4">
+		{#if totalAmount > 0}
 			<p class="text-lg font-medium">Totalt: {totalAmount} kr</p>
-		</div>
-	{/if}
+		{/if}
+		<button
+			class="inline-flex h-10 items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground ring-offset-background transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50"
+			onclick={onNextStep}
+			disabled={totalAmount === 0 || isLocked}
+		>
+			Nästa steg
+		</button>
+	</div>
 </div>

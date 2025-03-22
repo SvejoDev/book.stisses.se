@@ -79,6 +79,7 @@
 	let durationsSection = $state<HTMLElement | null>(null);
 	let calendarSection = $state<HTMLElement | null>(null);
 	let productsSection = $state<HTMLElement | null>(null);
+	let priceGroupSection = $state<HTMLElement | null>(null);
 	let durations = $state<any[]>([]);
 	let isLoadingDurations = $state(false);
 	let preloadedImages = $state(new Set<string>());
@@ -170,6 +171,14 @@
 			}, 100); // Small delay to ensure DOM is updated
 		}
 	});
+
+	$effect(() => {
+		if (selectedLocationId !== null && priceGroupSection) {
+			setTimeout(() => {
+				priceGroupSection?.scrollIntoView({ behavior: 'smooth' });
+			}, 100); // Small delay to ensure DOM is updated
+		}
+	});
 </script>
 
 <div class="space-y-8">
@@ -183,25 +192,14 @@
 	</section>
 
 	{#if selectedLocationId !== null}
-		<section class="space-y-4">
+		<section class="space-y-4" bind:this={priceGroupSection}>
 			<PriceGroupSelector
 				{priceGroups}
 				startLocationId={selectedLocationId}
 				onQuantityChange={handlePriceGroupQuantityChange}
 				isLocked={isBookingLocked}
+				onNextStep={handleNextStep}
 			/>
-
-			{#if Object.values(priceGroupQuantities).some((quantity) => quantity > 0)}
-				<div class="flex justify-center">
-					<button
-						class="inline-flex h-10 items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground ring-offset-background transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50"
-						onclick={handleNextStep}
-						disabled={isBookingLocked}
-					>
-						Nästa steg
-					</button>
-				</div>
-			{/if}
 		</section>
 	{/if}
 
