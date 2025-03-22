@@ -19,6 +19,7 @@
 			openDates={data.openDates}
 			blockedDates={data.blockedDates}
 			productsByLocation={data.productsByLocation}
+			priceGroups={data.priceGroups}
 		/>
 	{:else if data.experience.type === 'school'}
 		<SchoolBooking experience={data.experience} />

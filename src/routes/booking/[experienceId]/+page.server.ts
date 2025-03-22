@@ -9,9 +9,13 @@ interface Product {
     image_url: string;
 }
 
-interface StartLocationProduct {
-    start_location_id: number;
-    products: Product[];
+interface PriceGroup {
+    id: number;
+    experience_id: number;
+    start_location_id: number | null;
+    internal_name: string;
+    display_name: string;
+    price: number;
 }
 
 export async function load({ params }) {
@@ -46,6 +50,17 @@ export async function load({ params }) {
     if (startLocationsError) {
         console.error('Start locations error:', startLocationsError);
         error(500, "Failed to load start locations");
+    }
+
+    // Fetch price groups for this experience
+    const { data: priceGroups, error: priceGroupsError } = await supabase
+        .from("price_groups")
+        .select("*")
+        .eq("experience_id", experienceId);
+
+    if (priceGroupsError) {
+        console.error('Price groups error:', priceGroupsError);
+        error(500, "Failed to load price groups");
     }
 
     // Use image_url directly from the database
@@ -132,7 +147,8 @@ export async function load({ params }) {
         startLocations: locationsWithImages,
         openDates: filteredOpenDates,
         blockedDates: blockedDates || [],
-        productsByLocation
+        productsByLocation,
+        priceGroups: priceGroups || []
     };
 
     // Log the final data structure

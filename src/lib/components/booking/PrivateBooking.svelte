@@ -4,6 +4,7 @@
 	import Calendar from '$lib/components/Calendar.svelte';
 	import ProductSelection from '$lib/components/ProductSelection.svelte';
 	import AvailableStartTimes from '$lib/components/AvailableStartTimes.svelte';
+	import PriceGroupSelector from '$lib/components/PriceGroupSelector.svelte';
 
 	interface Experience {
 		id: string;
@@ -45,21 +46,32 @@
 		imageUrl: string;
 	}
 
+	interface PriceGroup {
+		id: number;
+		experience_id: number;
+		start_location_id: number | null;
+		internal_name: string;
+		display_name: string;
+		price: number;
+	}
+
 	let {
 		experience,
 		startLocations,
 		openDates = [],
 		blockedDates = [],
-		productsByLocation = {}
+		productsByLocation = {},
+		priceGroups = []
 	} = $props<{
 		experience: Experience;
 		startLocations: StartLocation[];
 		openDates: OpenDate[];
 		blockedDates: BlockedDate[];
 		productsByLocation: Record<number, Product[]>;
+		priceGroups: PriceGroup[];
 	}>();
 
-	let selectedStartLocation = $state<string | null>(null);
+	let selectedLocationId = $state<number | null>(null);
 	let selectedDuration = $state('');
 	let durationType = $state<'hours' | 'overnights'>('hours');
 	let durationValue = $state(0);
@@ -72,20 +84,23 @@
 	let preloadedImages = $state(new Set<string>());
 	let selectedProducts = $state<Array<{ productId: number; quantity: number }>>([]);
 	let isBookingLocked = $state(false);
+	let priceGroupQuantities = $state<Record<number, number>>({});
 
 	let isSingleLocation = $derived(startLocations.length === 1);
-	let shouldShowDurations = $derived(isSingleLocation || selectedStartLocation !== null);
+	let shouldShowDurations = $derived(
+		Object.values(priceGroupQuantities).some((quantity) => quantity > 0)
+	);
 	let shouldShowProducts = $derived(
 		selectedDate !== null &&
-			selectedStartLocation !== null &&
-			productsByLocation[Number(selectedStartLocation)]?.length > 0
+			selectedLocationId !== null &&
+			productsByLocation[selectedLocationId]?.length > 0
 	);
 
 	// Start preloading images for all products immediately
 	$effect(() => {
-		if (selectedStartLocation) {
+		if (selectedLocationId) {
 			// Only preload images for the selected location
-			const productsForLocation = productsByLocation[Number(selectedStartLocation)] || [];
+			const productsForLocation = productsByLocation[selectedLocationId] || [];
 			productsForLocation.forEach((product: Product) => {
 				if (!preloadedImages.has(product.imageUrl)) {
 					const img = new Image();
@@ -98,22 +113,8 @@
 		}
 	});
 
-	function handleStartLocationSelect(locationId: string) {
-		selectedStartLocation = locationId;
-		if (!isSingleLocation) {
-			durationsSection?.scrollIntoView({ behavior: 'smooth' });
-		}
-		// Prioritize loading images for selected location
-		const productsForLocation = productsByLocation[Number(locationId)] || [];
-		productsForLocation.forEach((product: Product) => {
-			if (!preloadedImages.has(product.imageUrl)) {
-				const img = new Image();
-				img.onload = () => {
-					preloadedImages.add(product.imageUrl);
-				};
-				img.src = product.imageUrl;
-			}
-		});
+	function handleLocationSelect(locationId: string) {
+		selectedLocationId = parseInt(locationId);
 	}
 
 	function handleDurationSelect(duration: { type: string; value: number }) {
@@ -143,6 +144,10 @@
 		return durations.length === 1 ? 'Din bokningslängd' : 'Välj längd på bokning';
 	}
 
+	function handlePriceGroupQuantityChange(quantities: Record<number, number>) {
+		priceGroupQuantities = quantities;
+	}
+
 	$effect(() => {
 		if (shouldShowProducts && productsSection) {
 			setTimeout(() => {
@@ -162,19 +167,41 @@
 
 	<section class="space-y-4">
 		<h2 class="text-center text-2xl font-semibold">{getStartLocationHeading()}</h2>
-		<StartLocations
-			{startLocations}
-			onSelect={handleStartLocationSelect}
-			isLocked={isBookingLocked}
-		/>
+		<StartLocations {startLocations} onSelect={handleLocationSelect} isLocked={isBookingLocked} />
 	</section>
+
+	{#if selectedLocationId !== null}
+		<section class="space-y-4">
+			<PriceGroupSelector
+				{priceGroups}
+				startLocationId={selectedLocationId}
+				onQuantityChange={handlePriceGroupQuantityChange}
+				isLocked={isBookingLocked}
+			/>
+
+			{#if Object.values(priceGroupQuantities).some((quantity) => quantity > 0)}
+				<div class="flex justify-center">
+					<button
+						class="inline-flex h-10 items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground ring-offset-background transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50"
+						onclick={() => {
+							if (durationsSection) {
+								durationsSection.scrollIntoView({ behavior: 'smooth' });
+							}
+						}}
+					>
+						Nästa steg
+					</button>
+				</div>
+			{/if}
+		</section>
+	{/if}
 
 	{#if shouldShowDurations}
 		<section class="space-y-4" bind:this={durationsSection}>
 			<h2 class="text-center text-2xl font-semibold">{getDurationHeading()}</h2>
 			<div class="flex justify-center">
 				<BookingDurations
-					startLocationId={selectedStartLocation!}
+					startLocationId={selectedLocationId!.toString()}
 					bind:selectedDuration
 					bind:durations
 					bind:isLoading={isLoadingDurations}
@@ -202,10 +229,10 @@
 			{#if shouldShowProducts}
 				<section class="space-y-4" bind:this={productsSection}>
 					<h2 class="text-center text-2xl font-semibold">Välj utrustning</h2>
-					{#if productsByLocation[Number(selectedStartLocation)]?.length > 0}
+					{#if productsByLocation[selectedLocationId!]?.length > 0}
 						<div class="mx-auto max-w-2xl">
 							<ProductSelection
-								products={productsByLocation[Number(selectedStartLocation)] || []}
+								products={productsByLocation[selectedLocationId!] || []}
 								{preloadedImages}
 								onProductsSelected={handleProductSelection}
 								isLocked={isBookingLocked}
