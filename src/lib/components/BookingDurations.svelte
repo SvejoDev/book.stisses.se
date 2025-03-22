@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { Select as SelectPrimitive } from 'bits-ui';
 	import * as Select from '$lib/components/ui/select';
 	import { cn } from '$lib/utils';
 
@@ -17,8 +16,15 @@
 		durations = $bindable<Duration[]>([]),
 		isLoading = $bindable(false),
 		isLocked = $bindable(false),
-		onDurationSelect = (duration: { type: string; value: number }) => {}
-	} = $props();
+		onDurationSelect = () => {}
+	} = $props<{
+		startLocationId: string;
+		selectedDuration?: string;
+		durations?: Duration[];
+		isLoading?: boolean;
+		isLocked?: boolean;
+		onDurationSelect?: (duration: { type: string; value: number }) => void;
+	}>();
 
 	let displayText = $state('Välj längd på bokning');
 
@@ -53,19 +59,12 @@
 	});
 
 	$effect(() => {
-		const selected = durations.find((d) => d.id.toString() === selectedDuration);
+		const selected = durations.find((d: Duration) => d.id.toString() === selectedDuration);
 		displayText = selected
 			? `${selected.duration_value} ${getDurationTypeText(selected.duration_type, selected.duration_value)}`
 			: 'Välj längd på bokning';
 
 		if (selected) {
-			console.log({
-				durationType: selected.duration_type,
-				durationValue: selected.duration_value,
-				durationText: getDurationTypeText(selected.duration_type, selected.duration_value),
-				extraPrice: selected.extra_price
-			});
-
 			onDurationSelect({
 				type: selected.duration_type,
 				value: selected.duration_value

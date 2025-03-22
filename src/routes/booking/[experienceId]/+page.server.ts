@@ -48,7 +48,7 @@ export async function load({ params }) {
         error(500, "Failed to load start locations");
     }
 
-    // Simplified location processing - no need for bucket operations
+    // Use image_url directly from the database
     const locationsWithImages = startLocations.map((location) => ({
         ...location,
         imageUrl: location.image_url
@@ -118,11 +118,7 @@ export async function load({ params }) {
             if (product) {
                 const productWithImage = {
                     ...product,
-                    imageUrl: product.image_url || 
-                        supabase.storage
-                            .from('products')
-                            .getPublicUrl(`${product.id}.jpg`)
-                            .data.publicUrl
+                    imageUrl: product.image_url // Use image_url directly from the database
                 };
                 acc[slp.start_location_id].push(productWithImage);
             }

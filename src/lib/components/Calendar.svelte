@@ -1,14 +1,5 @@
 <script lang="ts">
-	import {
-		format,
-		addDays,
-		isWithinInterval,
-		parseISO,
-		startOfMonth,
-		endOfMonth,
-		isBefore,
-		isAfter
-	} from 'date-fns';
+	import { format, addDays, isWithinInterval, parseISO, isAfter } from 'date-fns';
 	import { sv } from 'date-fns/locale';
 	import { cn } from '$lib/utils';
 
@@ -32,7 +23,6 @@
 	}
 
 	let {
-		selectedDuration,
 		durationType,
 		durationValue,
 		blockedDates = [],
@@ -40,7 +30,6 @@
 		onDateSelect = (date: Date) => {},
 		isLocked = $bindable(false)
 	} = $props<{
-		selectedDuration: string;
 		durationType: string;
 		durationValue: number;
 		blockedDates: BlockedDate[];
@@ -52,40 +41,11 @@
 	let selectedDate = $state<Date | null>(null);
 	let hoveredDate = $state<Date | null>(null);
 	let hasFutureOpenDates = $state(false);
-	let firstAvailableMonth = $state<Date | null>(null);
-
-	// Find the first month with available dates
-	function findFirstAvailableMonth(): Date | null {
-		const today = new Date();
-		let futureDate = today;
-
-		// Look ahead up to 24 months
-		for (let i = 0; i < 24; i++) {
-			const monthStart = startOfMonth(futureDate);
-			const monthEnd = endOfMonth(futureDate);
-
-			// Check each day in the month
-			let currentCheck = monthStart;
-			while (isBefore(currentCheck, monthEnd)) {
-				if (isDateOpen(currentCheck) && !isDateDisabled(currentCheck)) {
-					return monthStart;
-				}
-				currentCheck = addDays(currentCheck, 1);
-			}
-
-			futureDate = addDays(monthEnd, 1);
-		}
-
-		return null;
-	}
 
 	// Initialize the calendar
 	function initializeCalendar() {
 		// Always start with current month
 		currentMonth = new Date();
-
-		// Store the first available month for reference
-		firstAvailableMonth = findFirstAvailableMonth();
 
 		// Check if there are any future open dates
 		hasFutureOpenDates = openDates.some((date: OpenDate) => {
@@ -103,22 +63,6 @@
 
 	// Initialize when component mounts
 	initializeCalendar();
-
-	// Add effect to log dates when duration changes
-	$effect(() => {
-		if (selectedDate && durationValue) {
-			const durationDays = getDurationDays();
-			const endDate = addDays(selectedDate, durationDays - 1);
-			const formattedStartDate = format(selectedDate, 'yyyy-MM-dd');
-			const formattedEndDate = format(endDate, 'yyyy-MM-dd');
-
-			console.log({
-				startDate: formattedStartDate,
-				endDate: formattedEndDate,
-				nights: durationDays - 1
-			});
-		}
-	});
 
 	// Calculate the number of days to highlight based on duration
 	function getDurationDays() {
@@ -190,30 +134,15 @@
 		if (isDateDisabled(date) || isLocked) return;
 		selectedDate = date;
 
-		// Calculate end date based on duration
-		const durationDays = getDurationDays();
-		const endDate = addDays(date, durationDays - 1);
-
 		// Create UTC date at noon to avoid timezone issues
 		const utcDate = new Date(
 			Date.UTC(date.getFullYear(), date.getMonth(), date.getDate(), 12, 0, 0)
 		);
 
-		// Format dates for consistent display
-		const formattedStartDate = format(utcDate, 'yyyy-MM-dd');
-		const formattedEndDate = format(endDate, 'yyyy-MM-dd');
-
-		console.log({
-			startDate: formattedStartDate,
-			endDate: formattedEndDate,
-			nights: durationDays - 1
-		});
-
 		onDateSelect(utcDate);
 	}
 
 	function getCalendarDays() {
-		const start = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1);
 		const end = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0);
 		const days = [];
 
