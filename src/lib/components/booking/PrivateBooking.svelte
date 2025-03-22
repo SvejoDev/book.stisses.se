@@ -181,7 +181,7 @@
 			<h2 class="text-center text-2xl font-semibold">{getDurationHeading()}</h2>
 			<div class="flex justify-center">
 				<BookingDurations
-					startLocationId={selectedStartLocation}
+					startLocationId={selectedStartLocation!}
 					bind:selectedDuration
 					bind:durations
 					bind:isLoading={isLoadingDurations}
@@ -196,7 +196,6 @@
 				<h2 class="text-center text-2xl font-semibold">Välj startdatum</h2>
 				<div class="flex justify-center">
 					<Calendar
-						{selectedDuration}
 						{durationType}
 						{durationValue}
 						{openDates}

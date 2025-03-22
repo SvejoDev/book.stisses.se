@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { Button } from '$lib/components/ui/button';
 	import type { AvailableTime } from '$lib/types';
 	import { cn } from '$lib/utils';
 	import { addHours, addDays, format } from 'date-fns';
@@ -10,7 +9,7 @@
 		durationType,
 		durationValue,
 		selectedProducts = [],
-		onLockStateChange = (locked: boolean) => {}
+		onLockStateChange = () => {}
 	} = $props<{
 		experienceId: number;
 		selectedDate: Date;
@@ -34,7 +33,6 @@
 	let hasAttemptedLoad = $state(false);
 	let availableTimes = $state<AvailableTime[]>([]);
 	let error = $state<string | null>(null);
-	let isLocked = $state(false);
 	let selectedTime = $state<AvailableTime | null>(null);
 
 	let totalProductQuantity = $derived(
@@ -97,7 +95,6 @@
 			isLoading = true;
 			hasAttemptedLoad = true;
 			error = null;
-			isLocked = true;
 			onLockStateChange(true);
 
 			const requestData = {
@@ -145,7 +142,6 @@
 		} catch (e) {
 			console.error('Error in generateStartTimes:', e);
 			error = e instanceof Error ? e.message : 'An error occurred';
-			isLocked = true;
 			onLockStateChange(true);
 		} finally {
 			isLoading = false;
@@ -158,7 +154,6 @@
 	}
 
 	function handleReset() {
-		isLocked = false;
 		hasAttemptedLoad = false;
 		availableTimes = [];
 		error = null;

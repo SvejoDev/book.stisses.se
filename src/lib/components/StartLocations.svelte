@@ -38,7 +38,6 @@
 	});
 
 	$effect(() => {
-		console.log('Selected start location ID:', value);
 		if (value) {
 			onSelect(value);
 		}
