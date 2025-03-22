@@ -19,16 +19,6 @@
 		onLockStateChange?: (locked: boolean) => void;
 	}>();
 
-	$effect(() => {
-		console.log('Props received:', {
-			experienceId,
-			selectedDate,
-			durationType,
-			durationValue,
-			selectedProducts
-		});
-	});
-
 	let isLoading = $state(false);
 	let hasAttemptedLoad = $state(false);
 	let availableTimes = $state<AvailableTime[]>([]);
@@ -58,17 +48,6 @@
 				const [endHours, endMinutes] = selectedTime.endTime.split(':').map(Number);
 				endDateTime.setHours(endHours, endMinutes, 0, 0);
 			}
-
-			$inspect(
-				{
-					selectedTime,
-					startDateTime: format(startDateTime, 'yyyy-MM-dd HH:mm'),
-					endDateTime: format(endDateTime, 'yyyy-MM-dd HH:mm'),
-					durationType,
-					durationValue
-				},
-				'Booking details'
-			);
 		}
 	});
 
@@ -82,15 +61,6 @@
 	}
 
 	async function generateStartTimes() {
-		console.log('=== generateStartTimes START ===');
-		console.log('Function called with props:', {
-			experienceId,
-			selectedDate,
-			durationType,
-			durationValue,
-			selectedProducts
-		});
-
 		try {
 			isLoading = true;
 			hasAttemptedLoad = true;
@@ -105,21 +75,12 @@
 				experienceId
 			};
 
-			console.log('Sending request with data:', requestData);
-			console.log('Sending to URL:', '/api/check-availability');
-
 			const response = await fetch('/api/check-availability', {
 				method: 'POST',
 				headers: {
 					'Content-Type': 'application/json'
 				},
 				body: JSON.stringify(requestData)
-			});
-
-			console.log('Response received:', {
-				status: response.status,
-				statusText: response.statusText,
-				ok: response.ok
 			});
 
 			if (!response.ok) {
@@ -129,7 +90,6 @@
 			}
 
 			const data = await response.json();
-			console.log('Response data:', data);
 			availableTimes = data.availableTimes;
 
 			// Scroll to bottom after times are loaded
@@ -145,7 +105,6 @@
 			onLockStateChange(true);
 		} finally {
 			isLoading = false;
-			console.log('=== generateStartTimes END ===');
 		}
 	}
 

@@ -129,7 +129,6 @@
 
 	function handleProductSelection(products: Array<{ productId: number; quantity: number }>) {
 		selectedProducts = products;
-		$inspect(selectedProducts, 'Selected products');
 	}
 
 	function handleLockStateChange(locked: boolean) {
@@ -143,12 +142,6 @@
 	function getDurationHeading() {
 		return durations.length === 1 ? 'Din bokningslängd' : 'Välj längd på bokning';
 	}
-
-	$effect(() => {
-		if (selectedDate) {
-			console.log('Selected date:', selectedDate);
-		}
-	});
 
 	$effect(() => {
 		if (shouldShowProducts && productsSection) {
