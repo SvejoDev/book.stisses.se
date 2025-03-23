@@ -5,7 +5,6 @@
 	import ProductSelection from '$lib/components/ProductSelection.svelte';
 	import AvailableStartTimes from '$lib/components/AvailableStartTimes.svelte';
 	import PriceGroupSelector from '$lib/components/PriceGroupSelector.svelte';
-	import { invalidate } from '$app/navigation';
 
 	interface Experience {
 		id: string;
