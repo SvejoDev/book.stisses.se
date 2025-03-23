@@ -219,6 +219,15 @@ export const POST: RequestHandler = async ({ request }) => {
         const requestData: AvailabilityRequest = await request.json();
         const { date, durationType, durationValue, products, experienceId } = requestData;
         
+        // Get experience details including booking foresight
+        const { data: experience, error: experienceError } = await supabase
+            .from('experiences')
+            .select('booking_foresight_hours')
+            .eq('id', experienceId)
+            .single();
+
+        if (experienceError) throw new Error('Failed to fetch experience details');
+        
         const { openTime, closeTime } = await getOpeningHours(experienceId, date);
         const openMinutes = timeToMinutes(openTime);
         const closeMinutes = timeToMinutes(closeTime);
@@ -227,8 +236,54 @@ export const POST: RequestHandler = async ({ request }) => {
             date,
             durationType,
             durationValue,
-            products
+            products,
+            bookingForesightHours: experience.booking_foresight_hours
         });
+
+        // Handle booking foresight
+        const now = new Date();
+        const requestedDate = parseISO(date);
+        const foresightMilliseconds = (experience.booking_foresight_hours || 0) * 60 * 60 * 1000;
+        const foresightDate = new Date(now.getTime() + foresightMilliseconds);
+
+        console.log('\nDebug - Foresight Calculations:', {
+            currentTime: now.toISOString(),
+            requestedDate: requestedDate.toISOString(),
+            foresightHours: experience.booking_foresight_hours,
+            foresightEndTime: foresightDate.toISOString()
+        });
+
+        // If the requested date is within the foresight period, we need to block times before foresight
+        let effectiveOpenMinutes = openMinutes;
+        if (requestedDate <= foresightDate) {
+            // Calculate the current time in minutes since midnight
+            const currentMinutes = (now.getHours() * 60) + now.getMinutes();
+            
+            // Round up to next 15-minute interval
+            const roundedCurrentMinutes = Math.ceil((currentMinutes + 1) / 15) * 15;
+            
+            // Calculate how many minutes into the next day we need to block
+            const minutesIntoNextDay = roundedCurrentMinutes + (experience.booking_foresight_hours * 60);
+            const adjustedForesightMinutes = minutesIntoNextDay % (24 * 60); // Wrap around to next day
+
+            console.log('\nDebug - Time Calculations:', {
+                currentMinutes,
+                roundedCurrentMinutes,
+                minutesIntoNextDay,
+                adjustedForesightMinutes,
+                openMinutes,
+                isNextDay: requestedDate.getDate() !== now.getDate()
+            });
+            
+            // If booking for next day, use the wrapped around minutes
+            if (requestedDate.getDate() !== now.getDate()) {
+                effectiveOpenMinutes = Math.max(openMinutes, adjustedForesightMinutes);
+            } else {
+                effectiveOpenMinutes = Math.max(openMinutes, roundedCurrentMinutes + (experience.booking_foresight_hours * 60));
+            }
+
+            console.log('Final effective open minutes:', effectiveOpenMinutes, 'which is', minutesToTime(effectiveOpenMinutes));
+        }
 
         // Pre-load all required dates and product data
         const startDateObj = parseISO(date);
@@ -253,7 +308,7 @@ export const POST: RequestHandler = async ({ request }) => {
         if (durationType === 'overnights') {
             // Check all start times in parallel for overnight stays
             const checks: Promise<AvailabilityResult>[] = [];
-            for (let currentMinute = openMinutes; currentMinute <= closeMinutes - 15; currentMinute += 15) {
+            for (let currentMinute = effectiveOpenMinutes; currentMinute <= closeMinutes - 15; currentMinute += 15) {
                 checks.push(
                     checkOvernightAvailability(
                         cache,
@@ -283,7 +338,7 @@ export const POST: RequestHandler = async ({ request }) => {
         } else {
             // Check all start times in parallel for regular bookings
             const checks: Promise<AvailabilityResult>[] = [];
-            for (let currentMinute = openMinutes; currentMinute <= lastPossibleStartMinute; currentMinute += 15) {
+            for (let currentMinute = effectiveOpenMinutes; currentMinute <= lastPossibleStartMinute; currentMinute += 15) {
                 const endMinute = currentMinute + durationInMinutes;
                 checks.push(
                     Promise.all(
