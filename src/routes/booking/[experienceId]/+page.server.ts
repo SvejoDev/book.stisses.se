@@ -148,7 +148,7 @@ export async function load({ params }) {
         openDates: filteredOpenDates,
         blockedDates: blockedDates || [],
         productsByLocation,
-        priceGroups: priceGroups || []
+        priceGroups: priceGroups
     };
 
     // Log the final data structure
