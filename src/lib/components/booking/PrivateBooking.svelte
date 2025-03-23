@@ -21,6 +21,7 @@
 
 	interface Duration {
 		id: number;
+		start_location_id: number;
 		duration_type: string;
 		duration_value: number;
 		extra_price: number;
@@ -67,17 +68,13 @@
 		startLocations,
 		openDates = [],
 		blockedDates = [],
-		productsByLocation = {},
-		priceGroups = [],
-		durations = []
+		priceGroups = []
 	} = $props<{
 		experience: Experience;
 		startLocations: StartLocation[];
 		openDates: OpenDate[];
 		blockedDates: BlockedDate[];
-		productsByLocation: Record<number, Product[]>;
 		priceGroups: PriceGroup[];
-		durations: Duration[];
 	}>();
 
 	let selectedLocationId = $state<number | null>(null);
@@ -91,38 +88,17 @@
 	let productsSection = $state<HTMLElement | null>(null);
 	let priceGroupSection = $state<HTMLElement | null>(null);
 	let isLoadingDurations = $state(false);
-	let preloadedImages = $state(new Set<string>());
 	let selectedProducts = $state<Array<{ productId: number; quantity: number }>>([]);
 	let isBookingLocked = $state(false);
 	let priceGroupQuantities = $state<Record<number, number>>({});
 	let showDurations = $state(false);
 	let extraPrice = $state(0);
+	let durations = $state<Duration[]>([]);
 
 	let shouldShowDurations = $derived(
 		showDurations && Object.values(priceGroupQuantities).some((quantity) => quantity > 0)
 	);
-	let shouldShowProducts = $derived(
-		selectedDate !== null &&
-			selectedLocationId !== null &&
-			productsByLocation[selectedLocationId]?.length > 0
-	);
-
-	// Start preloading images for all products immediately
-	$effect(() => {
-		if (selectedLocationId) {
-			// Only preload images for the selected location
-			const productsForLocation = productsByLocation[selectedLocationId] || [];
-			productsForLocation.forEach((product: Product) => {
-				if (!preloadedImages.has(product.imageUrl)) {
-					const img = new Image();
-					img.src = product.imageUrl;
-					img.onload = () => {
-						preloadedImages.add(product.imageUrl);
-					};
-				}
-			});
-		}
-	});
+	let shouldShowProducts = $derived(selectedDate !== null && selectedLocationId !== null);
 
 	function handleLocationSelect(locationId: string) {
 		const newLocationId = parseInt(locationId);
@@ -263,16 +239,16 @@
 				{#if shouldShowProducts}
 					<section class="space-y-4" bind:this={productsSection}>
 						<h2 class="text-center text-2xl font-semibold">Välj utrustning</h2>
-						{#if productsByLocation[selectedLocationId!]?.length > 0}
-							<div class="mx-auto max-w-2xl">
-								<ProductSelection
-									products={productsByLocation[selectedLocationId!] || []}
-									{preloadedImages}
-									onProductsSelected={handleProductSelection}
-									isLocked={isBookingLocked}
-								/>
-							</div>
+						<div class="mx-auto max-w-2xl">
+							<ProductSelection
+								startLocationId={selectedLocationId!.toString()}
+								experienceId={experience.id}
+								onProductsSelected={handleProductSelection}
+								isLocked={isBookingLocked}
+							/>
+						</div>
 
+						{#if true}
 							{@const props = {
 								experienceId: parseInt(experience.id),
 								selectedDate,
@@ -284,10 +260,6 @@
 							<div class="mx-auto mt-4 max-w-2xl">
 								<AvailableStartTimes {...props} />
 							</div>
-						{:else}
-							<p class="text-center text-muted-foreground">
-								Ingen utrustning tillgänglig för denna startplats.
-							</p>
 						{/if}
 					</section>
 				{/if}

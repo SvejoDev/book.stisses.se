@@ -89,7 +89,6 @@ export async function load({ params }) {
         }
     });
 
-
     // Fetch blocked dates for this experience
     const { data: blockedDates, error: blockedDatesError } = await supabase
         .from("experience_blocked_dates")
@@ -102,56 +101,14 @@ export async function load({ params }) {
         error(500, "Failed to load blocked dates");
     }
 
-    // Fetch products for all start locations
-    const { data: startLocationProducts, error: productsError } = await supabase
-        .from("start_location_products")
-        .select(`
-            start_location_id,
-            products (
-                id,
-                name,
-                description,
-                total_quantity,
-                image_url
-            )
-        `);
-
-    if (productsError) {
-        console.error('Products error:', productsError);
-        error(500, "Failed to load products");
-    }
-
-    // Add image URLs to products and group by start location
-    const productsByLocation = (startLocationProducts || []).reduce<Record<number, Product[]>>((acc, slp) => {
-        if (!acc[slp.start_location_id]) {
-            acc[slp.start_location_id] = [];
-        }
-        
-        // Handle both single product and array of products
-        const products = Array.isArray(slp.products) ? slp.products : [slp.products];
-        products.forEach(product => {
-            if (product) {
-                const productWithImage = {
-                    ...product,
-                    imageUrl: product.image_url // Use image_url directly from the database
-                };
-                acc[slp.start_location_id].push(productWithImage);
-            }
-        });
-        return acc;
-    }, {});
-
     // Create the return data
     const returnData = {
         experience,
         startLocations: locationsWithImages,
         openDates: filteredOpenDates,
         blockedDates: blockedDates || [],
-        productsByLocation,
-        priceGroups: priceGroups
+        priceGroups: priceGroups || []
     };
-
-    // Log the final data structure
 
     return returnData;
 }
