@@ -9,24 +9,6 @@ interface Product {
     image_url: string;
 }
 
-interface PriceGroup {
-    id: number;
-    experience_id: number;
-    start_location_id: number | null;
-    internal_name: string;
-    display_name: string;
-    price: number;
-}
-
-interface StartLocationResponse {
-    start_location_id: number;
-    start_locations: {
-        id: number;
-        name: string;
-        image_url: string;
-    };
-}
-
 export async function load({ params }) {
     const { experienceId } = params;
     const today = new Date().toISOString().split('T')[0];
