@@ -76,6 +76,7 @@
 	let durationType = $state<'hours' | 'overnights'>('hours');
 	let durationValue = $state(0);
 	let selectedDate = $state<Date | null>(null);
+	// @ts-ignore - Used in template binding
 	let durationsSection = $state<HTMLElement | null>(null);
 	let calendarSection = $state<HTMLElement | null>(null);
 	let productsSection = $state<HTMLElement | null>(null);
@@ -88,7 +89,6 @@
 	let priceGroupQuantities = $state<Record<number, number>>({});
 	let showDurations = $state(false);
 
-	let isSingleLocation = $derived(startLocations.length === 1);
 	let shouldShowDurations = $derived(
 		showDurations && Object.values(priceGroupQuantities).some((quantity) => quantity > 0)
 	);
