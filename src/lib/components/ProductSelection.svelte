@@ -18,15 +18,13 @@
 	}
 
 	let {
-		startLocationId,
-		experienceId,
-		preloadedImages,
+		startLocationId = $bindable(''),
+		experienceId = $bindable(''),
 		isLocked = $bindable(false),
 		onProductsSelected = (products: Array<{ productId: number; quantity: number }>) => {}
 	} = $props<{
 		startLocationId: string;
 		experienceId: string;
-		preloadedImages: Set<string>;
 		isLocked?: boolean;
 		onProductsSelected?: (products: Array<{ productId: number; quantity: number }>) => void;
 	}>();
@@ -34,28 +32,36 @@
 	let selectedQuantities = $state<Record<number, number>>({});
 	let allImagesLoaded = $state(false);
 	let initialLoadDone = $state(false);
+	let isLoading = $state(true);
 	let products = $state<Product[]>([]);
-	let isLoading = $state(false);
+	let error = $state<string | null>(null);
 
-	async function fetchProducts(locationId: string) {
+	async function fetchProducts() {
 		try {
 			isLoading = true;
+			error = null;
 			const response = await fetch(
-				`/api/products?startLocationId=${locationId}&experienceId=${experienceId}`
+				`/api/products?startLocationId=${startLocationId}&experienceId=${experienceId}`
 			);
 			if (!response.ok) throw new Error('Failed to fetch products');
 			products = await response.json();
-		} catch (error) {
-			console.error('Error fetching products:', error);
-			products = [];
+
+			// Add a small delay if there are no products for better UX
+			if (products.length === 0) {
+				await new Promise((resolve) => setTimeout(resolve, 500));
+			}
+		} catch (e) {
+			console.error('Error fetching products:', e);
+			error = e instanceof Error ? e.message : 'An error occurred';
 		} finally {
 			isLoading = false;
 		}
 	}
 
+	// Fetch products when startLocationId or experienceId changes
 	$effect(() => {
-		if (startLocationId) {
-			fetchProducts(startLocationId);
+		if (startLocationId && experienceId) {
+			fetchProducts();
 		}
 	});
 
@@ -63,9 +69,7 @@
 	$effect(() => {
 		if (products.length > 0 && !initialLoadDone) {
 			initialLoadDone = true;
-			const unloadedImages = products.filter(
-				(product: Product) => !preloadedImages.has(product.imageUrl)
-			);
+			const unloadedImages = products.filter((product) => !product.imageUrl);
 
 			if (unloadedImages.length === 0) {
 				allImagesLoaded = true;
@@ -74,17 +78,10 @@
 
 			Promise.all(
 				unloadedImages.map(
-					(product: Product) =>
+					(product) =>
 						new Promise<void>((resolve) => {
-							if (preloadedImages.has(product.imageUrl)) {
-								resolve();
-								return;
-							}
 							const img = new Image();
-							img.onload = () => {
-								preloadedImages.add(product.imageUrl);
-								resolve();
-							};
+							img.onload = () => resolve();
 							img.src = product.imageUrl;
 						})
 				)
@@ -97,7 +94,7 @@
 	function incrementProduct(productId: number) {
 		if (isLocked) return;
 		const currentQuantity = selectedQuantities[productId] || 0;
-		const product = products.find((p: Product) => p.id === productId);
+		const product = products.find((p) => p.id === productId);
 
 		if (product && currentQuantity < product.total_quantity) {
 			selectedQuantities[productId] = currentQuantity + 1;
@@ -127,61 +124,77 @@
 </script>
 
 <div class="grid gap-4">
-	{#each products as product, index (product.id)}
-		<Card>
-			<CardHeader class="flex flex-row gap-4">
-				<div class="relative h-24 w-24">
-					<img
-						src={product.imageUrl}
-						alt={product.name}
-						class="absolute h-full w-full rounded-lg object-cover transition-opacity duration-300"
-						style="opacity: {allImagesLoaded ? '1' : '0'}"
-						loading={index < 2 ? 'eager' : 'lazy'}
-						fetchpriority={index < 2 ? 'high' : 'auto'}
-					/>
-					{#if !allImagesLoaded}
-						<div class="absolute h-full w-full animate-pulse rounded-lg bg-muted">
-							<div class="flex h-full items-center justify-center">
-								<div
-									class="h-6 w-6 animate-spin rounded-full border-4 border-primary border-t-transparent"
-								></div>
+	{#if isLoading}
+		<div class="flex h-24 items-center justify-center">
+			<div
+				class="h-6 w-6 animate-spin rounded-full border-4 border-primary border-t-transparent"
+			></div>
+		</div>
+	{:else if error}
+		<div class="text-center text-destructive">
+			<p>{error}</p>
+		</div>
+	{:else if products.length === 0}
+		<div class="text-center text-muted-foreground">
+			<p>Ingen utrustning tillgänglig för denna startplats.</p>
+		</div>
+	{:else}
+		{#each products as product, index (product.id)}
+			<Card>
+				<CardHeader class="flex flex-row gap-4">
+					<div class="relative h-24 w-24">
+						<img
+							src={product.imageUrl}
+							alt={product.name}
+							class="absolute h-full w-full rounded-lg object-cover transition-opacity duration-300"
+							style="opacity: {allImagesLoaded ? '1' : '0'}"
+							loading={index < 2 ? 'eager' : 'lazy'}
+							fetchpriority={index < 2 ? 'high' : 'auto'}
+						/>
+						{#if !allImagesLoaded}
+							<div class="absolute h-full w-full animate-pulse rounded-lg bg-muted">
+								<div class="flex h-full items-center justify-center">
+									<div
+										class="h-6 w-6 animate-spin rounded-full border-4 border-primary border-t-transparent"
+									></div>
+								</div>
 							</div>
+						{/if}
+					</div>
+					<div>
+						<CardTitle>{product.name}</CardTitle>
+						<CardDescription>{product.description}</CardDescription>
+					</div>
+				</CardHeader>
+				<CardContent>
+					<div class="flex items-center justify-between">
+						<div class="flex items-center gap-4">
+							<Button
+								variant="outline"
+								size="icon"
+								onclick={() => decrementProduct(product.id)}
+								disabled={!selectedQuantities[product.id] || isLocked}
+								class={cn(isLocked && 'cursor-not-allowed opacity-50')}
+							>
+								-
+							</Button>
+							<span class="w-8 text-center">{selectedQuantities[product.id] || 0}</span>
+							<Button
+								variant="outline"
+								size="icon"
+								onclick={() => incrementProduct(product.id)}
+								disabled={selectedQuantities[product.id] >= product.total_quantity || isLocked}
+								class={cn(isLocked && 'cursor-not-allowed opacity-50')}
+							>
+								+
+							</Button>
 						</div>
-					{/if}
-				</div>
-				<div>
-					<CardTitle>{product.name}</CardTitle>
-					<CardDescription>{product.description}</CardDescription>
-				</div>
-			</CardHeader>
-			<CardContent>
-				<div class="flex items-center justify-between">
-					<div class="flex items-center gap-4">
-						<Button
-							variant="outline"
-							size="icon"
-							onclick={() => decrementProduct(product.id)}
-							disabled={!selectedQuantities[product.id] || isLocked}
-							class={cn(isLocked && 'cursor-not-allowed opacity-50')}
-						>
-							-
-						</Button>
-						<span class="w-8 text-center">{selectedQuantities[product.id] || 0}</span>
-						<Button
-							variant="outline"
-							size="icon"
-							onclick={() => incrementProduct(product.id)}
-							disabled={selectedQuantities[product.id] >= product.total_quantity || isLocked}
-							class={cn(isLocked && 'cursor-not-allowed opacity-50')}
-						>
-							+
-						</Button>
+						<div class="text-sm text-muted-foreground">
+							Max antal: {product.total_quantity}
+						</div>
 					</div>
-					<div class="text-sm text-muted-foreground">
-						Max antal: {product.total_quantity}
-					</div>
-				</div>
-			</CardContent>
-		</Card>
-	{/each}
+				</CardContent>
+			</Card>
+		{/each}
+	{/if}
 </div>

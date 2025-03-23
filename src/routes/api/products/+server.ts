@@ -49,9 +49,9 @@ export const GET: RequestHandler = async ({ url }) => {
         const products = ((productsData || []) as unknown as ProductResponse[])
             .map(item => ({
                 ...item.products,
-                imageUrl: item.products.image_url // Transform image_url to imageUrl for frontend consistency
+                imageUrl: item.products.image_url // Transform to match existing interface
             }))
-            .filter((product): product is Product & { imageUrl: string } => {
+            .filter((product): product is (Product & { imageUrl: string }) => {
                 if (!product || seenProducts.has(product.id)) return false;
                 seenProducts.add(product.id);
                 return true;

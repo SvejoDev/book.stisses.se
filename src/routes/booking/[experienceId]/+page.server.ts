@@ -1,6 +1,14 @@
 import { supabase } from "$lib/supabaseClient";
 import { error } from '@sveltejs/kit';
 
+interface Product {
+    id: number;
+    name: string;
+    description: string;
+    total_quantity: number;
+    image_url: string;
+}
+
 export async function load({ params }) {
     const { experienceId } = params;
     const today = new Date().toISOString().split('T')[0];
@@ -99,7 +107,7 @@ export async function load({ params }) {
         startLocations: locationsWithImages,
         openDates: filteredOpenDates,
         blockedDates: blockedDates || [],
-        priceGroups: priceGroups
+        priceGroups: priceGroups || []
     };
 
     return returnData;
