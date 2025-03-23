@@ -12,6 +12,7 @@
 
 	let {
 		startLocationId,
+		experienceId,
 		selectedDuration = $bindable(''),
 		durations = $bindable<Duration[]>([]),
 		isLoading = $bindable(false),
@@ -20,6 +21,7 @@
 		extraPrice = $bindable(0)
 	} = $props<{
 		startLocationId: string;
+		experienceId: string;
 		selectedDuration?: string;
 		durations?: Duration[];
 		isLoading?: boolean;
@@ -32,7 +34,9 @@
 	async function fetchDurations(locationId: string) {
 		try {
 			isLoading = true;
-			const response = await fetch(`/api/durations?startLocationId=${locationId}`);
+			const response = await fetch(
+				`/api/durations?startLocationId=${locationId}&experienceId=${experienceId}`
+			);
 			if (!response.ok) throw new Error('Failed to fetch durations');
 			durations = await response.json();
 

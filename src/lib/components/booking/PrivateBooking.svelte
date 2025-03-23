@@ -226,6 +226,7 @@
 			<div class="flex justify-center">
 				<BookingDurations
 					startLocationId={selectedLocationId!.toString()}
+					experienceId={experience.id}
 					bind:selectedDuration
 					bind:durations
 					bind:isLoading={isLoadingDurations}
