@@ -88,6 +88,7 @@
 	let isBookingLocked = $state(false);
 	let priceGroupQuantities = $state<Record<number, number>>({});
 	let showDurations = $state(false);
+	let extraPrice = $state(0);
 
 	let shouldShowDurations = $derived(
 		showDurations && Object.values(priceGroupQuantities).some((quantity) => quantity > 0)
@@ -132,9 +133,10 @@
 		}
 	}
 
-	function handleDurationSelect(duration: { type: string; value: number }) {
+	function handleDurationSelect(duration: { type: string; value: number; extraPrice: number }) {
 		durationType = duration.type as 'hours' | 'overnights';
 		durationValue = duration.value;
+		extraPrice = duration.extraPrice;
 		calendarSection?.scrollIntoView({ behavior: 'smooth' });
 	}
 
@@ -213,6 +215,7 @@
 				isLocked={isBookingLocked}
 				onNextStep={handleNextStep}
 				includeVat={true}
+				{extraPrice}
 			/>
 		</section>
 	{/if}

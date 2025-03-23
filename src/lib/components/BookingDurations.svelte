@@ -16,14 +16,15 @@
 		durations = $bindable<Duration[]>([]),
 		isLoading = $bindable(false),
 		isLocked = $bindable(false),
-		onDurationSelect = () => {}
+		onDurationSelect = () => {},
+		extraPrice = $bindable(0)
 	} = $props<{
 		startLocationId: string;
 		selectedDuration?: string;
 		durations?: Duration[];
 		isLoading?: boolean;
 		isLocked?: boolean;
-		onDurationSelect?: (duration: { type: string; value: number }) => void;
+		onDurationSelect?: (duration: { type: string; value: number; extraPrice: number }) => void;
 	}>();
 
 	let displayText = $state('Välj längd på bokning');
@@ -65,9 +66,11 @@
 			: 'Välj längd på bokning';
 
 		if (selected) {
+			extraPrice = selected.extra_price;
 			onDurationSelect({
 				type: selected.duration_type,
-				value: selected.duration_value
+				value: selected.duration_value,
+				extraPrice: selected.extra_price
 			});
 		}
 	});

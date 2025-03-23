@@ -17,7 +17,8 @@
 		onQuantityChange = () => {},
 		isLocked = $bindable(false),
 		onNextStep = $bindable(() => {}),
-		includeVat = $bindable(true)
+		includeVat = $bindable(true),
+		extraPrice = $bindable(0)
 	} = $props<{
 		priceGroups: PriceGroup[];
 		startLocationId: number;
@@ -25,16 +26,42 @@
 		isLocked?: boolean;
 		onNextStep?: () => void;
 		includeVat?: boolean;
+		extraPrice?: number;
 	}>();
 
 	let quantities = $state<Record<number, number>>({});
-	let totalAmount = $derived(
+
+	// Calculate total paying customers (excluding free price groups)
+	let totalPayingCustomers = $derived(
 		Object.entries(quantities).reduce((sum, [groupId, quantity]) => {
+			const group = priceGroups.find((g: PriceGroup) => g.id === parseInt(groupId));
+			return group && group.price > 0 ? sum + quantity : sum;
+		}, 0)
+	);
+
+	// Calculate total amount including extra price for paying customers
+	let totalAmount = $derived(() => {
+		// Calculate base price from price groups
+		const baseTotal = Object.entries(quantities).reduce((sum, [groupId, quantity]) => {
 			const group = priceGroups.find((g: PriceGroup) => g.id === parseInt(groupId));
 			const basePrice = group ? group.price * quantity : 0;
 			return sum + (includeVat ? addVat(basePrice) : basePrice);
-		}, 0)
-	);
+		}, 0);
+
+		// Calculate extra price only for paying customers
+		const totalExtraPrice = extraPrice * totalPayingCustomers;
+
+		console.log('Base total:', baseTotal);
+		console.log('Total paying customers:', totalPayingCustomers);
+		console.log('Extra price per person:', extraPrice);
+		console.log('Total extra price:', totalExtraPrice);
+		console.log(
+			'Final total:',
+			baseTotal + (includeVat ? addVat(totalExtraPrice) : totalExtraPrice)
+		);
+
+		return baseTotal + (includeVat ? addVat(totalExtraPrice) : totalExtraPrice);
+	});
 
 	$effect(() => {
 		// Use startLocationId to make sure the effect tracks it
@@ -112,20 +139,36 @@
 	</div>
 
 	<div class="flex flex-col items-center gap-4">
-		{#if totalAmount > 0}
-			<p class="text-lg font-medium">
-				Totalt: {formatPrice(totalAmount)}
-				{#if includeVat}
-					<span class="text-sm text-muted-foreground">(inkl. moms)</span>
-				{:else}
-					<span class="text-sm text-muted-foreground">(exkl. moms)</span>
+		{#if totalAmount() > 0}
+			<div class="text-center">
+				{#if extraPrice > 0 && totalPayingCustomers > 0}
+					<p class="mb-1 text-sm text-muted-foreground">
+						Tillägg för vald längd: {formatPrice(
+							includeVat
+								? addVat(extraPrice * totalPayingCustomers)
+								: extraPrice * totalPayingCustomers
+						)}
+						{#if includeVat}
+							<span class="text-xs">(inkl. moms)</span>
+						{:else}
+							<span class="text-xs">(exkl. moms)</span>
+						{/if}
+					</p>
 				{/if}
-			</p>
+				<p class="text-lg font-medium">
+					Totalt: {formatPrice(totalAmount())}
+					{#if includeVat}
+						<span class="text-sm text-muted-foreground">(inkl. moms)</span>
+					{:else}
+						<span class="text-sm text-muted-foreground">(exkl. moms)</span>
+					{/if}
+				</p>
+			</div>
 		{/if}
 		<button
 			class="inline-flex h-10 items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground ring-offset-background transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50"
 			onclick={onNextStep}
-			disabled={totalAmount === 0 || isLocked}
+			disabled={totalAmount() === 0 || isLocked}
 		>
 			Nästa steg
 		</button>
