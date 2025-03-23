@@ -18,12 +18,14 @@
 	}
 
 	let {
-		products,
+		startLocationId,
+		experienceId,
 		preloadedImages,
 		isLocked = $bindable(false),
 		onProductsSelected = (products: Array<{ productId: number; quantity: number }>) => {}
 	} = $props<{
-		products: Product[];
+		startLocationId: string;
+		experienceId: string;
 		preloadedImages: Set<string>;
 		isLocked?: boolean;
 		onProductsSelected?: (products: Array<{ productId: number; quantity: number }>) => void;
@@ -32,6 +34,30 @@
 	let selectedQuantities = $state<Record<number, number>>({});
 	let allImagesLoaded = $state(false);
 	let initialLoadDone = $state(false);
+	let products = $state<Product[]>([]);
+	let isLoading = $state(false);
+
+	async function fetchProducts(locationId: string) {
+		try {
+			isLoading = true;
+			const response = await fetch(
+				`/api/products?startLocationId=${locationId}&experienceId=${experienceId}`
+			);
+			if (!response.ok) throw new Error('Failed to fetch products');
+			products = await response.json();
+		} catch (error) {
+			console.error('Error fetching products:', error);
+			products = [];
+		} finally {
+			isLoading = false;
+		}
+	}
+
+	$effect(() => {
+		if (startLocationId) {
+			fetchProducts(startLocationId);
+		}
+	});
 
 	// Handle image loading once when products change
 	$effect(() => {

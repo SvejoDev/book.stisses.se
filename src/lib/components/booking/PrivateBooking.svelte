@@ -67,7 +67,6 @@
 		startLocations,
 		openDates = [],
 		blockedDates = [],
-		productsByLocation = {},
 		priceGroups = [],
 		durations = []
 	} = $props<{
@@ -75,9 +74,7 @@
 		startLocations: StartLocation[];
 		openDates: OpenDate[];
 		blockedDates: BlockedDate[];
-		productsByLocation: Record<number, Product[]>;
 		priceGroups: PriceGroup[];
-		durations: Duration[];
 	}>();
 
 	let selectedLocationId = $state<number | null>(null);
@@ -101,17 +98,13 @@
 	let shouldShowDurations = $derived(
 		showDurations && Object.values(priceGroupQuantities).some((quantity) => quantity > 0)
 	);
-	let shouldShowProducts = $derived(
-		selectedDate !== null &&
-			selectedLocationId !== null &&
-			productsByLocation[selectedLocationId]?.length > 0
-	);
+	let shouldShowProducts = $derived(selectedDate !== null && selectedLocationId !== null);
 
 	// Start preloading images for all products immediately
 	$effect(() => {
 		if (selectedLocationId) {
 			// Only preload images for the selected location
-			const productsForLocation = productsByLocation[selectedLocationId] || [];
+			const productsForLocation: Product[] = [];
 			productsForLocation.forEach((product: Product) => {
 				if (!preloadedImages.has(product.imageUrl)) {
 					const img = new Image();
@@ -260,37 +253,32 @@
 			</section>
 
 			{#if selectedDate}
-				{#if shouldShowProducts}
-					<section class="space-y-4" bind:this={productsSection}>
-						<h2 class="text-center text-2xl font-semibold">Välj utrustning</h2>
-						{#if productsByLocation[selectedLocationId!]?.length > 0}
-							<div class="mx-auto max-w-2xl">
-								<ProductSelection
-									products={productsByLocation[selectedLocationId!] || []}
-									{preloadedImages}
-									onProductsSelected={handleProductSelection}
-									isLocked={isBookingLocked}
-								/>
-							</div>
+				<section class="space-y-4" bind:this={productsSection}>
+					<h2 class="text-center text-2xl font-semibold">Välj utrustning</h2>
+					<div class="mx-auto max-w-2xl">
+						<ProductSelection
+							startLocationId={selectedLocationId!.toString()}
+							experienceId={experience.id}
+							{preloadedImages}
+							onProductsSelected={handleProductSelection}
+							isLocked={isBookingLocked}
+						/>
+					</div>
 
-							{@const props = {
-								experienceId: parseInt(experience.id),
-								selectedDate,
-								durationType,
-								durationValue,
-								selectedProducts,
-								onLockStateChange: handleLockStateChange
-							}}
-							<div class="mx-auto mt-4 max-w-2xl">
-								<AvailableStartTimes {...props} />
-							</div>
-						{:else}
-							<p class="text-center text-muted-foreground">
-								Ingen utrustning tillgänglig för denna startplats.
-							</p>
-						{/if}
-					</section>
-				{/if}
+					{#if !isBookingLocked}
+						{@const props = {
+							experienceId: parseInt(experience.id),
+							selectedDate,
+							durationType,
+							durationValue,
+							selectedProducts,
+							onLockStateChange: handleLockStateChange
+						}}
+						<div class="mx-auto mt-4 max-w-2xl">
+							<AvailableStartTimes {...props} />
+						</div>
+					{/if}
+				</section>
 			{/if}
 		{/if}
 	{/if}

@@ -18,9 +18,7 @@
 			startLocations={data.startLocations}
 			openDates={data.openDates}
 			blockedDates={data.blockedDates}
-			productsByLocation={data.productsByLocation}
 			priceGroups={data.priceGroups}
-			durations={[]}
 		/>
 	{:else if data.experience.type === 'school'}
 		<SchoolBooking
@@ -29,8 +27,6 @@
 			priceGroups={data.priceGroups}
 			openDates={data.openDates}
 			blockedDates={data.blockedDates}
-			productsByLocation={data.productsByLocation}
-			durations={data.durations}
 		/>
 	{:else if data.experience.type === 'company'}
 		<CompanyBooking experience={data.experience} />
