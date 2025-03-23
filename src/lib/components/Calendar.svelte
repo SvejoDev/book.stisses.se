@@ -28,7 +28,8 @@
 		blockedDates = [],
 		openDates = [],
 		onDateSelect = (date: Date) => {},
-		isLocked = $bindable(false)
+		isLocked = $bindable(false),
+		bookingForesightHours
 	} = $props<{
 		durationType: string;
 		durationValue: number;
@@ -36,6 +37,7 @@
 		openDates: OpenDate[];
 		onDateSelect?: (date: Date) => void;
 		isLocked?: boolean;
+		bookingForesightHours: number;
 	}>();
 
 	let selectedDate = $state<Date | null>(null);
@@ -107,11 +109,57 @@
 		const utcDate = new Date(localDate.getTime() - localDate.getTimezoneOffset() * 60000);
 		const dateStr = utcDate.toISOString().split('T')[0];
 
-		return blockedDates.some((blocked: BlockedDate) => {
+		const isBlockedDate = blockedDates.some((blocked: BlockedDate) => {
 			const startDate = blocked.start_date.split('T')[0];
 			const endDate = blocked.end_date.split('T')[0];
 			return dateStr >= startDate && dateStr <= endDate;
 		});
+
+		if (isBlockedDate) return true;
+
+		// Handle booking foresight
+		if (bookingForesightHours > 0) {
+			const now = new Date();
+			const closeTimeToday = openDates.find((openDate: OpenDate) => {
+				if (openDate.type === 'specific' && openDate.specific_date) {
+					return openDate.specific_date.split('T')[0] === format(now, 'yyyy-MM-dd');
+				}
+				if (openDate.type === 'interval') {
+					const startDate = parseISO(openDate.start_date!);
+					const endDate = parseISO(openDate.end_date!);
+					return now >= startDate && now <= endDate;
+				}
+				return false;
+			});
+
+			if (closeTimeToday) {
+				const [closeHours, closeMinutes] = closeTimeToday.close_time.split(':').map(Number);
+				const closingTime = new Date(now);
+				closingTime.setHours(closeHours, closeMinutes, 0, 0);
+
+				// If we're past closing time, we need to consider the next day's foresight
+				const isPastClosingTime = now > closingTime;
+				const foresightDate = new Date(now.getTime() + bookingForesightHours * 60 * 60 * 1000);
+
+				// Block the date if it's within the foresight period
+				if (date <= foresightDate) {
+					if (isPastClosingTime && date.getDate() === now.getDate()) {
+						// Block today if we're past closing time
+						return true;
+					}
+					if (date.getDate() === now.getDate() + 1 && isPastClosingTime) {
+						// Block tomorrow if we're past closing time
+						return true;
+					}
+					if (date.getDate() === now.getDate() && !isPastClosingTime) {
+						// Block today if we're before closing time but within foresight
+						return true;
+					}
+				}
+			}
+		}
+
+		return false;
 	}
 
 	// Check if a date is part of the selected range

@@ -10,6 +10,7 @@
 		id: string;
 		type: 'private';
 		name: string;
+		booking_foresight_hours: number;
 	}
 
 	interface StartLocation {
@@ -227,10 +228,11 @@
 					<Calendar
 						{durationType}
 						{durationValue}
-						{openDates}
 						{blockedDates}
+						{openDates}
 						onDateSelect={handleDateSelect}
 						isLocked={isBookingLocked}
+						bookingForesightHours={experience.booking_foresight_hours}
 					/>
 				</div>
 			</section>
