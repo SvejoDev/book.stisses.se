@@ -5,6 +5,7 @@
 	import ProductSelection from '$lib/components/ProductSelection.svelte';
 	import AvailableStartTimes from '$lib/components/AvailableStartTimes.svelte';
 	import PriceGroupSelector from '$lib/components/PriceGroupSelector.svelte';
+	import { invalidate } from '$app/navigation';
 
 	interface Experience {
 		id: string;
@@ -17,6 +18,13 @@
 		experience_id: number;
 		name: string;
 		price_per_person: number;
+	}
+
+	interface Duration {
+		id: number;
+		duration_type: string;
+		duration_value: number;
+		extra_price: number;
 	}
 
 	interface OpenDate {
@@ -61,7 +69,8 @@
 		openDates = [],
 		blockedDates = [],
 		productsByLocation = {},
-		priceGroups = []
+		priceGroups = [],
+		durations = []
 	} = $props<{
 		experience: Experience;
 		startLocations: StartLocation[];
@@ -69,6 +78,7 @@
 		blockedDates: BlockedDate[];
 		productsByLocation: Record<number, Product[]>;
 		priceGroups: PriceGroup[];
+		durations: Duration[];
 	}>();
 
 	let selectedLocationId = $state<number | null>(null);
@@ -81,7 +91,6 @@
 	let calendarSection = $state<HTMLElement | null>(null);
 	let productsSection = $state<HTMLElement | null>(null);
 	let priceGroupSection = $state<HTMLElement | null>(null);
-	let durations = $state<any[]>([]);
 	let isLoadingDurations = $state(false);
 	let preloadedImages = $state(new Set<string>());
 	let selectedProducts = $state<Array<{ productId: number; quantity: number }>>([]);
@@ -228,7 +237,7 @@
 					startLocationId={selectedLocationId!.toString()}
 					experienceId={experience.id}
 					bind:selectedDuration
-					bind:durations
+					{durations}
 					bind:isLoading={isLoadingDurations}
 					onDurationSelect={handleDurationSelect}
 					isLocked={isBookingLocked}
