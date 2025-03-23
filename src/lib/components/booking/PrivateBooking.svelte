@@ -4,6 +4,8 @@
 	import Calendar from '$lib/components/Calendar.svelte';
 	import ProductSelection from '$lib/components/ProductSelection.svelte';
 	import AvailableStartTimes from '$lib/components/AvailableStartTimes.svelte';
+	import PriceGroupSelector from '$lib/components/PriceGroupSelector.svelte';
+	import { invalidate } from '$app/navigation';
 
 	interface Experience {
 		id: string;
@@ -16,6 +18,13 @@
 		experience_id: number;
 		name: string;
 		price_per_person: number;
+	}
+
+	interface Duration {
+		id: number;
+		duration_type: string;
+		duration_value: number;
+		extra_price: number;
 	}
 
 	interface OpenDate {
@@ -45,47 +54,65 @@
 		imageUrl: string;
 	}
 
+	interface PriceGroup {
+		id: number;
+		experience_id: number;
+		start_location_id: number | null;
+		internal_name: string;
+		display_name: string;
+		price: number;
+	}
+
 	let {
 		experience,
 		startLocations,
 		openDates = [],
 		blockedDates = [],
-		productsByLocation = {}
+		productsByLocation = {},
+		priceGroups = [],
+		durations = []
 	} = $props<{
 		experience: Experience;
 		startLocations: StartLocation[];
 		openDates: OpenDate[];
 		blockedDates: BlockedDate[];
 		productsByLocation: Record<number, Product[]>;
+		priceGroups: PriceGroup[];
+		durations: Duration[];
 	}>();
 
-	let selectedStartLocation = $state<string | null>(null);
+	let selectedLocationId = $state<number | null>(null);
 	let selectedDuration = $state('');
 	let durationType = $state<'hours' | 'overnights'>('hours');
 	let durationValue = $state(0);
 	let selectedDate = $state<Date | null>(null);
+	// @ts-ignore - Used in template binding
 	let durationsSection = $state<HTMLElement | null>(null);
 	let calendarSection = $state<HTMLElement | null>(null);
 	let productsSection = $state<HTMLElement | null>(null);
-	let durations = $state<any[]>([]);
+	let priceGroupSection = $state<HTMLElement | null>(null);
 	let isLoadingDurations = $state(false);
 	let preloadedImages = $state(new Set<string>());
 	let selectedProducts = $state<Array<{ productId: number; quantity: number }>>([]);
 	let isBookingLocked = $state(false);
+	let priceGroupQuantities = $state<Record<number, number>>({});
+	let showDurations = $state(false);
+	let extraPrice = $state(0);
 
-	let isSingleLocation = $derived(startLocations.length === 1);
-	let shouldShowDurations = $derived(isSingleLocation || selectedStartLocation !== null);
+	let shouldShowDurations = $derived(
+		showDurations && Object.values(priceGroupQuantities).some((quantity) => quantity > 0)
+	);
 	let shouldShowProducts = $derived(
 		selectedDate !== null &&
-			selectedStartLocation !== null &&
-			productsByLocation[Number(selectedStartLocation)]?.length > 0
+			selectedLocationId !== null &&
+			productsByLocation[selectedLocationId]?.length > 0
 	);
 
 	// Start preloading images for all products immediately
 	$effect(() => {
-		if (selectedStartLocation) {
+		if (selectedLocationId) {
 			// Only preload images for the selected location
-			const productsForLocation = productsByLocation[Number(selectedStartLocation)] || [];
+			const productsForLocation = productsByLocation[selectedLocationId] || [];
 			productsForLocation.forEach((product: Product) => {
 				if (!preloadedImages.has(product.imageUrl)) {
 					const img = new Image();
@@ -98,27 +125,27 @@
 		}
 	});
 
-	function handleStartLocationSelect(locationId: string) {
-		selectedStartLocation = locationId;
-		if (!isSingleLocation) {
-			durationsSection?.scrollIntoView({ behavior: 'smooth' });
+	function handleLocationSelect(locationId: string) {
+		const newLocationId = parseInt(locationId);
+		// Only reset if location actually changed
+		if (selectedLocationId !== newLocationId) {
+			selectedLocationId = newLocationId;
+			// Reset all dependent state
+			priceGroupQuantities = {};
+			selectedDuration = '';
+			durationType = 'hours';
+			durationValue = 0;
+			selectedDate = null;
+			selectedProducts = [];
+			showDurations = false;
+			isBookingLocked = false;
 		}
-		// Prioritize loading images for selected location
-		const productsForLocation = productsByLocation[Number(locationId)] || [];
-		productsForLocation.forEach((product: Product) => {
-			if (!preloadedImages.has(product.imageUrl)) {
-				const img = new Image();
-				img.onload = () => {
-					preloadedImages.add(product.imageUrl);
-				};
-				img.src = product.imageUrl;
-			}
-		});
 	}
 
-	function handleDurationSelect(duration: { type: string; value: number }) {
+	function handleDurationSelect(duration: { type: string; value: number; extraPrice: number }) {
 		durationType = duration.type as 'hours' | 'overnights';
 		durationValue = duration.value;
+		extraPrice = duration.extraPrice;
 		calendarSection?.scrollIntoView({ behavior: 'smooth' });
 	}
 
@@ -143,6 +170,21 @@
 		return durations.length === 1 ? 'Din bokningslängd' : 'Välj längd på bokning';
 	}
 
+	function handlePriceGroupQuantityChange(quantities: Record<number, number>) {
+		priceGroupQuantities = quantities;
+	}
+
+	function handleNextStep() {
+		showDurations = true;
+		// Add small delay to ensure component has rendered
+		setTimeout(() => {
+			window.scrollTo({
+				top: document.documentElement.scrollHeight,
+				behavior: 'smooth'
+			});
+		}, 100);
+	}
+
 	$effect(() => {
 		if (shouldShowProducts && productsSection) {
 			setTimeout(() => {
@@ -150,6 +192,14 @@
 					top: document.documentElement.scrollHeight,
 					behavior: 'smooth'
 				});
+			}, 100); // Small delay to ensure DOM is updated
+		}
+	});
+
+	$effect(() => {
+		if (selectedLocationId !== null && priceGroupSection) {
+			setTimeout(() => {
+				priceGroupSection?.scrollIntoView({ behavior: 'smooth' });
 			}, 100); // Small delay to ensure DOM is updated
 		}
 	});
@@ -162,21 +212,32 @@
 
 	<section class="space-y-4">
 		<h2 class="text-center text-2xl font-semibold">{getStartLocationHeading()}</h2>
-		<StartLocations
-			{startLocations}
-			onSelect={handleStartLocationSelect}
-			isLocked={isBookingLocked}
-		/>
+		<StartLocations {startLocations} onSelect={handleLocationSelect} isLocked={isBookingLocked} />
 	</section>
+
+	{#if selectedLocationId !== null}
+		<section class="space-y-4" bind:this={priceGroupSection}>
+			<PriceGroupSelector
+				{priceGroups}
+				startLocationId={selectedLocationId}
+				onQuantityChange={handlePriceGroupQuantityChange}
+				isLocked={isBookingLocked}
+				onNextStep={handleNextStep}
+				includeVat={true}
+				{extraPrice}
+			/>
+		</section>
+	{/if}
 
 	{#if shouldShowDurations}
 		<section class="space-y-4" bind:this={durationsSection}>
 			<h2 class="text-center text-2xl font-semibold">{getDurationHeading()}</h2>
 			<div class="flex justify-center">
 				<BookingDurations
-					startLocationId={selectedStartLocation!}
+					startLocationId={selectedLocationId!.toString()}
+					experienceId={experience.id}
 					bind:selectedDuration
-					bind:durations
+					{durations}
 					bind:isLoading={isLoadingDurations}
 					onDurationSelect={handleDurationSelect}
 					isLocked={isBookingLocked}
@@ -199,20 +260,20 @@
 				</div>
 			</section>
 
-			{#if shouldShowProducts}
-				<section class="space-y-4" bind:this={productsSection}>
-					<h2 class="text-center text-2xl font-semibold">Välj utrustning</h2>
-					{#if productsByLocation[Number(selectedStartLocation)]?.length > 0}
-						<div class="mx-auto max-w-2xl">
-							<ProductSelection
-								products={productsByLocation[Number(selectedStartLocation)] || []}
-								{preloadedImages}
-								onProductsSelected={handleProductSelection}
-								isLocked={isBookingLocked}
-							/>
-						</div>
+			{#if selectedDate}
+				{#if shouldShowProducts}
+					<section class="space-y-4" bind:this={productsSection}>
+						<h2 class="text-center text-2xl font-semibold">Välj utrustning</h2>
+						{#if productsByLocation[selectedLocationId!]?.length > 0}
+							<div class="mx-auto max-w-2xl">
+								<ProductSelection
+									products={productsByLocation[selectedLocationId!] || []}
+									{preloadedImages}
+									onProductsSelected={handleProductSelection}
+									isLocked={isBookingLocked}
+								/>
+							</div>
 
-						{#if selectedDate}
 							{@const props = {
 								experienceId: parseInt(experience.id),
 								selectedDate,
@@ -224,13 +285,13 @@
 							<div class="mx-auto mt-4 max-w-2xl">
 								<AvailableStartTimes {...props} />
 							</div>
+						{:else}
+							<p class="text-center text-muted-foreground">
+								Ingen utrustning tillgänglig för denna startplats.
+							</p>
 						{/if}
-					{:else}
-						<p class="text-center text-muted-foreground">
-							Ingen utrustning tillgänglig för denna startplats.
-						</p>
-					{/if}
-				</section>
+					</section>
+				{/if}
 			{/if}
 		{/if}
 	{/if}

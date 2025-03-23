@@ -12,18 +12,21 @@
 
 	let {
 		startLocationId,
+		experienceId,
 		selectedDuration = $bindable(''),
 		durations = $bindable<Duration[]>([]),
 		isLoading = $bindable(false),
 		isLocked = $bindable(false),
-		onDurationSelect = () => {}
+		onDurationSelect = () => {},
+		extraPrice = $bindable(0)
 	} = $props<{
 		startLocationId: string;
+		experienceId: string;
 		selectedDuration?: string;
 		durations?: Duration[];
 		isLoading?: boolean;
 		isLocked?: boolean;
-		onDurationSelect?: (duration: { type: string; value: number }) => void;
+		onDurationSelect?: (duration: { type: string; value: number; extraPrice: number }) => void;
 	}>();
 
 	let displayText = $state('Välj längd på bokning');
@@ -31,7 +34,9 @@
 	async function fetchDurations(locationId: string) {
 		try {
 			isLoading = true;
-			const response = await fetch(`/api/durations?startLocationId=${locationId}`);
+			const response = await fetch(
+				`/api/durations?startLocationId=${locationId}&experienceId=${experienceId}`
+			);
 			if (!response.ok) throw new Error('Failed to fetch durations');
 			durations = await response.json();
 
@@ -65,9 +70,11 @@
 			: 'Välj längd på bokning';
 
 		if (selected) {
+			extraPrice = selected.extra_price;
 			onDurationSelect({
 				type: selected.duration_type,
-				value: selected.duration_value
+				value: selected.duration_value,
+				extraPrice: selected.extra_price
 			});
 		}
 	});

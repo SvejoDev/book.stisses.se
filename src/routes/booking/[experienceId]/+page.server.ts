@@ -9,11 +9,6 @@ interface Product {
     image_url: string;
 }
 
-interface StartLocationProduct {
-    start_location_id: number;
-    products: Product[];
-}
-
 export async function load({ params }) {
     const { experienceId } = params;
     const today = new Date().toISOString().split('T')[0];
@@ -39,8 +34,15 @@ export async function load({ params }) {
 
     // Fetch start locations for this experience
     const { data: startLocations, error: startLocationsError } = await supabase
-        .from("start_locations")
-        .select("*, image_url")
+        .from("experience_start_locations")
+        .select(`
+            start_location_id,
+            start_locations (
+                id,
+                name,
+                image_url
+            )
+        `)
         .eq("experience_id", experienceId);
 
     if (startLocationsError) {
@@ -48,11 +50,24 @@ export async function load({ params }) {
         error(500, "Failed to load start locations");
     }
 
-    // Use image_url directly from the database
-    const locationsWithImages = startLocations.map((location) => ({
-        ...location,
-        imageUrl: location.image_url
+    // Transform the nested structure to match the expected format
+    const locationsWithImages = (startLocations || []).map((item: any) => ({
+        id: item.start_locations.id,
+        experience_id: parseInt(experienceId),
+        name: item.start_locations.name,
+        imageUrl: item.start_locations.image_url
     }));
+
+    // Fetch price groups for this experience
+    const { data: priceGroups, error: priceGroupsError } = await supabase
+        .from("price_groups")
+        .select("*")
+        .eq("experience_id", experienceId);
+
+    if (priceGroupsError) {
+        console.error('Price groups error:', priceGroupsError);
+        error(500, "Failed to load price groups");
+    }
 
     // Fetch open dates for this experience using simpler query first
     const { data: openDates, error: openDatesError } = await supabase
@@ -132,7 +147,8 @@ export async function load({ params }) {
         startLocations: locationsWithImages,
         openDates: filteredOpenDates,
         blockedDates: blockedDates || [],
-        productsByLocation
+        productsByLocation,
+        priceGroups: priceGroups
     };
 
     // Log the final data structure

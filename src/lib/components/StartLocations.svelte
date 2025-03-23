@@ -6,7 +6,6 @@
 		id: number;
 		experience_id: number;
 		name: string;
-		price_per_person: number;
 		imageUrl: string;
 	}
 
@@ -67,10 +66,7 @@
 							/>
 						</Card.Header>
 						<Card.Content class="p-6">
-							<h3 class="mb-2 text-xl font-semibold">{location.name}</h3>
-							<p class="text-base text-muted-foreground">
-								Pris per person: {location.price_per_person} kr
-							</p>
+							<h3 class="text-xl font-semibold">{location.name}</h3>
 						</Card.Content>
 					</Card.Root>
 				</div>
@@ -98,10 +94,7 @@
 							/>
 						</Card.Header>
 						<Card.Content class="p-6">
-							<h3 class="mb-2 text-xl font-semibold">{location.name}</h3>
-							<p class="text-base text-muted-foreground">
-								Pris per person: {location.price_per_person} kr
-							</p>
+							<h3 class="text-xl font-semibold">{location.name}</h3>
 						</Card.Content>
 					</Card.Root>
 				</button>

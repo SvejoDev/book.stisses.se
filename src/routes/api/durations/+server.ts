@@ -2,88 +2,37 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { supabase } from '$lib/supabaseClient';
 
-interface AvailabilityRequest {
-    date: string;
-    durationType: 'hours' | 'overnights';
-    durationValue: number;
-    products: Array<{
-        productId: number;
-        quantity: number;
-    }>;
-    experienceId: number;
+
+interface Duration {
+    id: number;
+    duration_type: string;
+    duration_value: number;
+    extra_price: number;
 }
 
-interface AvailableTime {
-    startTime: string;  // Format: "HH:mm"
-    endTime: string;    // Format: "HH:mm"
+interface DurationResponse {
+    duration_id: number;
+    durations: Duration;
 }
 
-async function getOpeningHours(experienceId: number, date: string) {
-    const { data, error } = await supabase
-        .from('experience_open_dates')
-        .select('open_time, close_time')
-        .eq('experience_id', experienceId)
-        .eq('specific_date', date)
-        .single();
-    
-    if (error) throw error;
-    return {
-        openTime: data.open_time,
-        closeTime: data.close_time
-    };
-}
-
-async function checkProductAvailability(
-    productId: number,
-    date: string,
-    requestedQuantity: number,
-    startSlot: number,
-    endSlot: number
-) {
-    // Get product's max quantity
-    const { data: product } = await supabase
-        .from('products')
-        .select('total_quantity')
-        .eq('id', productId)
-        .single();
-
-    if (!product) throw new Error(`Product ${productId} not found`);
-    const maxQuantity = product.total_quantity;
-
-    // Get availability for the date
-    const { data: availability } = await supabase
-        .from(`availability_product_${productId}`)
-        .select('*')
-        .eq('datum', date)
-        .single();
-
-    if (!availability) {
-        // No bookings for this date, all slots are available
-        return true;
-    }
-
-    // Check each 15-minute slot
-    for (let slot = startSlot; slot <= endSlot; slot++) {
-        const currentlyBooked = Math.abs(availability[slot] || 0);
-        if (currentlyBooked + requestedQuantity > maxQuantity) {
-            return false;
-        }
-    }
-
-    return true;
-}
 
 export const GET: RequestHandler = async ({ url }) => {
     const startLocationId = url.searchParams.get('startLocationId');
+    const experienceId = url.searchParams.get('experienceId');
     
-    if (!startLocationId) {
-        return new Response('Start location ID is required', { status: 400 });
+    if (!startLocationId || !experienceId) {
+        return new Response('Start location ID and Experience ID are required', { status: 400 });
     }
 
     try {
-        const { data, error } = await supabase
-            .from('start_location_durations')
+        // Query for durations in order of specificity:
+        // 1. Specific to this experience and start location
+        // 2. Specific to this experience (any start location)
+        // 3. Specific to this start location (any experience)
+        const { data: durationsData, error } = await supabase
+            .from('experience_start_location_durations')
             .select(`
+                duration_id,
                 durations (
                     id,
                     duration_type,
@@ -91,12 +40,19 @@ export const GET: RequestHandler = async ({ url }) => {
                     extra_price
                 )
             `)
-            .eq('start_location_id', startLocationId);
+            .or(`and(experience_id.eq.${experienceId},start_location_id.eq.${startLocationId}),and(experience_id.eq.${experienceId},start_location_id.is.null),and(experience_id.is.null,start_location_id.eq.${startLocationId})`);
 
         if (error) throw error;
 
-        // Transform the data to match the expected format
-        const durations = data?.map(item => item.durations).filter(Boolean) || [];
+        // Transform the data and remove duplicates based on duration_id
+        const seenDurations = new Set<number>();
+        const durations = ((durationsData || []) as unknown as DurationResponse[])
+            .map(item => item.durations)
+            .filter((duration): duration is Duration => {
+                if (!duration || seenDurations.has(duration.id)) return false;
+                seenDurations.add(duration.id);
+                return true;
+            });
         
         return json(durations);
     } catch (error) {
