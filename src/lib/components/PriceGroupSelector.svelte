@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { cn } from '$lib/utils';
+	import { addVat, formatPrice } from '$lib/utils/price';
 
 	interface PriceGroup {
 		id: number;
@@ -15,20 +16,23 @@
 		startLocationId,
 		onQuantityChange = () => {},
 		isLocked = $bindable(false),
-		onNextStep = $bindable(() => {})
+		onNextStep = $bindable(() => {}),
+		includeVat = $bindable(true)
 	} = $props<{
 		priceGroups: PriceGroup[];
 		startLocationId: number;
 		onQuantityChange: (quantities: Record<number, number>) => void;
 		isLocked?: boolean;
 		onNextStep?: () => void;
+		includeVat?: boolean;
 	}>();
 
 	let quantities = $state<Record<number, number>>({});
 	let totalAmount = $derived(
 		Object.entries(quantities).reduce((sum, [groupId, quantity]) => {
 			const group = priceGroups.find((g: PriceGroup) => g.id === parseInt(groupId));
-			return sum + (group ? group.price * quantity : 0);
+			const basePrice = group ? group.price * quantity : 0;
+			return sum + (includeVat ? addVat(basePrice) : basePrice);
 		}, 0)
 	);
 
@@ -54,6 +58,11 @@
 			onQuantityChange(quantities);
 		}
 	}
+
+	function getDisplayPrice(price: number): string {
+		const displayPrice = includeVat ? addVat(price) : price;
+		return formatPrice(displayPrice);
+	}
 </script>
 
 <div class="space-y-6">
@@ -69,7 +78,14 @@
 				>
 					<div>
 						<p class="font-medium">{group.display_name}</p>
-						<p class="text-sm text-muted-foreground">{group.price} kr per person</p>
+						<p class="text-sm text-muted-foreground">
+							{getDisplayPrice(group.price)} per person
+							{#if includeVat}
+								<span class="text-xs">(inkl. moms)</span>
+							{:else}
+								<span class="text-xs">(exkl. moms)</span>
+							{/if}
+						</p>
 					</div>
 					<div class="flex items-center gap-4">
 						<button
@@ -97,7 +113,14 @@
 
 	<div class="flex flex-col items-center gap-4">
 		{#if totalAmount > 0}
-			<p class="text-lg font-medium">Totalt: {totalAmount} kr</p>
+			<p class="text-lg font-medium">
+				Totalt: {formatPrice(totalAmount)}
+				{#if includeVat}
+					<span class="text-sm text-muted-foreground">(inkl. moms)</span>
+				{:else}
+					<span class="text-sm text-muted-foreground">(exkl. moms)</span>
+				{/if}
+			</p>
 		{/if}
 		<button
 			class="inline-flex h-10 items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground ring-offset-background transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50"

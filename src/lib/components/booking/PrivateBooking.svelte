@@ -212,6 +212,7 @@
 				onQuantityChange={handlePriceGroupQuantityChange}
 				isLocked={isBookingLocked}
 				onNextStep={handleNextStep}
+				includeVat={true}
 			/>
 		</section>
 	{/if}

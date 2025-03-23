@@ -22,7 +22,11 @@
 			priceGroups={data.priceGroups}
 		/>
 	{:else if data.experience.type === 'school'}
-		<SchoolBooking experience={data.experience} />
+		<SchoolBooking
+			experience={data.experience}
+			startLocations={data.startLocations}
+			priceGroups={data.priceGroups}
+		/>
 	{:else if data.experience.type === 'company'}
 		<CompanyBooking experience={data.experience} />
 	{:else}
