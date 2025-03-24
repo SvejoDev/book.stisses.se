@@ -26,20 +26,6 @@ export const GET: RequestHandler = async ({ url }) => {
     }
 
     try {
-        let conditions;
-        
-        if (startLocationId && startLocationId !== '0') {
-            // If start location is selected, get products for both:
-            // 1. This specific experience + start location
-            // 2. This experience with null start location
-            conditions = `(experience_id.eq.${experienceId},and(experience_id.eq.${experienceId},start_location_id.eq.${startLocationId}))`;
-        } else {
-            // If no start location, only get products for this experience with null start location
-            conditions = `and(experience_id.eq.${experienceId},start_location_id.is.null)`;
-        }
-
-        console.log('Query conditions:', conditions);
-
         const { data: productsData, error } = await supabase
             .from('experience_start_location_products')
             .select(`
@@ -52,7 +38,12 @@ export const GET: RequestHandler = async ({ url }) => {
                     image_url
                 )
             `)
-            .or(conditions);
+            .eq('experience_id', experienceId)
+            .or(
+                startLocationId && startLocationId !== '0' 
+                    ? `start_location_id.is.null,start_location_id.eq.${startLocationId}`
+                    : 'start_location_id.is.null'
+            );
 
         if (error) {
             console.error('Supabase query error:', error);
