@@ -121,6 +121,15 @@
 		});
 	});
 
+	function scrollToElement(element: HTMLElement | null) {
+		if (element) {
+			const elementRect = element.getBoundingClientRect();
+			const absoluteElementTop = elementRect.top + window.pageYOffset;
+			const middle = absoluteElementTop - window.innerHeight / 3;
+			window.scrollTo({ top: middle, behavior: 'smooth' });
+		}
+	}
+
 	function handleLocationSelect(locationId: string) {
 		const newLocationId = parseInt(locationId);
 		// Only reset if location actually changed
@@ -142,17 +151,13 @@
 		durationType = duration.type as 'hours' | 'overnights';
 		durationValue = duration.value;
 		extraPrice = duration.extraPrice;
-		calendarSection?.scrollIntoView({ behavior: 'smooth' });
+		scrollToElement(calendarSection);
 	}
 
 	function handleDateSelect(date: Date) {
 		selectedDate = date;
-		// Add small delay to ensure DOM is updated
 		setTimeout(() => {
-			window.scrollTo({
-				top: document.documentElement.scrollHeight,
-				behavior: 'smooth'
-			});
+			scrollToElement(productsSection);
 		}, 100);
 	}
 
@@ -178,36 +183,29 @@
 
 	function handleNextStep() {
 		showDurations = true;
-		// Add small delay to ensure component has rendered
 		setTimeout(() => {
-			window.scrollTo({
-				top: document.documentElement.scrollHeight,
-				behavior: 'smooth'
-			});
+			scrollToElement(durationsSection);
 		}, 100);
 	}
 
 	$effect(() => {
 		if (shouldShowProducts && productsSection) {
 			setTimeout(() => {
-				window.scrollTo({
-					top: document.documentElement.scrollHeight,
-					behavior: 'smooth'
-				});
-			}, 100); // Small delay to ensure DOM is updated
+				scrollToElement(productsSection);
+			}, 100);
 		}
 	});
 
 	$effect(() => {
 		if (selectedLocationId !== null && priceGroupSection) {
 			setTimeout(() => {
-				priceGroupSection?.scrollIntoView({ behavior: 'smooth' });
-			}, 100); // Small delay to ensure DOM is updated
+				scrollToElement(priceGroupSection);
+			}, 100);
 		}
 	});
 </script>
 
-<div class="space-y-8">
+<div class="space-y-16 pb-32">
 	<header class="text-center">
 		<h1 class="text-4xl font-bold tracking-tight">{experience.name}</h1>
 	</header>
