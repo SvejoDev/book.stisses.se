@@ -100,6 +100,14 @@
 		showDurations && Object.values(priceGroupQuantities).some((quantity) => quantity > 0)
 	);
 	let shouldShowProducts = $derived(selectedDate !== null && selectedLocationId !== null);
+	let hasStartLocations = $derived(startLocations.length > 0);
+
+	// Auto-set selectedLocationId to null when there are no start locations
+	$effect(() => {
+		if (!hasStartLocations) {
+			selectedLocationId = null;
+		}
+	});
 
 	function handleLocationSelect(locationId: string) {
 		const newLocationId = parseInt(locationId);
@@ -186,16 +194,18 @@
 		<h1 class="text-4xl font-bold tracking-tight">{experience.name}</h1>
 	</header>
 
-	<section class="space-y-4">
-		<h2 class="text-center text-2xl font-semibold">{getStartLocationHeading()}</h2>
-		<StartLocations {startLocations} onSelect={handleLocationSelect} isLocked={isBookingLocked} />
-	</section>
+	{#if hasStartLocations}
+		<section class="space-y-4">
+			<h2 class="text-center text-2xl font-semibold">{getStartLocationHeading()}</h2>
+			<StartLocations {startLocations} onSelect={handleLocationSelect} isLocked={isBookingLocked} />
+		</section>
+	{/if}
 
-	{#if selectedLocationId !== null}
+	{#if selectedLocationId !== null || !hasStartLocations}
 		<section class="space-y-4" bind:this={priceGroupSection}>
 			<PriceGroupSelector
 				{priceGroups}
-				startLocationId={selectedLocationId}
+				startLocationId={selectedLocationId ?? 0}
 				onQuantityChange={handlePriceGroupQuantityChange}
 				isLocked={isBookingLocked}
 				onNextStep={handleNextStep}
@@ -210,7 +220,7 @@
 			<h2 class="text-center text-2xl font-semibold">{getDurationHeading()}</h2>
 			<div class="flex justify-center">
 				<BookingDurations
-					startLocationId={selectedLocationId!.toString()}
+					startLocationId={(selectedLocationId ?? 0).toString()}
 					experienceId={experience.id}
 					bind:selectedDuration
 					{durations}

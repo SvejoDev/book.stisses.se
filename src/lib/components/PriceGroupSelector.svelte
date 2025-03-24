@@ -31,6 +31,14 @@
 
 	let quantities = $state<Record<number, number>>({});
 
+	// Filter price groups based on start location or no location requirement
+	let filteredPriceGroups = $derived(
+		priceGroups.filter(
+			(group: PriceGroup) =>
+				group.start_location_id === startLocationId || group.start_location_id === null
+		)
+	);
+
 	// Calculate total paying customers (excluding free price groups)
 	let totalPayingCustomers = $derived(
 		Object.entries(quantities).reduce((sum, [groupId, quantity]) => {
@@ -96,7 +104,7 @@
 	<div class="space-y-4">
 		<h2 class="text-center text-2xl font-semibold">Antal personer</h2>
 		<div class="mx-auto max-w-md space-y-4">
-			{#each priceGroups.filter((group: PriceGroup) => group.start_location_id === startLocationId || group.start_location_id === null) as group (group.id)}
+			{#each filteredPriceGroups as group (group.id)}
 				<div
 					class={cn(
 						'flex items-center justify-between rounded-lg border p-4',
