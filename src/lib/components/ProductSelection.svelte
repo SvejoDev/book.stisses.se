@@ -21,12 +21,14 @@
 		startLocationId = $bindable(''),
 		experienceId = $bindable(''),
 		isLocked = $bindable(false),
-		onProductsSelected = (products: Array<{ productId: number; quantity: number }>) => {}
+		onProductsSelected = (products: Array<{ productId: number; quantity: number }>) => {},
+		onProductsLoaded = () => {}
 	} = $props<{
 		startLocationId: string;
 		experienceId: string;
 		isLocked?: boolean;
 		onProductsSelected?: (products: Array<{ productId: number; quantity: number }>) => void;
+		onProductsLoaded?: () => void;
 	}>();
 
 	let selectedQuantities = $state<Record<number, number>>({});
@@ -80,6 +82,7 @@
 
 			if (unloadedImages.length === 0) {
 				allImagesLoaded = true;
+				onProductsLoaded();
 				return;
 			}
 
@@ -94,6 +97,7 @@
 				)
 			).then(() => {
 				allImagesLoaded = true;
+				onProductsLoaded();
 			});
 		}
 	});

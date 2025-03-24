@@ -121,6 +121,17 @@
 		});
 	});
 
+	// Add new effect to handle scrolling after products are loaded
+	let productsLoaded = $state(false);
+
+	$effect(() => {
+		if (selectedDate && shouldShowProducts && productsLoaded) {
+			setTimeout(() => {
+				scrollToElement(productsSection);
+			}, 300); // Increased timeout to ensure content is rendered
+		}
+	});
+
 	function scrollToElement(element: HTMLElement | null) {
 		if (element) {
 			const elementRect = element.getBoundingClientRect();
@@ -156,9 +167,7 @@
 
 	function handleDateSelect(date: Date) {
 		selectedDate = date;
-		setTimeout(() => {
-			scrollToElement(productsSection);
-		}, 100);
+		// Remove the immediate scroll - we'll handle it in the effect below
 	}
 
 	function handleProductSelection(products: Array<{ productId: number; quantity: number }>) {
@@ -187,22 +196,6 @@
 			scrollToElement(durationsSection);
 		}, 100);
 	}
-
-	$effect(() => {
-		if (shouldShowProducts && productsSection) {
-			setTimeout(() => {
-				scrollToElement(productsSection);
-			}, 100);
-		}
-	});
-
-	$effect(() => {
-		if (selectedLocationId !== null && priceGroupSection) {
-			setTimeout(() => {
-				scrollToElement(priceGroupSection);
-			}, 100);
-		}
-	});
 </script>
 
 <div class="space-y-16">
@@ -272,6 +265,7 @@
 								startLocationId={(selectedLocationId ?? 0).toString()}
 								experienceId={experience.id}
 								onProductsSelected={handleProductSelection}
+								onProductsLoaded={() => (productsLoaded = true)}
 								isLocked={isBookingLocked}
 							/>
 						</div>
