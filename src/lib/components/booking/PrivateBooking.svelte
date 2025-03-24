@@ -147,7 +147,13 @@
 
 	function handleDateSelect(date: Date) {
 		selectedDate = date;
-		productsSection?.scrollIntoView({ behavior: 'smooth' });
+		// Add small delay to ensure DOM is updated
+		setTimeout(() => {
+			window.scrollTo({
+				top: document.documentElement.scrollHeight,
+				behavior: 'smooth'
+			});
+		}, 100);
 	}
 
 	function handleProductSelection(products: Array<{ productId: number; quantity: number }>) {
