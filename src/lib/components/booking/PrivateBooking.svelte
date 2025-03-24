@@ -99,7 +99,36 @@
 	let shouldShowDurations = $derived(
 		showDurations && Object.values(priceGroupQuantities).some((quantity) => quantity > 0)
 	);
-	let shouldShowProducts = $derived(selectedDate !== null && selectedLocationId !== null);
+	let hasStartLocations = $derived(startLocations.length > 0);
+	let shouldShowProducts = $derived(
+		selectedDate !== null && (selectedLocationId !== null || !hasStartLocations)
+	);
+
+	// Auto-set selectedLocationId to null when there are no start locations
+	$effect(() => {
+		if (!hasStartLocations) {
+			selectedLocationId = null;
+		}
+	});
+
+	$effect(() => {
+		console.log('Debug state:', {
+			selectedDate,
+			selectedLocationId,
+			hasStartLocations,
+			shouldShowProducts,
+			shouldShowDurations
+		});
+	});
+
+	function scrollToElement(element: HTMLElement | null) {
+		if (element) {
+			const elementRect = element.getBoundingClientRect();
+			const absoluteElementTop = elementRect.top + window.pageYOffset;
+			const middle = absoluteElementTop - window.innerHeight / 3;
+			window.scrollTo({ top: middle, behavior: 'smooth' });
+		}
+	}
 
 	function handleLocationSelect(locationId: string) {
 		const newLocationId = parseInt(locationId);
@@ -122,12 +151,14 @@
 		durationType = duration.type as 'hours' | 'overnights';
 		durationValue = duration.value;
 		extraPrice = duration.extraPrice;
-		calendarSection?.scrollIntoView({ behavior: 'smooth' });
+		scrollToElement(calendarSection);
 	}
 
 	function handleDateSelect(date: Date) {
 		selectedDate = date;
-		productsSection?.scrollIntoView({ behavior: 'smooth' });
+		setTimeout(() => {
+			scrollToElement(productsSection);
+		}, 100);
 	}
 
 	function handleProductSelection(products: Array<{ productId: number; quantity: number }>) {
@@ -152,50 +183,45 @@
 
 	function handleNextStep() {
 		showDurations = true;
-		// Add small delay to ensure component has rendered
 		setTimeout(() => {
-			window.scrollTo({
-				top: document.documentElement.scrollHeight,
-				behavior: 'smooth'
-			});
+			scrollToElement(durationsSection);
 		}, 100);
 	}
 
 	$effect(() => {
 		if (shouldShowProducts && productsSection) {
 			setTimeout(() => {
-				window.scrollTo({
-					top: document.documentElement.scrollHeight,
-					behavior: 'smooth'
-				});
-			}, 100); // Small delay to ensure DOM is updated
+				scrollToElement(productsSection);
+			}, 100);
 		}
 	});
 
 	$effect(() => {
 		if (selectedLocationId !== null && priceGroupSection) {
 			setTimeout(() => {
-				priceGroupSection?.scrollIntoView({ behavior: 'smooth' });
-			}, 100); // Small delay to ensure DOM is updated
+				scrollToElement(priceGroupSection);
+			}, 100);
 		}
 	});
 </script>
 
-<div class="space-y-8">
+<div class="space-y-16">
 	<header class="text-center">
 		<h1 class="text-4xl font-bold tracking-tight">{experience.name}</h1>
 	</header>
 
-	<section class="space-y-4">
-		<h2 class="text-center text-2xl font-semibold">{getStartLocationHeading()}</h2>
-		<StartLocations {startLocations} onSelect={handleLocationSelect} isLocked={isBookingLocked} />
-	</section>
+	{#if hasStartLocations}
+		<section class="space-y-4">
+			<h2 class="text-center text-2xl font-semibold">{getStartLocationHeading()}</h2>
+			<StartLocations {startLocations} onSelect={handleLocationSelect} isLocked={isBookingLocked} />
+		</section>
+	{/if}
 
-	{#if selectedLocationId !== null}
+	{#if selectedLocationId !== null || !hasStartLocations}
 		<section class="space-y-4" bind:this={priceGroupSection}>
 			<PriceGroupSelector
 				{priceGroups}
-				startLocationId={selectedLocationId}
+				startLocationId={selectedLocationId ?? 0}
 				onQuantityChange={handlePriceGroupQuantityChange}
 				isLocked={isBookingLocked}
 				onNextStep={handleNextStep}
@@ -210,7 +236,7 @@
 			<h2 class="text-center text-2xl font-semibold">{getDurationHeading()}</h2>
 			<div class="flex justify-center">
 				<BookingDurations
-					startLocationId={selectedLocationId!.toString()}
+					startLocationId={(selectedLocationId ?? 0).toString()}
 					experienceId={experience.id}
 					bind:selectedDuration
 					{durations}
@@ -243,7 +269,7 @@
 						<h2 class="text-center text-2xl font-semibold">Välj utrustning</h2>
 						<div class="mx-auto max-w-2xl">
 							<ProductSelection
-								startLocationId={selectedLocationId!.toString()}
+								startLocationId={(selectedLocationId ?? 0).toString()}
 								experienceId={experience.id}
 								onProductsSelected={handleProductSelection}
 								isLocked={isBookingLocked}

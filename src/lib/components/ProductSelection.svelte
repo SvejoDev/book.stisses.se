@@ -36,14 +36,21 @@
 	let products = $state<Product[]>([]);
 	let error = $state<string | null>(null);
 
+	console.log('ProductSelection mounted with:', { startLocationId, experienceId });
+
 	async function fetchProducts() {
 		try {
 			isLoading = true;
 			error = null;
+
 			const response = await fetch(
 				`/api/products?startLocationId=${startLocationId}&experienceId=${experienceId}`
 			);
-			if (!response.ok) throw new Error('Failed to fetch products');
+
+			if (!response.ok) {
+				throw new Error('Failed to fetch products');
+			}
+
 			products = await response.json();
 
 			// Add a small delay if there are no products for better UX
@@ -51,7 +58,6 @@
 				await new Promise((resolve) => setTimeout(resolve, 500));
 			}
 		} catch (e) {
-			console.error('Error fetching products:', e);
 			error = e instanceof Error ? e.message : 'An error occurred';
 		} finally {
 			isLoading = false;
@@ -60,7 +66,8 @@
 
 	// Fetch products when startLocationId or experienceId changes
 	$effect(() => {
-		if (startLocationId && experienceId) {
+		if (experienceId) {
+			// Only require experienceId
 			fetchProducts();
 		}
 	});
