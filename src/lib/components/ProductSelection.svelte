@@ -42,30 +42,22 @@
 		try {
 			isLoading = true;
 			error = null;
-			console.log('Fetching products with params:', { startLocationId, experienceId });
 
 			const response = await fetch(
 				`/api/products?startLocationId=${startLocationId}&experienceId=${experienceId}`
 			);
 
-			console.log('Response status:', response.status);
 			if (!response.ok) {
-				const errorText = await response.text();
-				console.error('API error:', errorText);
 				throw new Error('Failed to fetch products');
 			}
 
-			const data = await response.json();
-			console.log('Received products:', data);
-			products = data;
+			products = await response.json();
 
 			// Add a small delay if there are no products for better UX
 			if (products.length === 0) {
-				console.log('No products found');
 				await new Promise((resolve) => setTimeout(resolve, 500));
 			}
 		} catch (e) {
-			console.error('Error in fetchProducts:', e);
 			error = e instanceof Error ? e.message : 'An error occurred';
 		} finally {
 			isLoading = false;
@@ -74,7 +66,6 @@
 
 	// Fetch products when startLocationId or experienceId changes
 	$effect(() => {
-		console.log('Effect triggered with:', { startLocationId, experienceId });
 		if (experienceId) {
 			// Only require experienceId
 			fetchProducts();

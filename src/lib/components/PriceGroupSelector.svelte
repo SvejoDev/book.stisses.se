@@ -59,15 +59,6 @@
 		// Calculate extra price only for paying customers
 		const totalExtraPrice = extraPrice * totalPayingCustomers;
 
-		console.log('Base total:', baseTotal);
-		console.log('Total paying customers:', totalPayingCustomers);
-		console.log('Extra price per person:', extraPrice);
-		console.log('Total extra price:', totalExtraPrice);
-		console.log(
-			'Final total:',
-			baseTotal + (includeVat ? addVat(totalExtraPrice) : totalExtraPrice)
-		);
-
 		return baseTotal + (includeVat ? addVat(totalExtraPrice) : totalExtraPrice);
 	});
 

@@ -26,6 +26,9 @@ export const GET: RequestHandler = async ({ url }) => {
     }
 
     try {
+        // Query for products in order of specificity:
+        // 1. Products assigned to this experience with null start_location_id (base products)
+        // 2. If a start location is selected, also include products specific to that location
         const { data: productsData, error } = await supabase
             .from('experience_start_location_products')
             .select(`
