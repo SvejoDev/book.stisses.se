@@ -205,7 +205,7 @@
 	});
 </script>
 
-<div class="space-y-16 pb-32">
+<div class="space-y-16">
 	<header class="text-center">
 		<h1 class="text-4xl font-bold tracking-tight">{experience.name}</h1>
 	</header>
