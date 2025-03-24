@@ -99,14 +99,26 @@
 	let shouldShowDurations = $derived(
 		showDurations && Object.values(priceGroupQuantities).some((quantity) => quantity > 0)
 	);
-	let shouldShowProducts = $derived(selectedDate !== null && selectedLocationId !== null);
 	let hasStartLocations = $derived(startLocations.length > 0);
+	let shouldShowProducts = $derived(
+		selectedDate !== null && (selectedLocationId !== null || !hasStartLocations)
+	);
 
 	// Auto-set selectedLocationId to null when there are no start locations
 	$effect(() => {
 		if (!hasStartLocations) {
 			selectedLocationId = null;
 		}
+	});
+
+	$effect(() => {
+		console.log('Debug state:', {
+			selectedDate,
+			selectedLocationId,
+			hasStartLocations,
+			shouldShowProducts,
+			shouldShowDurations
+		});
 	});
 
 	function handleLocationSelect(locationId: string) {
@@ -253,7 +265,7 @@
 						<h2 class="text-center text-2xl font-semibold">Välj utrustning</h2>
 						<div class="mx-auto max-w-2xl">
 							<ProductSelection
-								startLocationId={selectedLocationId!.toString()}
+								startLocationId={(selectedLocationId ?? 0).toString()}
 								experienceId={experience.id}
 								onProductsSelected={handleProductSelection}
 								isLocked={isBookingLocked}

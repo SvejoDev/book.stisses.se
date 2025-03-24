@@ -19,15 +19,27 @@ export const GET: RequestHandler = async ({ url }) => {
     const startLocationId = url.searchParams.get('startLocationId');
     const experienceId = url.searchParams.get('experienceId');
     
-    if (!startLocationId || !experienceId) {
-        return new Response('Start location ID and Experience ID are required', { status: 400 });
+    console.log('Fetching products with:', { startLocationId, experienceId });
+
+    if (!experienceId) {
+        return new Response('Experience ID is required', { status: 400 });
     }
 
     try {
-        // Query for products in order of specificity:
-        // 1. Specific to this experience and start location
-        // 2. Specific to this experience (any start location)
-        // 3. Specific to this start location (any experience)
+        let conditions;
+        
+        if (startLocationId && startLocationId !== '0') {
+            // If start location is selected, get products for both:
+            // 1. This specific experience + start location
+            // 2. This experience with null start location
+            conditions = `(experience_id.eq.${experienceId},and(experience_id.eq.${experienceId},start_location_id.eq.${startLocationId}))`;
+        } else {
+            // If no start location, only get products for this experience with null start location
+            conditions = `and(experience_id.eq.${experienceId},start_location_id.is.null)`;
+        }
+
+        console.log('Query conditions:', conditions);
+
         const { data: productsData, error } = await supabase
             .from('experience_start_location_products')
             .select(`
@@ -40,9 +52,14 @@ export const GET: RequestHandler = async ({ url }) => {
                     image_url
                 )
             `)
-            .or(`and(experience_id.eq.${experienceId},start_location_id.eq.${startLocationId}),and(experience_id.eq.${experienceId},start_location_id.is.null),and(experience_id.is.null,start_location_id.eq.${startLocationId})`);
+            .or(conditions);
 
-        if (error) throw error;
+        if (error) {
+            console.error('Supabase query error:', error);
+            throw error;
+        }
+
+        console.log('Raw products data:', productsData);
 
         // Transform the data and remove duplicates based on product_id
         const seenProducts = new Set<number>();
@@ -57,6 +74,7 @@ export const GET: RequestHandler = async ({ url }) => {
                 return true;
             });
         
+        console.log('Transformed products:', products);
         return json(products);
     } catch (error) {
         console.error('Error fetching products:', error);
