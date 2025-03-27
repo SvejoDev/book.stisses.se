@@ -116,10 +116,13 @@
 		return productTotal + priceGroupTotal;
 	});
 
-	let shouldShowDurations = $derived(
-		showDurations && Object.values(priceGroupQuantities).some((quantity) => quantity > 0)
-	);
 	let hasStartLocations = $derived(startLocations.length > 0);
+
+	let shouldShowDurations = $derived(
+		(pricingType === 'per_product' && (selectedLocationId !== null || !hasStartLocations)) ||
+			(showDurations && Object.values(priceGroupQuantities).some((quantity) => quantity > 0))
+	);
+
 	let shouldShowProducts = $derived(
 		selectedDate !== null && (selectedLocationId !== null || !hasStartLocations)
 	);
@@ -173,7 +176,7 @@
 			durationValue = 0;
 			selectedDate = null;
 			selectedProducts = [];
-			showDurations = false;
+			showDurations = pricingType === 'per_product'; // Only auto-show for per_product
 			isBookingLocked = false;
 		}
 	}
@@ -231,18 +234,20 @@
 	{/if}
 
 	{#if selectedLocationId !== null || !hasStartLocations}
-		<section class="space-y-4" bind:this={priceGroupSection}>
-			<PriceGroupSelector
-				bind:this={priceGroupRef}
-				{priceGroups}
-				startLocationId={selectedLocationId ?? 0}
-				onQuantityChange={handlePriceGroupQuantityChange}
-				isLocked={isBookingLocked}
-				onNextStep={handleNextStep}
-				includeVat={true}
-				{extraPrice}
-			/>
-		</section>
+		{#if pricingType !== 'per_product'}
+			<section class="space-y-4" bind:this={priceGroupSection}>
+				<PriceGroupSelector
+					bind:this={priceGroupRef}
+					{priceGroups}
+					startLocationId={selectedLocationId ?? 0}
+					onQuantityChange={handlePriceGroupQuantityChange}
+					isLocked={isBookingLocked}
+					onNextStep={handleNextStep}
+					includeVat={true}
+					{extraPrice}
+				/>
+			</section>
+		{/if}
 	{/if}
 
 	{#if shouldShowDurations}
