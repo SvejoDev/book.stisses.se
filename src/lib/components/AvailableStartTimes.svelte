@@ -139,7 +139,7 @@
 			{#if isLoading}
 				Laddar...
 			{:else if !canGenerateTimes}
-				Välj minst en produkt för att gå till nästa steg
+				Välj minst en produkt
 			{:else}
 				Nästa steg
 			{/if}
