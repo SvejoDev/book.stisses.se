@@ -178,6 +178,17 @@
 			selectedProducts = [];
 			showDurations = pricingType === 'per_product'; // Only auto-show for per_product
 			isBookingLocked = false;
+
+			// Add a small delay to ensure components are rendered
+			setTimeout(() => {
+				// If per_product pricing, scroll to durations
+				if (pricingType === 'per_product') {
+					scrollToElement(durationsSection);
+				} else {
+					// For other pricing types, scroll to price group selector
+					scrollToElement(priceGroupSection);
+				}
+			}, 100);
 		}
 	}
 
