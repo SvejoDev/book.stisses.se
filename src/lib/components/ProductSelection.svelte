@@ -15,20 +15,27 @@
 		description: string;
 		total_quantity: number;
 		imageUrl: string;
+		price?: number;
 	}
 
 	let {
 		startLocationId = $bindable(''),
 		experienceId = $bindable(''),
 		isLocked = $bindable(false),
-		onProductsSelected = (products: Array<{ productId: number; quantity: number }>) => {},
-		onProductsLoaded = () => {}
+		onProductsSelected = (
+			products: Array<{ productId: number; quantity: number; price?: number }>
+		) => {},
+		onProductsLoaded = () => {},
+		pricingType = $bindable<'per_person' | 'per_product' | 'hybrid'>('per_person')
 	} = $props<{
 		startLocationId: string;
 		experienceId: string;
 		isLocked?: boolean;
-		onProductsSelected?: (products: Array<{ productId: number; quantity: number }>) => void;
+		onProductsSelected?: (
+			products: Array<{ productId: number; quantity: number; price?: number }>
+		) => void;
 		onProductsLoaded?: () => void;
+		pricingType?: 'per_person' | 'per_product' | 'hybrid';
 	}>();
 
 	let selectedQuantities = $state<Record<number, number>>({});
@@ -37,6 +44,18 @@
 	let isLoading = $state(true);
 	let products = $state<Product[]>([]);
 	let error = $state<string | null>(null);
+
+	let totalProductPrice = $derived(() => {
+		if (pricingType === 'per_person') return 0;
+
+		return Object.entries(selectedQuantities).reduce((total, [productId, quantity]) => {
+			const product = products.find((p) => p.id === parseInt(productId));
+			if (product?.price) {
+				return total + product.price * quantity;
+			}
+			return total;
+		}, 0);
+	});
 
 	console.log('ProductSelection mounted with:', { startLocationId, experienceId });
 
@@ -125,10 +144,14 @@
 	$effect(() => {
 		const selectedProducts = Object.entries(selectedQuantities)
 			.filter(([_, quantity]) => quantity > 0)
-			.map(([productId, quantity]) => ({
-				productId: parseInt(productId),
-				quantity
-			}));
+			.map(([productId, quantity]) => {
+				const product = products.find((p) => p.id === parseInt(productId));
+				return {
+					productId: parseInt(productId),
+					quantity,
+					price: product?.price
+				};
+			});
 
 		onProductsSelected(selectedProducts);
 	});
@@ -175,6 +198,9 @@
 					<div>
 						<CardTitle>{product.name}</CardTitle>
 						<CardDescription>{product.description}</CardDescription>
+						{#if product.price}
+							<p class="mt-1 text-sm text-muted-foreground">{product.price} kr per st</p>
+						{/if}
 					</div>
 				</CardHeader>
 				<CardContent>
@@ -200,12 +226,25 @@
 								+
 							</Button>
 						</div>
-						<div class="text-sm text-muted-foreground">
-							Max antal: {product.total_quantity}
+						<div class="flex flex-col items-end gap-1">
+							<div class="text-sm text-muted-foreground">
+								Max antal: {product.total_quantity}
+							</div>
+							{#if product.price && selectedQuantities[product.id]}
+								<div class="text-sm font-medium">
+									Totalt: {product.price * selectedQuantities[product.id]} kr
+								</div>
+							{/if}
 						</div>
 					</div>
 				</CardContent>
 			</Card>
 		{/each}
+
+		{#if totalProductPrice() > 0}
+			<div class="mt-4 text-right text-lg font-medium">
+				Totalt för utrustning: {totalProductPrice()} kr
+			</div>
+		{/if}
 	{/if}
 </div>

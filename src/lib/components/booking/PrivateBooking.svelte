@@ -64,18 +64,26 @@
 		price: number;
 	}
 
+	interface SelectedProduct {
+		productId: number;
+		quantity: number;
+		price?: number;
+	}
+
 	let {
 		experience,
 		startLocations,
 		openDates = [],
 		blockedDates = [],
-		priceGroups = []
+		priceGroups = [],
+		pricingType
 	} = $props<{
 		experience: Experience;
 		startLocations: StartLocation[];
 		openDates: OpenDate[];
 		blockedDates: BlockedDate[];
 		priceGroups: PriceGroup[];
+		pricingType: 'per_person' | 'per_product' | 'hybrid';
 	}>();
 
 	let selectedLocationId = $state<number | null>(null);
@@ -89,12 +97,24 @@
 	let productsSection = $state<HTMLElement | null>(null);
 	let priceGroupSection = $state<HTMLElement | null>(null);
 	let isLoadingDurations = $state(false);
-	let selectedProducts = $state<Array<{ productId: number; quantity: number }>>([]);
+	let selectedProducts = $state<SelectedProduct[]>([]);
 	let isBookingLocked = $state(false);
 	let priceGroupQuantities = $state<Record<number, number>>({});
 	let showDurations = $state(false);
 	let extraPrice = $state(0);
 	let durations = $state<Duration[]>([]);
+	let priceGroupRef = $state<{ totalAmount: () => number } | null>(null);
+	let totalPrice = $derived(() => {
+		// Calculate product prices if applicable
+		const productTotal = selectedProducts.reduce((sum, product) => {
+			return sum + (product.price || 0) * product.quantity;
+		}, 0);
+
+		// Get the price group selector total
+		const priceGroupTotal = priceGroupRef?.totalAmount() ?? 0;
+
+		return productTotal + priceGroupTotal;
+	});
 
 	let shouldShowDurations = $derived(
 		showDurations && Object.values(priceGroupQuantities).some((quantity) => quantity > 0)
@@ -170,7 +190,7 @@
 		// Remove the immediate scroll - we'll handle it in the effect below
 	}
 
-	function handleProductSelection(products: Array<{ productId: number; quantity: number }>) {
+	function handleProductSelection(products: SelectedProduct[]) {
 		selectedProducts = products;
 	}
 
@@ -213,6 +233,7 @@
 	{#if selectedLocationId !== null || !hasStartLocations}
 		<section class="space-y-4" bind:this={priceGroupSection}>
 			<PriceGroupSelector
+				bind:this={priceGroupRef}
 				{priceGroups}
 				startLocationId={selectedLocationId ?? 0}
 				onQuantityChange={handlePriceGroupQuantityChange}
@@ -260,15 +281,20 @@
 				{#if shouldShowProducts}
 					<section class="space-y-4" bind:this={productsSection}>
 						<h2 class="text-center text-2xl font-semibold">Välj utrustning</h2>
-						<div class="mx-auto max-w-2xl">
-							<ProductSelection
-								startLocationId={(selectedLocationId ?? 0).toString()}
-								experienceId={experience.id}
-								onProductsSelected={handleProductSelection}
-								onProductsLoaded={() => (productsLoaded = true)}
-								isLocked={isBookingLocked}
-							/>
-						</div>
+						<ProductSelection
+							startLocationId={selectedLocationId?.toString() ?? '0'}
+							experienceId={experience.id}
+							onProductsSelected={handleProductSelection}
+							onProductsLoaded={() => (productsLoaded = true)}
+							isLocked={isBookingLocked}
+							{pricingType}
+						/>
+
+						{#if pricingType !== 'per_person' && totalPrice() > 0}
+							<div class="text-center text-xl font-semibold">
+								Totalt att betala: {totalPrice()} kr
+							</div>
+						{/if}
 
 						{#if true}
 							{@const props = {

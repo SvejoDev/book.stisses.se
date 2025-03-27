@@ -8,10 +8,12 @@ interface Product {
     description: string;
     total_quantity: number;
     image_url: string;
+    price?: number | null;
 }
 
 interface ProductResponse {
     product_id: number;
+    price?: number;
     products: Product;
 }
 
@@ -33,6 +35,7 @@ export const GET: RequestHandler = async ({ url }) => {
             .from('experience_start_location_products')
             .select(`
                 product_id,
+                price,
                 products (
                     id,
                     name,
@@ -60,9 +63,10 @@ export const GET: RequestHandler = async ({ url }) => {
         const products = ((productsData || []) as unknown as ProductResponse[])
             .map(item => ({
                 ...item.products,
-                imageUrl: item.products.image_url // Transform to match existing interface
+                imageUrl: item.products.image_url,
+                price: item.price || null
             }))
-            .filter((product): product is (Product & { imageUrl: string }) => {
+            .filter((product): product is (Product & { imageUrl: string; price: number | null }) => {
                 if (!product || seenProducts.has(product.id)) return false;
                 seenProducts.add(product.id);
                 return true;

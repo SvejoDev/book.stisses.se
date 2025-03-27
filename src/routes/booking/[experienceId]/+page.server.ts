@@ -107,7 +107,8 @@ export async function load({ params }) {
         startLocations: locationsWithImages,
         openDates: filteredOpenDates,
         blockedDates: blockedDates || [],
-        priceGroups: priceGroups || []
+        priceGroups: priceGroups || [],
+        pricingType: experience.pricing_type
     };
 
     return returnData;
