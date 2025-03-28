@@ -300,7 +300,7 @@
 						selectedDate && isInSelectedRange(date) && 'bg-primary text-white',
 						!selectedDate && isInHoveredRange(date) && 'bg-gray-100',
 						(isDateDisabled(date) || isLocked) && 'cursor-not-allowed text-gray-300',
-						isDateOpen(date) && !isDateDisabled(date) && 'hover:bg-gray-100'
+						isDateOpen(date) && !isDateDisabled(date) && !selectedDate && 'hover:bg-gray-100'
 					)}
 					onclick={() => handleDateSelect(date)}
 					onmouseenter={() => (hoveredDate = date)}
