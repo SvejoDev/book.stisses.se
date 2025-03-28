@@ -20,8 +20,9 @@ interface ProductResponse {
 export const GET: RequestHandler = async ({ url }) => {
     const startLocationId = url.searchParams.get('startLocationId');
     const experienceId = url.searchParams.get('experienceId');
+    const pricingType = url.searchParams.get('pricingType') || 'per_person';
     
-    console.log('Fetching products with:', { startLocationId, experienceId });
+    console.log('Fetching products with:', { startLocationId, experienceId, pricingType });
 
     if (!experienceId) {
         return new Response('Experience ID is required', { status: 400 });
@@ -89,7 +90,7 @@ export const GET: RequestHandler = async ({ url }) => {
                 total_quantity: item.products.total_quantity,
                 image_url: item.products.image_url,
                 imageUrl: item.products.image_url,
-                price: item.price
+                price: pricingType === 'per_person' ? null : item.price
             };
 
             // If the product doesn't exist yet, or if this version is more specific, use it

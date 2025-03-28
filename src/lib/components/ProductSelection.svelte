@@ -65,7 +65,7 @@
 			error = null;
 
 			const response = await fetch(
-				`/api/products?startLocationId=${startLocationId}&experienceId=${experienceId}`
+				`/api/products?startLocationId=${startLocationId}&experienceId=${experienceId}&pricingType=${pricingType}`
 			);
 
 			if (!response.ok) {
@@ -199,7 +199,7 @@
 						<div class="flex-grow">
 							<CardTitle>{product.name}</CardTitle>
 							<CardDescription>{product.description}</CardDescription>
-							{#if product.price}
+							{#if pricingType !== 'per_person' && product.price}
 								<p class="mt-1 text-sm text-muted-foreground">{product.price} SEK</p>
 							{/if}
 						</div>
@@ -231,7 +231,7 @@
 								<div class="text-sm text-muted-foreground">
 									Max antal: {product.total_quantity}
 								</div>
-								{#if product.price && selectedQuantities[product.id]}
+								{#if pricingType !== 'per_person' && product.price && selectedQuantities[product.id]}
 									<div class="text-sm font-medium">
 										Totalt: {product.price * selectedQuantities[product.id]} kr
 									</div>
