@@ -104,6 +104,28 @@
 		// Check if date is not in any open dates
 		if (!isDateOpen(date)) return true;
 
+		// Check if the full duration period would extend beyond any open date range
+		const durationDays = getDurationDays();
+		const endDateForDuration = addDays(date, durationDays - 1);
+
+		// Convert local date to UTC strings for comparison
+		const endDateStr = new Date(
+			endDateForDuration.getTime() - endDateForDuration.getTimezoneOffset() * 60000
+		)
+			.toISOString()
+			.split('T')[0];
+
+		// Check if the full duration period is within any open date range
+		const isWithinOpenPeriod = openDates.some((openDate: OpenDate) => {
+			if (openDate.type === 'specific') {
+				return openDate.specific_date?.split('T')[0] === endDateStr;
+			}
+			const endDate = openDate.end_date?.split('T')[0];
+			return endDate && endDateStr <= endDate;
+		});
+
+		if (!isWithinOpenPeriod) return true;
+
 		// Check if date is in blocked dates
 		const localDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
 		const utcDate = new Date(localDate.getTime() - localDate.getTimezoneOffset() * 60000);
@@ -112,7 +134,8 @@
 		const isBlockedDate = blockedDates.some((blocked: BlockedDate) => {
 			const startDate = blocked.start_date.split('T')[0];
 			const endDate = blocked.end_date.split('T')[0];
-			return dateStr >= startDate && dateStr <= endDate;
+			// Check if any day in the duration period overlaps with blocked dates
+			return dateStr >= startDate && endDateStr <= endDate;
 		});
 
 		if (isBlockedDate) return true;
