@@ -173,16 +173,6 @@
 			<p>Ingen utrustning tillgänglig för denna startplats.</p>
 		</div>
 	{:else}
-		{#if totalProductPrice() > 0}
-			<div class="sticky top-4 z-10 mb-6 w-full">
-				<div class="mx-auto rounded-lg bg-primary/5 p-4 text-center backdrop-blur-sm">
-					<span class="text-lg font-medium">
-						Totalt för utrustning: {totalProductPrice()} kr
-					</span>
-				</div>
-			</div>
-		{/if}
-
 		<div class="grid gap-4 sm:grid-cols-2">
 			{#each products as product, index (product.id)}
 				<Card class="flex h-full flex-col">
@@ -210,7 +200,7 @@
 							<CardTitle>{product.name}</CardTitle>
 							<CardDescription>{product.description}</CardDescription>
 							{#if product.price}
-								<p class="mt-1 text-sm text-muted-foreground">{product.price} kr per st</p>
+								<p class="mt-1 text-sm text-muted-foreground">{product.price} SEK</p>
 							{/if}
 						</div>
 					</CardHeader>
