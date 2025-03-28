@@ -6,7 +6,7 @@
 </script>
 
 <ParaglideJS {i18n}>
-	<main class="min-h-screen pb-16">
+	<main class="min-h-screen pb-24">
 		{@render children()}
 	</main>
 </ParaglideJS>

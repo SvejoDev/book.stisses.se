@@ -89,6 +89,24 @@
 		const displayPrice = includeVat ? addVat(price) : price;
 		return formatPrice(displayPrice);
 	}
+
+	// Make totalAmount accessible to parent components
+	function getTotalAmount(): number {
+		// Calculate base price from price groups
+		const baseTotal = Object.entries(quantities).reduce((sum, [groupId, quantity]) => {
+			const group = priceGroups.find((g: PriceGroup) => g.id === parseInt(groupId));
+			const basePrice = group ? group.price * quantity : 0;
+			return sum + (includeVat ? addVat(basePrice) : basePrice);
+		}, 0);
+
+		// Calculate extra price only for paying customers
+		const totalExtraPrice = extraPrice * totalPayingCustomers;
+
+		return baseTotal + (includeVat ? addVat(totalExtraPrice) : totalExtraPrice);
+	}
+
+	// Export the method
+	export { getTotalAmount as totalAmount };
 </script>
 
 <div class="space-y-6">
