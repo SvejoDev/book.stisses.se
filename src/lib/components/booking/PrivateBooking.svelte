@@ -196,12 +196,32 @@
 		durationType = duration.type as 'hours' | 'overnights';
 		durationValue = duration.value;
 		extraPrice = duration.extraPrice;
+
+		// Log the duration change
+		console.log('Duration changed:', {
+			type: durationType,
+			value: durationValue,
+			currentSelectedDate: selectedDate
+		});
+
+		// The Calendar component will handle resetting the date if needed
+		// through its internal effect
+
 		scrollToElement(calendarSection);
 	}
 
-	function handleDateSelect(date: Date) {
+	function handleDateSelect(date: Date | null) {
+		console.log('Date selected:', date);
 		selectedDate = date;
-		// Remove the immediate scroll - we'll handle it in the effect below
+
+		if (date) {
+			// Only scroll to products section if we have a valid date
+			setTimeout(() => {
+				if (shouldShowProducts) {
+					scrollToElement(productsSection);
+				}
+			}, 300);
+		}
 	}
 
 	function handleProductSelection(products: SelectedProduct[]) {
@@ -293,40 +313,38 @@
 				</div>
 			</section>
 
-			{#if selectedDate}
-				{#if shouldShowProducts}
-					<section class="space-y-4" bind:this={productsSection}>
-						<h2 class="text-center text-2xl font-semibold">Välj utrustning</h2>
-						<ProductSelection
-							startLocationId={selectedLocationId?.toString() ?? '0'}
-							experienceId={experience.id}
-							onProductsSelected={handleProductSelection}
-							onProductsLoaded={() => (productsLoaded = true)}
-							isLocked={isBookingLocked}
-							{pricingType}
-						/>
+			{#if selectedDate && shouldShowProducts}
+				<section class="space-y-4" bind:this={productsSection}>
+					<h2 class="text-center text-2xl font-semibold">Välj utrustning</h2>
+					<ProductSelection
+						startLocationId={selectedLocationId?.toString() ?? '0'}
+						experienceId={experience.id}
+						onProductsSelected={handleProductSelection}
+						onProductsLoaded={() => (productsLoaded = true)}
+						isLocked={isBookingLocked}
+						{pricingType}
+					/>
 
-						{#if pricingType !== 'per_person' && totalPrice() > 0}
-							<div class="text-center text-xl font-semibold">
-								Totalt att betala: {totalPrice()} kr
-							</div>
-						{/if}
+					{#if pricingType !== 'per_person' && totalPrice() > 0}
+						<div class="text-center text-xl font-semibold">
+							Totalt att betala: {totalPrice()} kr
+						</div>
+					{/if}
 
-						{#if true}
-							{@const props = {
-								experienceId: parseInt(experience.id),
-								selectedDate,
-								durationType,
-								durationValue,
-								selectedProducts,
-								onLockStateChange: handleLockStateChange
-							}}
-							<div class="mx-auto mt-4 max-w-2xl">
-								<AvailableStartTimes {...props} />
-							</div>
-						{/if}
-					</section>
-				{/if}
+					{#if true}
+						{@const props = {
+							experienceId: parseInt(experience.id),
+							selectedDate,
+							durationType,
+							durationValue,
+							selectedProducts,
+							onLockStateChange: handleLockStateChange
+						}}
+						<div class="mx-auto mt-4 max-w-2xl">
+							<AvailableStartTimes {...props} />
+						</div>
+					{/if}
+				</section>
 			{/if}
 		{/if}
 	{/if}

@@ -44,6 +44,20 @@
 	let hoveredDate = $state<Date | null>(null);
 	let hasFutureOpenDates = $state(false);
 
+	// Add effect to reset selected date when duration changes
+	$effect(() => {
+		// This will run whenever durationType or durationValue changes
+		if (selectedDate && isDateDisabled(selectedDate)) {
+			console.log('Resetting selected date due to duration change', {
+				oldDate: selectedDate,
+				durationType,
+				durationValue
+			});
+			selectedDate = null;
+			onDateSelect(null); // Notify parent that date was reset
+		}
+	});
+
 	// Initialize the calendar
 	function initializeCalendar() {
 		// Always start with current month
@@ -104,6 +118,28 @@
 		// Check if date is not in any open dates
 		if (!isDateOpen(date)) return true;
 
+		// Check if the full duration period would extend beyond any open date range
+		const durationDays = getDurationDays();
+		const endDateForDuration = addDays(date, durationDays - 1);
+
+		// Convert local date to UTC strings for comparison
+		const endDateStr = new Date(
+			endDateForDuration.getTime() - endDateForDuration.getTimezoneOffset() * 60000
+		)
+			.toISOString()
+			.split('T')[0];
+
+		// Check if the full duration period is within any open date range
+		const isWithinOpenPeriod = openDates.some((openDate: OpenDate) => {
+			if (openDate.type === 'specific') {
+				return openDate.specific_date?.split('T')[0] === endDateStr;
+			}
+			const endDate = openDate.end_date?.split('T')[0];
+			return endDate && endDateStr <= endDate;
+		});
+
+		if (!isWithinOpenPeriod) return true;
+
 		// Check if date is in blocked dates
 		const localDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
 		const utcDate = new Date(localDate.getTime() - localDate.getTimezoneOffset() * 60000);
@@ -112,7 +148,8 @@
 		const isBlockedDate = blockedDates.some((blocked: BlockedDate) => {
 			const startDate = blocked.start_date.split('T')[0];
 			const endDate = blocked.end_date.split('T')[0];
-			return dateStr >= startDate && dateStr <= endDate;
+			// Check if any day in the duration period overlaps with blocked dates
+			return dateStr >= startDate && endDateStr <= endDate;
 		});
 
 		if (isBlockedDate) return true;
@@ -172,7 +209,7 @@
 
 	// Check if a date is part of the hovered range
 	function isInHoveredRange(date: Date) {
-		if (!hoveredDate || selectedDate) return false;
+		if (!hoveredDate) return false;
 		const durationDays = getDurationDays();
 		const endDate = addDays(hoveredDate, durationDays - 1);
 		return isWithinInterval(date, { start: hoveredDate, end: endDate });
@@ -258,11 +295,16 @@
 		<div class="days-grid">
 			{#each getCalendarDays() as { date }}
 				<button
-					class="day"
-					class:selected={selectedDate && isInSelectedRange(date)}
-					class:hovered={!selectedDate && isInHoveredRange(date)}
-					class:disabled={isDateDisabled(date) || isLocked}
-					class:open={isDateOpen(date) && !isDateDisabled(date)}
+					class={cn(
+						'relative flex aspect-square w-full flex-col items-center justify-center rounded-full text-sm md:text-base',
+						selectedDate && isInSelectedRange(date) && 'bg-primary text-white',
+						!isInSelectedRange(date) && isInHoveredRange(date) && 'bg-gray-100',
+						(isDateDisabled(date) || isLocked) && 'cursor-not-allowed text-gray-300',
+						isDateOpen(date) &&
+							!isDateDisabled(date) &&
+							!isInSelectedRange(date) &&
+							'hover:bg-gray-100'
+					)}
 					onclick={() => handleDateSelect(date)}
 					onmouseenter={() => (hoveredDate = date)}
 					onmouseleave={() => (hoveredDate = null)}
@@ -270,7 +312,12 @@
 				>
 					<span class="date-number">{date.getDate()}</span>
 					{#if isDateOpen(date) && !isDateDisabled(date)}
-						<span class="open-indicator"></span>
+						<span
+							class={cn(
+								'absolute bottom-1 h-1.5 w-1.5 rounded-full md:h-2 md:w-2',
+								selectedDate && isInSelectedRange(date) ? 'bg-white' : 'bg-green-500'
+							)}
+						></span>
 					{/if}
 				</button>
 			{/each}
@@ -322,34 +369,6 @@
 		@apply grid grid-cols-7 gap-1 md:gap-2;
 		flex: 1;
 		margin-top: 0.5rem;
-	}
-
-	.day {
-		@apply relative flex aspect-square w-full flex-col items-center justify-center rounded-full text-sm md:text-base;
-	}
-
-	.day:not(.selected):hover:not(.disabled) {
-		@apply bg-gray-100;
-	}
-
-	.selected {
-		@apply bg-primary text-white;
-	}
-
-	.disabled {
-		@apply cursor-not-allowed text-gray-300;
-	}
-
-	.disabled:hover {
-		@apply bg-transparent;
-	}
-
-	.open-indicator {
-		@apply absolute bottom-1 h-1.5 w-1.5 rounded-full bg-green-500 md:h-2 md:w-2;
-	}
-
-	.selected .open-indicator {
-		@apply bg-white;
 	}
 
 	.future-dates-notice {
