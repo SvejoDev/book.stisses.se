@@ -209,7 +209,7 @@
 
 	// Check if a date is part of the hovered range
 	function isInHoveredRange(date: Date) {
-		if (!hoveredDate || selectedDate) return false;
+		if (!hoveredDate) return false;
 		const durationDays = getDurationDays();
 		const endDate = addDays(hoveredDate, durationDays - 1);
 		return isWithinInterval(date, { start: hoveredDate, end: endDate });
@@ -298,9 +298,12 @@
 					class={cn(
 						'relative flex aspect-square w-full flex-col items-center justify-center rounded-full text-sm md:text-base',
 						selectedDate && isInSelectedRange(date) && 'bg-primary text-white',
-						!selectedDate && isInHoveredRange(date) && 'bg-gray-100',
+						!isInSelectedRange(date) && isInHoveredRange(date) && 'bg-gray-100',
 						(isDateDisabled(date) || isLocked) && 'cursor-not-allowed text-gray-300',
-						isDateOpen(date) && !isDateDisabled(date) && !selectedDate && 'hover:bg-gray-100'
+						isDateOpen(date) &&
+							!isDateDisabled(date) &&
+							!isInSelectedRange(date) &&
+							'hover:bg-gray-100'
 					)}
 					onclick={() => handleDateSelect(date)}
 					onmouseenter={() => (hoveredDate = date)}
