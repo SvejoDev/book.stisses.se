@@ -1,0 +1,134 @@
+import { json } from '@sveltejs/kit';
+import type { RequestHandler } from './$types';
+import { supabase } from '$lib/supabaseClient';
+
+interface Addon {
+    id: number;
+    name: string;
+    description: string;
+    total_quantity: number;
+    image_url: string;
+    imageUrl: string;
+    price?: number | null;
+}
+
+interface AddonEntry {
+    id: number;
+    experience_id: number | null;
+    start_location_id: number | null;
+    product_id: number | null;
+    addon_id: number;
+    price: number | null;
+    addons: {
+        id: number;
+        name: string;
+        description: string;
+        total_quantity: number;
+        image_url: string;
+    };
+}
+
+export const GET: RequestHandler = async ({ url }) => {
+    const startLocationId = url.searchParams.get('startLocationId');
+    const experienceId = url.searchParams.get('experienceId');
+    const pricingType = url.searchParams.get('pricingType') || 'per_person';
+    const productIds = url.searchParams.getAll('productIds[]').map(Number);
+    
+    console.log('Fetching addons with params:', { startLocationId, experienceId, pricingType, productIds });
+
+    if (!experienceId) {
+        return new Response('Experience ID is required', { status: 400 });
+    }
+
+    try {
+        // Use a simple approach: Get all rows and filter in JavaScript
+        // This gives us full control over the filtering logic
+        const { data, error } = await supabase
+            .from('experience_start_location_products_addons')
+            .select(`
+                id,
+                experience_id,
+                start_location_id,
+                product_id,
+                addon_id,
+                price,
+                addons (
+                    id,
+                    name,
+                    description,
+                    total_quantity,
+                    image_url
+                )
+            `);
+
+        if (error) {
+            console.error('Supabase query error:', error);
+            throw error;
+        }
+
+        console.log('DEBUG - Raw data from database:', data);
+
+        // Now filter the data manually to ensure we only get:
+        // 1. Addons for this experience OR global addons (experience_id IS NULL)
+        // 2. Apply other filters (startLocation, productIds) as needed
+        let filteredData = (data || []) as unknown as AddonEntry[];
+
+        // First, filter by experience_id
+        filteredData = filteredData.filter(item => 
+            item.experience_id === parseInt(experienceId) || 
+            item.experience_id === null
+        );
+
+        console.log('DEBUG - After experience filter:', filteredData);
+
+        // Filter by start location if specified
+        if (startLocationId && startLocationId !== '0') {
+            filteredData = filteredData.filter(item => 
+                item.start_location_id === parseInt(startLocationId) || 
+                item.start_location_id === null
+            );
+        }
+
+        console.log('DEBUG - After location filter:', filteredData);
+
+        // Filter by product if products are selected
+        if (productIds.length > 0) {
+            filteredData = filteredData.filter(item => 
+                item.product_id === null || 
+                productIds.includes(item.product_id)
+            );
+        }
+
+        console.log('DEBUG - After product filter:', filteredData);
+
+        // Transform the filtered data and remove duplicates
+        const addonMap = new Map<number, Addon>();
+
+        for (const item of filteredData) {
+            if (!item.addons) continue;
+            
+            const existingAddon = addonMap.get(item.addons.id);
+            const newAddon: Addon = {
+                id: item.addons.id,
+                name: item.addons.name,
+                description: item.addons.description,
+                total_quantity: item.addons.total_quantity,
+                image_url: item.addons.image_url,
+                imageUrl: item.addons.image_url,
+                price: pricingType === 'per_person' ? null : item.price
+            };
+
+            // If the addon doesn't exist yet, or if this version is more specific, use it
+            if (!existingAddon || (item.price !== null && existingAddon.price === null)) {
+                addonMap.set(item.addons.id, newAddon);
+            }
+        }
+
+        const addons = Array.from(addonMap.values());
+        console.log('Final transformed addons:', addons);
+        return json(addons);
+    } catch (error) {
+        console.error('Error fetching addons:', error);
+        return new Response('Failed to fetch addons: ' + (error instanceof Error ? error.message : String(error)), { status: 500 });
+    }
+}; 

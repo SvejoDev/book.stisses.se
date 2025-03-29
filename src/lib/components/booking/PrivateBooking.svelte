@@ -3,6 +3,7 @@
 	import BookingDurations from '$lib/components/BookingDurations.svelte';
 	import Calendar from '$lib/components/Calendar.svelte';
 	import ProductSelection from '$lib/components/ProductSelection.svelte';
+	import AddonSelection from '$lib/components/AddonSelection.svelte';
 	import AvailableStartTimes from '$lib/components/AvailableStartTimes.svelte';
 	import PriceGroupSelector from '$lib/components/PriceGroupSelector.svelte';
 
@@ -70,6 +71,12 @@
 		price?: number;
 	}
 
+	interface SelectedAddon {
+		addonId: number;
+		quantity: number;
+		price?: number;
+	}
+
 	let {
 		experience,
 		startLocations,
@@ -95,9 +102,11 @@
 	let durationsSection = $state<HTMLElement | null>(null);
 	let calendarSection = $state<HTMLElement | null>(null);
 	let productsSection = $state<HTMLElement | null>(null);
+	let addonsSection = $state<HTMLElement | null>(null);
 	let priceGroupSection = $state<HTMLElement | null>(null);
 	let isLoadingDurations = $state(false);
 	let selectedProducts = $state<SelectedProduct[]>([]);
+	let selectedAddons = $state<SelectedAddon[]>([]);
 	let isBookingLocked = $state(false);
 	let priceGroupQuantities = $state<Record<number, number>>({});
 	let showDurations = $state(false);
@@ -110,10 +119,15 @@
 			return sum + (product.price || 0) * product.quantity;
 		}, 0);
 
+		// Calculate addon prices
+		const addonTotal = selectedAddons.reduce((sum, addon) => {
+			return sum + (addon.price || 0) * addon.quantity;
+		}, 0);
+
 		// Get the price group selector total
 		const priceGroupTotal = priceGroupRef?.totalAmount() ?? 0;
 
-		return productTotal + priceGroupTotal;
+		return productTotal + addonTotal + priceGroupTotal;
 	});
 
 	let hasStartLocations = $derived(startLocations.length > 0);
@@ -146,6 +160,7 @@
 
 	// Add new effect to handle scrolling after products are loaded
 	let productsLoaded = $state(false);
+	let addonsLoaded = $state(false);
 
 	$effect(() => {
 		if (selectedDate && shouldShowProducts && productsLoaded) {
@@ -176,6 +191,7 @@
 			durationValue = 0;
 			selectedDate = null;
 			selectedProducts = [];
+			selectedAddons = [];
 			showDurations = pricingType === 'per_product'; // Only auto-show for per_product
 			isBookingLocked = false;
 
@@ -226,6 +242,15 @@
 
 	function handleProductSelection(products: SelectedProduct[]) {
 		selectedProducts = products;
+
+		// Reset addon selection when products change
+		if (selectedAddons.length > 0) {
+			selectedAddons = [];
+		}
+	}
+
+	function handleAddonSelection(addons: SelectedAddon[]) {
+		selectedAddons = addons;
 	}
 
 	function handleLockStateChange(locked: boolean) {
@@ -249,6 +274,13 @@
 		setTimeout(() => {
 			scrollToElement(durationsSection);
 		}, 100);
+	}
+
+	function handleAddonsLoaded() {
+		addonsLoaded = true;
+		if (addonsSection) {
+			scrollToElement(addonsSection);
+		}
 	}
 </script>
 
@@ -324,6 +356,19 @@
 						isLocked={isBookingLocked}
 						{pricingType}
 					/>
+				</section>
+
+				<section class="space-y-4" bind:this={addonsSection}>
+					<h2 class="text-center text-2xl font-semibold">Välj tillägg</h2>
+					<AddonSelection
+						startLocationId={selectedLocationId?.toString() ?? '0'}
+						experienceId={experience.id}
+						{selectedProducts}
+						onAddonsSelected={handleAddonSelection}
+						onAddonsLoaded={handleAddonsLoaded}
+						isLocked={isBookingLocked}
+						{pricingType}
+					/>
 
 					{#if pricingType !== 'per_person' && totalPrice() > 0}
 						<div class="text-center text-xl font-semibold">
@@ -338,6 +383,7 @@
 							durationType,
 							durationValue,
 							selectedProducts,
+							selectedAddons,
 							onLockStateChange: handleLockStateChange
 						}}
 						<div class="mx-auto mt-4 max-w-2xl">

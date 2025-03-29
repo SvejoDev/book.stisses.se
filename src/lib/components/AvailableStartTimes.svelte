@@ -9,6 +9,7 @@
 		durationType,
 		durationValue,
 		selectedProducts = [],
+		selectedAddons = [],
 		onLockStateChange = () => {}
 	} = $props<{
 		experienceId: number;
@@ -16,6 +17,7 @@
 		durationType: 'hours' | 'overnights';
 		durationValue: number;
 		selectedProducts: Array<{ productId: number; quantity: number }>;
+		selectedAddons?: Array<{ addonId: number; quantity: number }>;
 		onLockStateChange?: (locked: boolean) => void;
 	}>();
 
@@ -80,6 +82,7 @@
 				durationType,
 				durationValue,
 				products: selectedProducts,
+				addons: selectedAddons,
 				experienceId
 			};
 
