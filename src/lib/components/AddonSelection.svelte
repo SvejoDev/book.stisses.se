@@ -159,6 +159,11 @@
 				};
 			});
 
+		console.log(
+			'update',
+			$state.snapshot(selectedQuantities),
+			'AddonSelection - Current quantities'
+		);
 		onAddonsSelected(selectedAddons);
 	});
 

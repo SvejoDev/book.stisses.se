@@ -43,6 +43,17 @@
 		})
 	);
 
+	// Monitor addons state changes
+	$effect(() => {
+		if (selectedAddons?.length > 0) {
+			console.log(
+				'update',
+				$state.snapshot(selectedAddons),
+				'AvailableStartTimes - Current addons'
+			);
+		}
+	});
+
 	$effect(() => {
 		if (selectedTime) {
 			const [hours, minutes] = selectedTime.startTime.split(':').map(Number);
@@ -81,10 +92,12 @@
 				date: selectedDate.toISOString().split('T')[0],
 				durationType,
 				durationValue,
-				products: selectedProducts,
-				addons: selectedAddons,
+				products: $state.snapshot(selectedProducts),
+				addons: $state.snapshot(selectedAddons) || [],
 				experienceId
 			};
+
+			console.log('AvailableStartTimes - Request data:', requestData);
 
 			const response = await fetch('/api/check-availability', {
 				method: 'POST',

@@ -242,14 +242,10 @@
 
 	function handleProductSelection(products: SelectedProduct[]) {
 		selectedProducts = products;
-
-		// Reset addon selection when products change
-		if (selectedAddons.length > 0) {
-			selectedAddons = [];
-		}
 	}
 
 	function handleAddonSelection(addons: SelectedAddon[]) {
+		console.log('update', $state.snapshot(addons), 'PrivateBooking - Addons updated');
 		selectedAddons = addons;
 	}
 

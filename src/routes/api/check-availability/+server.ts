@@ -258,6 +258,8 @@ export const POST: RequestHandler = async ({ request }) => {
         const requestData: AvailabilityRequest = await request.json();
         const { date, durationType, durationValue, products, addons = [], experienceId } = requestData;
         
+        console.log('Received request with addons:', addons);
+        
         // Get experience details including booking foresight
         const { data: experience, error: experienceError } = await supabase
             .from('experiences')
