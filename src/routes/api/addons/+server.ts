@@ -63,7 +63,18 @@ export const GET: RequestHandler = async ({ url }) => {
 
         if (error) {
             console.error('Supabase query error:', error);
-            throw error;
+            return new Response(JSON.stringify({ error: error.message }), { 
+                status: 500,
+                headers: { 'Content-Type': 'application/json' }
+            });
+        }
+
+        if (!data) {
+            console.error('No data returned from Supabase');
+            return new Response(JSON.stringify({ error: 'No data returned from database' }), {
+                status: 500,
+                headers: { 'Content-Type': 'application/json' }
+            });
         }
 
         console.log('DEBUG - Raw data from database:', data);
@@ -129,6 +140,14 @@ export const GET: RequestHandler = async ({ url }) => {
         return json(addons);
     } catch (error) {
         console.error('Error fetching addons:', error);
-        return new Response('Failed to fetch addons: ' + (error instanceof Error ? error.message : String(error)), { status: 500 });
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        console.error('Detailed error:', {
+            message: errorMessage,
+            stack: error instanceof Error ? error.stack : undefined
+        });
+        return new Response(JSON.stringify({ error: errorMessage }), { 
+            status: 500,
+            headers: { 'Content-Type': 'application/json' }
+        });
     }
 }; 
