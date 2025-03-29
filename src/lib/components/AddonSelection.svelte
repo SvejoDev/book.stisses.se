@@ -255,9 +255,11 @@
 								</Button>
 							</div>
 							<div class="flex flex-col items-end gap-1">
-								<div class="text-sm text-muted-foreground">
-									Max antal: {addon.total_quantity}
-								</div>
+								{#if addon.total_quantity !== null}
+									<div class="text-sm text-muted-foreground">
+										Max antal: {addon.total_quantity}
+									</div>
+								{/if}
 								{#if pricingType !== 'per_person' && addon.price && selectedQuantities[addon.id]}
 									<div class="text-sm font-medium">
 										Totalt: {addon.price * selectedQuantities[addon.id]} kr

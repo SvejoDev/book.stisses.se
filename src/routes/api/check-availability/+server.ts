@@ -27,7 +27,8 @@ interface AvailabilityCache {
                 [minute: string]: number | null;
             };
         };
-        type: 'product' | 'addon'; // To distinguish between products and addons
+        type: 'product' | 'addon';
+        trackAvailability: boolean;
     };
 }
 
@@ -114,28 +115,40 @@ async function loadProductData(productId: number, dates: string[]) {
         }
     });
 
-    return { maxQuantity, availability, type: 'product' as const };
+    return { maxQuantity, availability, type: 'product' as const, trackAvailability: true };
 }
 
 async function loadAddonData(addonId: number, dates: string[]) {
-    // Get max quantity and availability data in parallel
-    const [maxQuantityResult, ...availabilityResults] = await Promise.all([
-        supabase
-            .from('addons')
-            .select('total_quantity')
-            .eq('id', addonId)
-            .single(),
-        ...dates.map(date => supabase
+    // First check if addon needs availability tracking
+    const { data: addon, error: addonError } = await supabase
+        .from('addons')
+        .select('total_quantity, track_availability')
+        .eq('id', addonId)
+        .single();
+
+    if (addonError) throw addonError;
+
+    // If addon doesn't track availability, return simplified data
+    if (!addon.track_availability) {
+        return {
+            maxQuantity: addon.total_quantity,
+            availability: {}, // Empty availability means always available
+            type: 'addon' as const,
+            trackAvailability: false
+        };
+    }
+
+    // Rest of your existing loadAddonData code for tracked addons
+    const availabilityResults = await Promise.all(
+        dates.map(date => supabase
             .from(`availability_addon_${addonId}`)
             .select('*')
             .eq('datum', date)
             .single())
-    ]);
+    );
 
-    const maxQuantity = maxQuantityResult.data?.total_quantity || 0;
+    // Process availability data as before
     const availability: { [date: string]: { [minute: string]: number | null } } = {};
-
-    // Process availability data
     dates.forEach((date, index) => {
         const result = availabilityResults[index];
         availability[date] = {};
@@ -148,7 +161,12 @@ async function loadAddonData(addonId: number, dates: string[]) {
         }
     });
 
-    return { maxQuantity, availability, type: 'addon' as const };
+    return {
+        maxQuantity: addon.total_quantity,
+        availability,
+        type: 'addon' as const,
+        trackAvailability: true
+    };
 }
 
 async function checkItemAvailability(
@@ -165,10 +183,15 @@ async function checkItemAvailability(
         throw new Error(`Item ${itemId} data not found in cache`);
     }
 
-    const { maxQuantity, availability, type } = itemData;
-    const dateAvailability = availability[date];
+    const { maxQuantity, availability, type, trackAvailability } = itemData;
 
-    // If no availability data exists, all slots are available
+    // If item doesn't track availability, it's always available
+    if (!trackAvailability) {
+        return true;
+    }
+
+    // Rest of your existing checkItemAvailability code
+    const dateAvailability = availability[date];
     if (!dateAvailability) {
         return true;
     }
