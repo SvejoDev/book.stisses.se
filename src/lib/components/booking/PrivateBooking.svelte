@@ -155,9 +155,13 @@
 
 	$effect(() => {
 		if (selectedDate && shouldShowProducts && productsLoaded) {
-			setTimeout(() => {
-				scrollToElement(addonsSection);
-			}, 300); // Increased timeout to ensure content is rendered
+			// Only scroll to addons section on desktop
+			const isMobile = window.innerWidth < 768;
+			if (!isMobile) {
+				setTimeout(() => {
+					scrollToElement(addonsSection);
+				}, 300);
+			}
 		}
 	});
 
@@ -165,8 +169,17 @@
 		if (element) {
 			const elementRect = element.getBoundingClientRect();
 			const absoluteElementTop = elementRect.top + window.pageYOffset;
-			const middle = absoluteElementTop - window.innerHeight / 3;
-			window.scrollTo({ top: middle, behavior: 'smooth' });
+
+			// Check if we're on a mobile device (screen width less than 768px)
+			const isMobile = window.innerWidth < 768;
+
+			// On mobile, scroll to the top of the element
+			// On desktop, scroll to keep element in the middle third of the viewport
+			const scrollPosition = isMobile
+				? absoluteElementTop
+				: absoluteElementTop - window.innerHeight / 3;
+
+			window.scrollTo({ top: scrollPosition, behavior: 'smooth' });
 		}
 	}
 
@@ -211,7 +224,11 @@
 			// Only scroll to products section if we have a valid date
 			setTimeout(() => {
 				if (shouldShowProducts) {
-					scrollToElement(productsSection);
+					const isMobile = window.innerWidth < 768;
+					// On mobile/tablet, scroll to products section immediately
+					if (isMobile) {
+						scrollToElement(productsSection);
+					}
 				}
 			}, 300);
 		}
