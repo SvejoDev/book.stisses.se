@@ -71,8 +71,6 @@ export async function load({ params }) {
         throw error(500, "Failed to load price groups");
     }
 
-    console.log('Price groups:', priceGroups);
-
     // Fetch open dates for this experience using simpler query first
     const { data: openDates, error: openDatesError } = await supabase
         .from("experience_open_dates")

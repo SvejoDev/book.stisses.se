@@ -125,8 +125,7 @@
 	let hasStartLocations = $derived(startLocations.length > 0);
 
 	let shouldShowDurations = $derived(
-		(pricingType === 'per_product' && (selectedLocationId !== null || !hasStartLocations)) ||
-			(showDurations && Object.values(priceGroupQuantities).some((quantity) => quantity > 0))
+		showDurations && (selectedLocationId !== null || !hasStartLocations)
 	);
 
 	let shouldShowProducts = $derived(
@@ -175,18 +174,12 @@
 			selectedDate = null;
 			selectedProducts = [];
 			selectedAddons = [];
-			showDurations = pricingType === 'per_product'; // Only auto-show for per_product
+			showDurations = false; // Reset showDurations
 			isBookingLocked = false;
 
 			// Add a small delay to ensure components are rendered
 			setTimeout(() => {
-				// If per_product pricing, scroll to durations
-				if (pricingType === 'per_product') {
-					scrollToElement(durationsSection);
-				} else {
-					// For other pricing types, scroll to price group selector
-					scrollToElement(priceGroupSection);
-				}
+				scrollToElement(priceGroupSection);
 			}, 100);
 		}
 	}

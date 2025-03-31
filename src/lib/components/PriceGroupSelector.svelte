@@ -58,6 +58,12 @@
 		}, 0)
 	);
 
+	// Log changes in customer counts
+	$effect(() => {
+		console.log('Paying customers:', totalPayingCustomers);
+		console.log('Non-paying customers:', totalNonPayingCustomers);
+	});
+
 	// Calculate total amount including extra price for paying customers
 	let calculatedTotal = $derived(() => {
 		if (pricingType === 'per_product') return 0;
