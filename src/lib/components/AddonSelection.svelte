@@ -8,6 +8,7 @@
 		CardTitle
 	} from '$lib/components/ui/card';
 	import { cn } from '$lib/utils';
+	import { addVat, formatPrice } from '$lib/utils/price';
 
 	interface Addon {
 		id: number;
@@ -28,7 +29,8 @@
 		onAddonsLoaded = () => {},
 		pricingType = $bindable<'per_person' | 'per_product' | 'hybrid'>('per_person'),
 		payingCustomers = $bindable(0),
-		onAddonsFetched = () => {}
+		onAddonsFetched = () => {},
+		includeVat = $bindable(true)
 	} = $props<{
 		startLocationId: string;
 		experienceId: string;
@@ -41,6 +43,7 @@
 		pricingType?: 'per_person' | 'per_product' | 'hybrid';
 		payingCustomers?: number;
 		onAddonsFetched?: () => void;
+		includeVat?: boolean;
 	}>();
 
 	let selectedQuantities = $state<Record<number, number>>({});
@@ -56,34 +59,18 @@
 		const total = addons.reduce((total, addon) => {
 			if (!addon.price) return total;
 
+			let addonTotal = 0;
 			if (addon.pricing_type === 'per_unit') {
 				const quantity = selectedQuantities[addon.id] || 0;
-				return total + addon.price * quantity;
+				addonTotal = addon.price * quantity;
 			} else if (addon.pricing_type === 'per_person' && selectedPerPersonAddons[addon.id]) {
-				return total + addon.price * payingCustomers;
+				addonTotal = addon.price * payingCustomers;
 			}
-			return total;
+
+			return total + (includeVat ? addVat(addonTotal) : addonTotal);
 		}, 0);
 
-		console.log('Addons cost:', total, {
-			perUnitAddons: addons
-				.filter((a) => a.pricing_type === 'per_unit')
-				.map((a) => ({
-					name: a.name,
-					quantity: selectedQuantities[a.id] || 0,
-					price: a.price,
-					total: (selectedQuantities[a.id] || 0) * (a.price || 0)
-				})),
-			perPersonAddons: addons
-				.filter((a) => a.pricing_type === 'per_person')
-				.map((a) => ({
-					name: a.name,
-					selected: selectedPerPersonAddons[a.id],
-					price: a.price,
-					payingCustomers,
-					total: selectedPerPersonAddons[a.id] ? (a.price || 0) * payingCustomers : 0
-				}))
-		});
+		console.log('Addons cost:', total);
 		return total;
 	});
 
@@ -306,11 +293,14 @@
 								{#if addon.price === 0 || addon.price === undefined}
 									Ingår
 								{:else}
-									{addon.price} SEK
+									{formatPrice(includeVat ? addVat(addon.price) : addon.price)}
 									{#if addon.pricing_type === 'per_person'}
 										per person
 									{:else}
 										per enhet
+									{/if}
+									{#if includeVat}
+										<span class="text-xs">(inkl. moms)</span>
 									{/if}
 								{/if}
 							</p>
@@ -350,7 +340,14 @@
 										<div class="text-sm font-medium">Ingår</div>
 									{:else if selectedQuantities[addon.id]}
 										<div class="text-sm font-medium">
-											Totalt: {addon.price * selectedQuantities[addon.id]} kr
+											Totalt: {formatPrice(
+												includeVat
+													? addVat(addon.price * selectedQuantities[addon.id])
+													: addon.price * selectedQuantities[addon.id]
+											)}
+											{#if includeVat}
+												<span class="text-xs">(inkl. moms)</span>
+											{/if}
 										</div>
 									{/if}
 								</div>
@@ -368,7 +365,14 @@
 										<div class="ml-4 text-sm font-medium">Ingår</div>
 									{:else if selectedPerPersonAddons[addon.id]}
 										<div class="ml-4 text-sm font-medium">
-											Totalt: {addon.price * payingCustomers} kr
+											Totalt: {formatPrice(
+												includeVat
+													? addVat(addon.price * payingCustomers)
+													: addon.price * payingCustomers
+											)}
+											{#if includeVat}
+												<span class="text-xs">(inkl. moms)</span>
+											{/if}
 										</div>
 									{/if}
 								</div>

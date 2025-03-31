@@ -348,6 +348,7 @@
 						{pricingType}
 						payingCustomers={priceGroupRef?.getPayingCustomers() ?? 0}
 						onAddonsFetched={() => (showAvailableTimesButton = true)}
+						includeVat={true}
 					/>
 
 					{#if pricingType !== 'per_person' && totalPrice() > 0}
