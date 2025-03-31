@@ -104,7 +104,11 @@
 	let showDurations = $state(false);
 	let extraPrice = $state(0);
 	let durations = $state<Duration[]>([]);
-	let priceGroupRef = $state<{ totalAmount: () => number } | null>(null);
+	let priceGroupRef = $state<{
+		totalAmount: () => number;
+		getPayingCustomers: () => number;
+		getNonPayingCustomers: () => number;
+	} | null>(null);
 	let totalPrice = $derived(() => {
 		// Calculate product prices if applicable
 		const productTotal = selectedProducts.reduce((sum, product) => {
@@ -330,6 +334,7 @@
 						onAddonsLoaded={handleAddonsLoaded}
 						isLocked={isBookingLocked}
 						{pricingType}
+						payingCustomers={priceGroupRef?.getPayingCustomers() ?? 0}
 					/>
 
 					{#if pricingType !== 'per_person' && totalPrice() > 0}

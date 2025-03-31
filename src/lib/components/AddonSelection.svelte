@@ -16,6 +16,7 @@
 		total_quantity: number;
 		imageUrl: string;
 		price?: number;
+		pricing_type: 'per_person' | 'per_unit';
 	}
 
 	let {
@@ -25,7 +26,8 @@
 		isLocked = $bindable(false),
 		onAddonsSelected = (addons: Array<{ addonId: number; quantity: number; price?: number }>) => {},
 		onAddonsLoaded = () => {},
-		pricingType = $bindable<'per_person' | 'per_product' | 'hybrid'>('per_person')
+		pricingType = $bindable<'per_person' | 'per_product' | 'hybrid'>('per_person'),
+		payingCustomers = $bindable(0)
 	} = $props<{
 		startLocationId: string;
 		experienceId: string;
@@ -36,9 +38,11 @@
 		) => void;
 		onAddonsLoaded?: () => void;
 		pricingType?: 'per_person' | 'per_product' | 'hybrid';
+		payingCustomers?: number;
 	}>();
 
 	let selectedQuantities = $state<Record<number, number>>({});
+	let selectedPerPersonAddons = $state<Record<number, boolean>>({});
 	let allImagesLoaded = $state(false);
 	let initialLoadDone = $state(false);
 	let isLoading = $state(false);
@@ -52,7 +56,14 @@
 		return Object.entries(selectedQuantities).reduce((total, [addonId, quantity]) => {
 			const addon = addons.find((a) => a.id === parseInt(addonId));
 			if (addon?.price) {
-				return total + addon.price * quantity;
+				if (addon.pricing_type === 'per_unit') {
+					return total + addon.price * quantity;
+				} else if (
+					addon.pricing_type === 'per_person' &&
+					selectedPerPersonAddons[parseInt(addonId)]
+				) {
+					return total + addon.price * payingCustomers;
+				}
 			}
 			return total;
 		}, 0);
@@ -146,18 +157,37 @@
 		}
 	}
 
+	function togglePerPersonAddon(addonId: number) {
+		if (isLocked) return;
+		selectedPerPersonAddons[addonId] = !selectedPerPersonAddons[addonId];
+	}
+
 	// Notify parent of quantity changes
 	$effect(() => {
-		const selectedAddons = Object.entries(selectedQuantities)
-			.filter(([_, quantity]) => quantity > 0)
-			.map(([addonId, quantity]) => {
-				const addon = addons.find((a) => a.id === parseInt(addonId));
-				return {
-					addonId: parseInt(addonId),
-					quantity,
-					price: addon?.price
-				};
-			});
+		const selectedAddons = [
+			// Per-unit addons
+			...Object.entries(selectedQuantities)
+				.filter(([_, quantity]) => quantity > 0)
+				.map(([addonId, quantity]) => {
+					const addon = addons.find((a) => a.id === parseInt(addonId));
+					return {
+						addonId: parseInt(addonId),
+						quantity,
+						price: addon?.price
+					};
+				}),
+			// Per-person addons
+			...Object.entries(selectedPerPersonAddons)
+				.filter(([_, selected]) => selected)
+				.map(([addonId]) => {
+					const addon = addons.find((a) => a.id === parseInt(addonId));
+					return {
+						addonId: parseInt(addonId),
+						quantity: payingCustomers,
+						price: addon?.price
+					};
+				})
+		];
 
 		console.log(
 			'update',
@@ -248,45 +278,70 @@
 							<CardTitle>{addon.name}</CardTitle>
 							<CardDescription>{addon.description}</CardDescription>
 							{#if pricingType !== 'per_person' && addon.price}
-								<p class="mt-1 text-sm text-muted-foreground">{addon.price} SEK</p>
+								<p class="mt-1 text-sm text-muted-foreground">
+									{addon.price} SEK
+									{#if addon.pricing_type === 'per_person'}
+										per person
+									{:else}
+										per enhet
+									{/if}
+								</p>
 							{/if}
 						</div>
 					</CardHeader>
 					<CardContent class="mt-auto">
 						<div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-							<div class="flex items-center gap-4">
-								<Button
-									variant="outline"
-									size="icon"
-									onclick={() => decrementAddon(addon.id)}
-									disabled={!selectedQuantities[addon.id] || isLocked}
-									class={cn(isLocked && 'cursor-not-allowed opacity-50')}
-								>
-									-
-								</Button>
-								<span class="w-8 text-center">{selectedQuantities[addon.id] || 0}</span>
-								<Button
-									variant="outline"
-									size="icon"
-									onclick={() => incrementAddon(addon.id)}
-									disabled={selectedQuantities[addon.id] >= addon.total_quantity || isLocked}
-									class={cn(isLocked && 'cursor-not-allowed opacity-50')}
-								>
-									+
-								</Button>
-							</div>
-							<div class="flex flex-col items-end gap-1">
-								{#if addon.total_quantity !== null}
-									<div class="text-sm text-muted-foreground">
-										Max antal: {addon.total_quantity}
-									</div>
-								{/if}
-								{#if pricingType !== 'per_person' && addon.price && selectedQuantities[addon.id]}
-									<div class="text-sm font-medium">
-										Totalt: {addon.price * selectedQuantities[addon.id]} kr
-									</div>
-								{/if}
-							</div>
+							{#if addon.pricing_type === 'per_unit'}
+								<div class="flex items-center gap-4">
+									<Button
+										variant="outline"
+										size="icon"
+										onclick={() => decrementAddon(addon.id)}
+										disabled={!selectedQuantities[addon.id] || isLocked}
+										class={cn(isLocked && 'cursor-not-allowed opacity-50')}
+									>
+										-
+									</Button>
+									<span class="w-8 text-center">{selectedQuantities[addon.id] || 0}</span>
+									<Button
+										variant="outline"
+										size="icon"
+										onclick={() => incrementAddon(addon.id)}
+										disabled={selectedQuantities[addon.id] >= addon.total_quantity || isLocked}
+										class={cn(isLocked && 'cursor-not-allowed opacity-50')}
+									>
+										+
+									</Button>
+								</div>
+								<div class="flex flex-col items-end gap-1">
+									{#if addon.total_quantity !== null}
+										<div class="text-sm text-muted-foreground">
+											Max antal: {addon.total_quantity}
+										</div>
+									{/if}
+									{#if pricingType !== 'per_person' && addon.price && selectedQuantities[addon.id]}
+										<div class="text-sm font-medium">
+											Totalt: {addon.price * selectedQuantities[addon.id]} kr
+										</div>
+									{/if}
+								</div>
+							{:else}
+								<div class="flex w-full items-center justify-between">
+									<Button
+										variant={selectedPerPersonAddons[addon.id] ? 'default' : 'outline'}
+										onclick={() => togglePerPersonAddon(addon.id)}
+										disabled={isLocked}
+										class={cn('w-full', isLocked && 'cursor-not-allowed opacity-50')}
+									>
+										{selectedPerPersonAddons[addon.id] ? 'Vald' : 'Välj'}
+									</Button>
+									{#if pricingType !== 'per_person' && addon.price && selectedPerPersonAddons[addon.id]}
+										<div class="ml-4 text-sm font-medium">
+											Totalt: {addon.price * payingCustomers} kr
+										</div>
+									{/if}
+								</div>
+							{/if}
 						</div>
 					</CardContent>
 				</Card>
