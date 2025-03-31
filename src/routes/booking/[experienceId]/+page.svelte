@@ -18,7 +18,7 @@
 			startLocations={data.startLocations}
 			openDates={data.openDates}
 			blockedDates={data.blockedDates}
-			priceGroups={data.experience.pricing_type !== 'per_product' ? data.priceGroups : []}
+			priceGroups={data.priceGroups}
 			pricingType={data.experience.pricing_type}
 		/>
 	{:else if data.experience.type === 'school'}

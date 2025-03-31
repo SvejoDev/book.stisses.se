@@ -1,13 +1,6 @@
 import { supabase } from "$lib/supabaseClient";
 import { error } from '@sveltejs/kit';
 
-interface Product {
-    id: number;
-    name: string;
-    description: string;
-    total_quantity: number;
-    image_url: string;
-}
 
 export async function load({ params }) {
     const { experienceId } = params;
@@ -77,6 +70,8 @@ export async function load({ params }) {
         console.error('Price groups error:', priceGroupsError);
         throw error(500, "Failed to load price groups");
     }
+
+    console.log('Price groups:', priceGroups);
 
     // Fetch open dates for this experience using simpler query first
     const { data: openDates, error: openDatesError } = await supabase

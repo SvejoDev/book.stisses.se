@@ -9,6 +9,7 @@
 		internal_name: string;
 		display_name: string;
 		price: number;
+		is_payable: boolean;
 	}
 
 	let {
@@ -18,7 +19,8 @@
 		isLocked = $bindable(false),
 		onNextStep = $bindable(() => {}),
 		includeVat = $bindable(true),
-		extraPrice = $bindable(0)
+		extraPrice = $bindable(0),
+		pricingType = $bindable('per_person')
 	} = $props<{
 		priceGroups: PriceGroup[];
 		startLocationId: number;
@@ -27,6 +29,7 @@
 		onNextStep?: () => void;
 		includeVat?: boolean;
 		extraPrice?: number;
+		pricingType: 'per_person' | 'per_product' | 'hybrid';
 	}>();
 
 	let quantities = $state<Record<number, number>>({});
@@ -43,16 +46,26 @@
 	let totalPayingCustomers = $derived(
 		Object.entries(quantities).reduce((sum, [groupId, quantity]) => {
 			const group = priceGroups.find((g: PriceGroup) => g.id === parseInt(groupId));
-			return group && group.price > 0 ? sum + quantity : sum;
+			return group && group.is_payable ? sum + quantity : sum;
+		}, 0)
+	);
+
+	// Calculate total non-paying customers
+	let totalNonPayingCustomers = $derived(
+		Object.entries(quantities).reduce((sum, [groupId, quantity]) => {
+			const group = priceGroups.find((g: PriceGroup) => g.id === parseInt(groupId));
+			return group && !group.is_payable ? sum + quantity : sum;
 		}, 0)
 	);
 
 	// Calculate total amount including extra price for paying customers
-	let totalAmount = $derived(() => {
+	let calculatedTotal = $derived(() => {
+		if (pricingType === 'per_product') return 0;
+
 		// Calculate base price from price groups
 		const baseTotal = Object.entries(quantities).reduce((sum, [groupId, quantity]) => {
 			const group = priceGroups.find((g: PriceGroup) => g.id === parseInt(groupId));
-			const basePrice = group ? group.price * quantity : 0;
+			const basePrice = group && group.is_payable ? group.price * quantity : 0;
 			return sum + (includeVat ? addVat(basePrice) : basePrice);
 		}, 0);
 
@@ -63,9 +76,7 @@
 	});
 
 	$effect(() => {
-		// Use startLocationId to make sure the effect tracks it
 		if (startLocationId !== undefined) {
-			// Reset quantities when startLocationId changes
 			quantities = {};
 			onQuantityChange({});
 		}
@@ -90,23 +101,18 @@
 		return formatPrice(displayPrice);
 	}
 
-	// Make totalAmount accessible to parent components
-	function getTotalAmount(): number {
-		// Calculate base price from price groups
-		const baseTotal = Object.entries(quantities).reduce((sum, [groupId, quantity]) => {
-			const group = priceGroups.find((g: PriceGroup) => g.id === parseInt(groupId));
-			const basePrice = group ? group.price * quantity : 0;
-			return sum + (includeVat ? addVat(basePrice) : basePrice);
-		}, 0);
-
-		// Calculate extra price only for paying customers
-		const totalExtraPrice = extraPrice * totalPayingCustomers;
-
-		return baseTotal + (includeVat ? addVat(totalExtraPrice) : totalExtraPrice);
+	// Export methods for parent components
+	export function totalAmount(): number {
+		return calculatedTotal();
 	}
 
-	// Export the method
-	export { getTotalAmount as totalAmount };
+	export function getPayingCustomers(): number {
+		return totalPayingCustomers;
+	}
+
+	export function getNonPayingCustomers(): number {
+		return totalNonPayingCustomers;
+	}
 </script>
 
 <div class="space-y-6">
@@ -122,14 +128,16 @@
 				>
 					<div>
 						<p class="font-medium">{group.display_name}</p>
-						<p class="text-sm text-muted-foreground">
-							{getDisplayPrice(group.price)} per person
-							{#if includeVat}
-								<span class="text-xs">(inkl. moms)</span>
-							{:else}
-								<span class="text-xs">(exkl. moms)</span>
-							{/if}
-						</p>
+						{#if pricingType !== 'per_product' && group.is_payable}
+							<p class="text-sm text-muted-foreground">
+								{getDisplayPrice(group.price)} per person
+								{#if includeVat}
+									<span class="text-xs">(inkl. moms)</span>
+								{:else}
+									<span class="text-xs">(exkl. moms)</span>
+								{/if}
+							</p>
+						{/if}
 					</div>
 					<div class="flex items-center gap-4">
 						<button
@@ -156,7 +164,7 @@
 	</div>
 
 	<div class="flex flex-col items-center gap-4">
-		{#if totalAmount() > 0}
+		{#if pricingType !== 'per_product' && calculatedTotal() > 0}
 			<div class="text-center">
 				{#if extraPrice > 0 && totalPayingCustomers > 0}
 					<p class="mb-1 text-sm text-muted-foreground">
@@ -173,7 +181,7 @@
 					</p>
 				{/if}
 				<p class="text-lg font-medium">
-					Totalt: {formatPrice(totalAmount())}
+					Totalt: {formatPrice(calculatedTotal())}
 					{#if includeVat}
 						<span class="text-sm text-muted-foreground">(inkl. moms)</span>
 					{:else}
@@ -185,7 +193,7 @@
 		<button
 			class="inline-flex h-10 items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground ring-offset-background transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50"
 			onclick={onNextStep}
-			disabled={totalAmount() === 0 || isLocked}
+			disabled={totalPayingCustomers + totalNonPayingCustomers === 0 || isLocked}
 		>
 			Nästa steg
 		</button>

@@ -48,7 +48,6 @@
 		created_at: string;
 	}
 
-
 	interface PriceGroup {
 		id: number;
 		experience_id: number;
@@ -140,7 +139,6 @@
 			selectedLocationId = null;
 		}
 	});
-
 
 	// Add new effect to handle scrolling after products are loaded
 	let productsLoaded = $state(false);
@@ -269,20 +267,19 @@
 	{/if}
 
 	{#if selectedLocationId !== null || !hasStartLocations}
-		{#if pricingType !== 'per_product'}
-			<section class="space-y-4" bind:this={priceGroupSection}>
-				<PriceGroupSelector
-					bind:this={priceGroupRef}
-					{priceGroups}
-					startLocationId={selectedLocationId ?? 0}
-					onQuantityChange={handlePriceGroupQuantityChange}
-					isLocked={isBookingLocked}
-					onNextStep={handleNextStep}
-					includeVat={true}
-					{extraPrice}
-				/>
-			</section>
-		{/if}
+		<section class="space-y-4" bind:this={priceGroupSection}>
+			<PriceGroupSelector
+				bind:this={priceGroupRef}
+				{priceGroups}
+				{pricingType}
+				startLocationId={selectedLocationId ?? 0}
+				onQuantityChange={handlePriceGroupQuantityChange}
+				isLocked={isBookingLocked}
+				onNextStep={handleNextStep}
+				includeVat={true}
+				{extraPrice}
+			/>
+		</section>
 	{/if}
 
 	{#if shouldShowDurations}
