@@ -27,7 +27,8 @@
 		onAddonsSelected = (addons: Array<{ addonId: number; quantity: number; price?: number }>) => {},
 		onAddonsLoaded = () => {},
 		pricingType = $bindable<'per_person' | 'per_product' | 'hybrid'>('per_person'),
-		payingCustomers = $bindable(0)
+		payingCustomers = $bindable(0),
+		onAddonsFetched = () => {}
 	} = $props<{
 		startLocationId: string;
 		experienceId: string;
@@ -39,6 +40,7 @@
 		onAddonsLoaded?: () => void;
 		pricingType?: 'per_person' | 'per_product' | 'hybrid';
 		payingCustomers?: number;
+		onAddonsFetched?: () => void;
 	}>();
 
 	let selectedQuantities = $state<Record<number, number>>({});
@@ -124,6 +126,8 @@
 			if (addons.length === 0) {
 				await new Promise((resolve) => setTimeout(resolve, 500));
 			}
+
+			onAddonsFetched();
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'An error occurred';
 		} finally {

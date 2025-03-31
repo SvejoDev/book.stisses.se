@@ -259,6 +259,8 @@
 	export function getTotalPrice(): number {
 		return totalPrice();
 	}
+
+	let showAvailableTimesButton = $state(false);
 </script>
 
 <div class="space-y-16">
@@ -345,6 +347,7 @@
 						isLocked={isBookingLocked}
 						{pricingType}
 						payingCustomers={priceGroupRef?.getPayingCustomers() ?? 0}
+						onAddonsFetched={() => (showAvailableTimesButton = true)}
 					/>
 
 					{#if pricingType !== 'per_person' && totalPrice() > 0}
@@ -364,7 +367,7 @@
 							onLockStateChange: handleLockStateChange
 						}}
 						<div class="mx-auto mt-4 max-w-2xl">
-							<AvailableStartTimes {...props} />
+							<AvailableStartTimes {...props} showButton={showAvailableTimesButton} />
 						</div>
 					{/if}
 				</section>

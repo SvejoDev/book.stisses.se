@@ -10,7 +10,8 @@
 		durationValue,
 		selectedProducts = [],
 		selectedAddons = [],
-		onLockStateChange = () => {}
+		onLockStateChange = () => {},
+		showButton = false
 	} = $props<{
 		experienceId: number;
 		selectedDate: Date;
@@ -19,6 +20,7 @@
 		selectedProducts: Array<{ productId: number; quantity: number }>;
 		selectedAddons?: Array<{ addonId: number; quantity: number }>;
 		onLockStateChange?: (locked: boolean) => void;
+		showButton?: boolean;
 	}>();
 
 	let isLoading = $state(false);
@@ -146,7 +148,7 @@
 </script>
 
 <div class="space-y-4">
-	{#if !hasAttemptedLoad}
+	{#if !hasAttemptedLoad && showButton}
 		<button
 			class="h-10 w-full rounded-md bg-primary px-4 py-2 text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
 			onclick={generateStartTimes}
@@ -160,7 +162,7 @@
 				Nästa steg
 			{/if}
 		</button>
-	{:else}
+	{:else if hasAttemptedLoad && showButton}
 		<button
 			class="h-10 w-full rounded-md border border-primary bg-background px-4 py-2 text-primary hover:bg-primary/10"
 			onclick={handleReset}
