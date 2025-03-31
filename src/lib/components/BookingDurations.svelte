@@ -71,6 +71,7 @@
 
 		if (selected) {
 			extraPrice = selected.extra_price;
+			console.log('Duration cost:', selected.extra_price);
 			onDurationSelect({
 				type: selected.duration_type,
 				value: selected.duration_value,

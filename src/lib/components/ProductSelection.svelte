@@ -48,13 +48,16 @@
 	let totalProductPrice = $derived(() => {
 		if (pricingType === 'per_person') return 0;
 
-		return Object.entries(selectedQuantities).reduce((total, [productId, quantity]) => {
+		const total = Object.entries(selectedQuantities).reduce((total, [productId, quantity]) => {
 			const product = products.find((p) => p.id === parseInt(productId));
 			if (product?.price) {
 				return total + product.price * quantity;
 			}
 			return total;
 		}, 0);
+
+		console.log('Products cost:', total);
+		return total;
 	});
 
 	console.log('ProductSelection mounted with:', { startLocationId, experienceId });

@@ -53,20 +53,38 @@
 	let totalAddonPrice = $derived(() => {
 		if (pricingType === 'per_person') return 0;
 
-		return Object.entries(selectedQuantities).reduce((total, [addonId, quantity]) => {
-			const addon = addons.find((a) => a.id === parseInt(addonId));
-			if (addon?.price) {
-				if (addon.pricing_type === 'per_unit') {
-					return total + addon.price * quantity;
-				} else if (
-					addon.pricing_type === 'per_person' &&
-					selectedPerPersonAddons[parseInt(addonId)]
-				) {
-					return total + addon.price * payingCustomers;
-				}
+		const total = addons.reduce((total, addon) => {
+			if (!addon.price) return total;
+
+			if (addon.pricing_type === 'per_unit') {
+				const quantity = selectedQuantities[addon.id] || 0;
+				return total + addon.price * quantity;
+			} else if (addon.pricing_type === 'per_person' && selectedPerPersonAddons[addon.id]) {
+				return total + addon.price * payingCustomers;
 			}
 			return total;
 		}, 0);
+
+		console.log('Addons cost:', total, {
+			perUnitAddons: addons
+				.filter((a) => a.pricing_type === 'per_unit')
+				.map((a) => ({
+					name: a.name,
+					quantity: selectedQuantities[a.id] || 0,
+					price: a.price,
+					total: (selectedQuantities[a.id] || 0) * (a.price || 0)
+				})),
+			perPersonAddons: addons
+				.filter((a) => a.pricing_type === 'per_person')
+				.map((a) => ({
+					name: a.name,
+					selected: selectedPerPersonAddons[a.id],
+					price: a.price,
+					payingCustomers,
+					total: selectedPerPersonAddons[a.id] ? (a.price || 0) * payingCustomers : 0
+				}))
+		});
+		return total;
 	});
 
 	console.log('AddonSelection mounted with:', { startLocationId, experienceId, selectedProducts });

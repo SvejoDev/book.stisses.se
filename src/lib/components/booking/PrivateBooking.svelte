@@ -249,6 +249,11 @@
 			scrollToElement(addonsSection);
 		}
 	}
+
+	// Export methods for parent components
+	export function getTotalPrice(): number {
+		return totalPrice();
+	}
 </script>
 
 <div class="space-y-16">

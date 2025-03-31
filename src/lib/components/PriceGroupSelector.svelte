@@ -77,8 +77,10 @@
 
 		// Calculate extra price only for paying customers
 		const totalExtraPrice = extraPrice * totalPayingCustomers;
+		const total = baseTotal + (includeVat ? addVat(totalExtraPrice) : totalExtraPrice);
 
-		return baseTotal + (includeVat ? addVat(totalExtraPrice) : totalExtraPrice);
+		console.log('Price Groups cost:', total);
+		return total;
 	});
 
 	$effect(() => {
