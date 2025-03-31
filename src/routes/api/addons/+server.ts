@@ -120,7 +120,7 @@ export const GET: RequestHandler = async ({ url }) => {
                 total_quantity: item.addons.total_quantity,
                 image_url: item.addons.image_url,
                 imageUrl: item.addons.image_url,
-                price: pricingType === 'per_person' ? null : item.price,
+                price: item.price,
                 pricing_type: item.addons.pricing_type
             };
 

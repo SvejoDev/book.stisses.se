@@ -51,8 +51,6 @@
 	let hasAttemptedFetch = $state(false);
 
 	let totalAddonPrice = $derived(() => {
-		if (pricingType === 'per_person') return 0;
-
 		const total = addons.reduce((total, addon) => {
 			if (!addon.price) return total;
 
@@ -116,6 +114,11 @@
 			}
 
 			addons = await response.json();
+			console.log('Received addons data:', {
+				pricingType,
+				addons,
+				hasPrice: addons.map((a) => ({ id: a.id, name: a.name, price: a.price }))
+			});
 
 			// Add a small delay if there are no addons for better UX
 			if (addons.length === 0) {
@@ -295,16 +298,18 @@
 						<div class="flex-grow">
 							<CardTitle>{addon.name}</CardTitle>
 							<CardDescription>{addon.description}</CardDescription>
-							{#if pricingType !== 'per_person' && addon.price}
-								<p class="mt-1 text-sm text-muted-foreground">
+							<p class="mt-1 text-sm text-muted-foreground">
+								{#if addon.price === 0 || addon.price === undefined}
+									Ingår
+								{:else}
 									{addon.price} SEK
 									{#if addon.pricing_type === 'per_person'}
 										per person
 									{:else}
 										per enhet
 									{/if}
-								</p>
-							{/if}
+								{/if}
+							</p>
 						</div>
 					</CardHeader>
 					<CardContent class="mt-auto">
@@ -337,7 +342,9 @@
 											Max antal: {addon.total_quantity}
 										</div>
 									{/if}
-									{#if pricingType !== 'per_person' && addon.price && selectedQuantities[addon.id]}
+									{#if addon.price === 0 || addon.price === undefined}
+										<div class="text-sm font-medium">Ingår</div>
+									{:else if selectedQuantities[addon.id]}
 										<div class="text-sm font-medium">
 											Totalt: {addon.price * selectedQuantities[addon.id]} kr
 										</div>
@@ -353,7 +360,9 @@
 									>
 										{selectedPerPersonAddons[addon.id] ? 'Vald' : 'Välj'}
 									</Button>
-									{#if pricingType !== 'per_person' && addon.price && selectedPerPersonAddons[addon.id]}
+									{#if addon.price === 0 || addon.price === undefined}
+										<div class="ml-4 text-sm font-medium">Ingår</div>
+									{:else if selectedPerPersonAddons[addon.id]}
 										<div class="ml-4 text-sm font-medium">
 											Totalt: {addon.price * payingCustomers} kr
 										</div>
