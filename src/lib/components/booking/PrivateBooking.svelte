@@ -48,13 +48,6 @@
 		created_at: string;
 	}
 
-	interface Product {
-		id: number;
-		name: string;
-		description: string;
-		total_quantity: number;
-		imageUrl: string;
-	}
 
 	interface PriceGroup {
 		id: number;
@@ -148,18 +141,10 @@
 		}
 	});
 
-	$effect(() => {
-		console.log('Debug state:', {
-			selectedDate,
-			selectedLocationId,
-			hasStartLocations,
-			shouldShowProducts,
-			shouldShowDurations
-		});
-	});
 
 	// Add new effect to handle scrolling after products are loaded
 	let productsLoaded = $state(false);
+	// @ts-ignore - Used in template binding
 	let addonsLoaded = $state(false);
 
 	$effect(() => {
@@ -213,13 +198,6 @@
 		durationValue = duration.value;
 		extraPrice = duration.extraPrice;
 
-		// Log the duration change
-		console.log('Duration changed:', {
-			type: durationType,
-			value: durationValue,
-			currentSelectedDate: selectedDate
-		});
-
 		// The Calendar component will handle resetting the date if needed
 		// through its internal effect
 
@@ -227,7 +205,6 @@
 	}
 
 	function handleDateSelect(date: Date | null) {
-		console.log('Date selected:', date);
 		selectedDate = date;
 
 		if (date) {
@@ -245,7 +222,6 @@
 	}
 
 	function handleAddonSelection(addons: SelectedAddon[]) {
-		console.log('update', $state.snapshot(addons), 'PrivateBooking - Addons updated');
 		selectedAddons = addons;
 	}
 

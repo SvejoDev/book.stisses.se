@@ -10,6 +10,7 @@ interface Addon {
     image_url: string;
     imageUrl: string;
     price?: number | null;
+    pricing_type: string;
 }
 
 interface AddonEntry {
@@ -25,6 +26,7 @@ interface AddonEntry {
         description: string;
         total_quantity: number;
         image_url: string;
+        pricing_type: string;
     };
 }
 
@@ -34,8 +36,6 @@ export const GET: RequestHandler = async ({ url }) => {
     const pricingType = url.searchParams.get('pricingType') || 'per_person';
     const productIds = url.searchParams.getAll('productIds[]').map(Number);
     
-    console.log('Fetching addons with params:', { startLocationId, experienceId, pricingType, productIds });
-
     if (!experienceId) {
         return new Response('Experience ID is required', { status: 400 });
     }
@@ -57,7 +57,8 @@ export const GET: RequestHandler = async ({ url }) => {
                     name,
                     description,
                     total_quantity,
-                    image_url
+                    image_url,
+                    pricing_type
                 )
             `);
 
@@ -76,9 +77,6 @@ export const GET: RequestHandler = async ({ url }) => {
                 headers: { 'Content-Type': 'application/json' }
             });
         }
-
-        console.log('DEBUG - Raw data from database:', data);
-
         // Now filter the data manually to ensure we only get:
         // 1. Addons for this experience OR global addons (experience_id IS NULL)
         // 2. Apply other filters (startLocation, productIds) as needed
@@ -90,8 +88,6 @@ export const GET: RequestHandler = async ({ url }) => {
             item.experience_id === null
         );
 
-        console.log('DEBUG - After experience filter:', filteredData);
-
         // Filter by start location if specified
         if (startLocationId && startLocationId !== '0') {
             filteredData = filteredData.filter(item => 
@@ -99,8 +95,6 @@ export const GET: RequestHandler = async ({ url }) => {
                 item.start_location_id === null
             );
         }
-
-        console.log('DEBUG - After location filter:', filteredData);
 
         // Filter by product if products are selected
         if (productIds.length > 0) {
@@ -110,7 +104,7 @@ export const GET: RequestHandler = async ({ url }) => {
             );
         }
 
-        console.log('DEBUG - After product filter:', filteredData);
+        console.log('Filtered data addons:', filteredData);
 
         // Transform the filtered data and remove duplicates
         const addonMap = new Map<number, Addon>();
@@ -126,7 +120,8 @@ export const GET: RequestHandler = async ({ url }) => {
                 total_quantity: item.addons.total_quantity,
                 image_url: item.addons.image_url,
                 imageUrl: item.addons.image_url,
-                price: pricingType === 'per_person' ? null : item.price
+                price: pricingType === 'per_person' ? null : item.price,
+                pricing_type: item.addons.pricing_type
             };
 
             // If the addon doesn't exist yet, or if this version is more specific, use it
@@ -136,7 +131,6 @@ export const GET: RequestHandler = async ({ url }) => {
         }
 
         const addons = Array.from(addonMap.values());
-        console.log('Final transformed addons:', addons);
         return json(addons);
     } catch (error) {
         console.error('Error fetching addons:', error);
