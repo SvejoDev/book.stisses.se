@@ -9,14 +9,18 @@
 		durationType,
 		durationValue,
 		selectedProducts = [],
-		onLockStateChange = () => {}
+		selectedAddons = [],
+		onLockStateChange = () => {},
+		showButton = false
 	} = $props<{
 		experienceId: number;
 		selectedDate: Date;
 		durationType: 'hours' | 'overnights';
 		durationValue: number;
 		selectedProducts: Array<{ productId: number; quantity: number }>;
+		selectedAddons?: Array<{ addonId: number; quantity: number }>;
 		onLockStateChange?: (locked: boolean) => void;
+		showButton?: boolean;
 	}>();
 
 	let isLoading = $state(false);
@@ -40,6 +44,17 @@
 			return minutes % 30 === 0;
 		})
 	);
+
+	// Monitor addons state changes
+	$effect(() => {
+		if (selectedAddons?.length > 0) {
+			console.log(
+				'update',
+				$state.snapshot(selectedAddons),
+				'AvailableStartTimes - Current addons'
+			);
+		}
+	});
 
 	$effect(() => {
 		if (selectedTime) {
@@ -79,9 +94,12 @@
 				date: selectedDate.toISOString().split('T')[0],
 				durationType,
 				durationValue,
-				products: selectedProducts,
+				products: $state.snapshot(selectedProducts),
+				addons: $state.snapshot(selectedAddons) || [],
 				experienceId
 			};
+
+			console.log('AvailableStartTimes - Request data:', requestData);
 
 			const response = await fetch('/api/check-availability', {
 				method: 'POST',
@@ -130,7 +148,7 @@
 </script>
 
 <div class="space-y-4">
-	{#if !hasAttemptedLoad}
+	{#if !hasAttemptedLoad && showButton}
 		<button
 			class="h-10 w-full rounded-md bg-primary px-4 py-2 text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
 			onclick={generateStartTimes}
@@ -144,7 +162,7 @@
 				Nästa steg
 			{/if}
 		</button>
-	{:else}
+	{:else if hasAttemptedLoad && showButton}
 		<button
 			class="h-10 w-full rounded-md border border-primary bg-background px-4 py-2 text-primary hover:bg-primary/10"
 			onclick={handleReset}

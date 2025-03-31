@@ -1,18 +1,16 @@
 import { supabase } from "$lib/supabaseClient";
 import { error } from '@sveltejs/kit';
 
-interface Product {
-    id: number;
-    name: string;
-    description: string;
-    total_quantity: number;
-    image_url: string;
-}
 
 export async function load({ params }) {
     const { experienceId } = params;
-    const today = new Date().toISOString().split('T')[0];
     
+    // Validate experienceId
+    if (!experienceId || isNaN(parseInt(experienceId))) {
+        throw error(400, "Invalid experience ID");
+    }
+    
+    const today = new Date().toISOString().split('T')[0];
 
     // Fetch experience details
     const { data: experience, error: experienceError } = await supabase
@@ -23,13 +21,17 @@ export async function load({ params }) {
 
     if (experienceError) {
         console.error('Experience error:', experienceError);
-        error(500, "Failed to load experience");
+        throw error(500, "Failed to load experience");
+    }
+
+    if (!experience) {
+        throw error(404, "Experience not found");
     }
 
     // Add type validation
     const validTypes = ['private', 'school', 'company'];
     if (!validTypes.includes(experience.type)) {
-        error(400, "Invalid experience type");
+        throw error(400, "Invalid experience type");
     }
 
     // Fetch start locations for this experience
@@ -47,7 +49,7 @@ export async function load({ params }) {
 
     if (startLocationsError) {
         console.error('Start locations error:', startLocationsError);
-        error(500, "Failed to load start locations");
+        throw error(500, "Failed to load start locations");
     }
 
     // Transform the nested structure to match the expected format
@@ -66,7 +68,7 @@ export async function load({ params }) {
 
     if (priceGroupsError) {
         console.error('Price groups error:', priceGroupsError);
-        error(500, "Failed to load price groups");
+        throw error(500, "Failed to load price groups");
     }
 
     // Fetch open dates for this experience using simpler query first
@@ -77,7 +79,7 @@ export async function load({ params }) {
 
     if (openDatesError) {
         console.error('Open dates error:', openDatesError);
-        error(500, "Failed to load open dates");
+        throw error(500, "Failed to load open dates");
     }
 
     // Filter open dates in JavaScript instead of SQL for debugging
@@ -98,7 +100,7 @@ export async function load({ params }) {
 
     if (blockedDatesError) {
         console.error('Blocked dates error:', blockedDatesError);
-        error(500, "Failed to load blocked dates");
+        throw error(500, "Failed to load blocked dates");
     }
 
     // Create the return data

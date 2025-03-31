@@ -3,6 +3,7 @@
 	import BookingDurations from '$lib/components/BookingDurations.svelte';
 	import Calendar from '$lib/components/Calendar.svelte';
 	import ProductSelection from '$lib/components/ProductSelection.svelte';
+	import AddonSelection from '$lib/components/AddonSelection.svelte';
 	import AvailableStartTimes from '$lib/components/AvailableStartTimes.svelte';
 	import PriceGroupSelector from '$lib/components/PriceGroupSelector.svelte';
 
@@ -47,14 +48,6 @@
 		created_at: string;
 	}
 
-	interface Product {
-		id: number;
-		name: string;
-		description: string;
-		total_quantity: number;
-		imageUrl: string;
-	}
-
 	interface PriceGroup {
 		id: number;
 		experience_id: number;
@@ -66,6 +59,12 @@
 
 	interface SelectedProduct {
 		productId: number;
+		quantity: number;
+		price?: number;
+	}
+
+	interface SelectedAddon {
+		addonId: number;
 		quantity: number;
 		price?: number;
 	}
@@ -95,32 +94,47 @@
 	let durationsSection = $state<HTMLElement | null>(null);
 	let calendarSection = $state<HTMLElement | null>(null);
 	let productsSection = $state<HTMLElement | null>(null);
+	let addonsSection = $state<HTMLElement | null>(null);
 	let priceGroupSection = $state<HTMLElement | null>(null);
 	let isLoadingDurations = $state(false);
 	let selectedProducts = $state<SelectedProduct[]>([]);
+	let selectedAddons = $state<SelectedAddon[]>([]);
 	let isBookingLocked = $state(false);
 	let priceGroupQuantities = $state<Record<number, number>>({});
 	let showDurations = $state(false);
 	let extraPrice = $state(0);
 	let durations = $state<Duration[]>([]);
-	let priceGroupRef = $state<{ totalAmount: () => number } | null>(null);
+	let priceGroupRef = $state<{
+		totalAmount: () => number;
+		getPayingCustomers: () => number;
+		getNonPayingCustomers: () => number;
+	} | null>(null);
 	let totalPrice = $derived(() => {
 		// Calculate product prices if applicable
 		const productTotal = selectedProducts.reduce((sum, product) => {
 			return sum + (product.price || 0) * product.quantity;
 		}, 0);
 
+		// Calculate addon prices
+		const addonTotal = selectedAddons.reduce((sum, addon) => {
+			return sum + (addon.price || 0) * addon.quantity;
+		}, 0);
+
 		// Get the price group selector total
 		const priceGroupTotal = priceGroupRef?.totalAmount() ?? 0;
 
-		return productTotal + priceGroupTotal;
+		// Get the duration extra price
+		const durationTotal = extraPrice * (priceGroupRef?.getPayingCustomers() ?? 0);
+
+		const total = productTotal + addonTotal + priceGroupTotal + durationTotal;
+
+		return total;
 	});
 
 	let hasStartLocations = $derived(startLocations.length > 0);
 
 	let shouldShowDurations = $derived(
-		(pricingType === 'per_product' && (selectedLocationId !== null || !hasStartLocations)) ||
-			(showDurations && Object.values(priceGroupQuantities).some((quantity) => quantity > 0))
+		showDurations && (selectedLocationId !== null || !hasStartLocations)
 	);
 
 	let shouldShowProducts = $derived(
@@ -134,24 +148,20 @@
 		}
 	});
 
-	$effect(() => {
-		console.log('Debug state:', {
-			selectedDate,
-			selectedLocationId,
-			hasStartLocations,
-			shouldShowProducts,
-			shouldShowDurations
-		});
-	});
-
 	// Add new effect to handle scrolling after products are loaded
 	let productsLoaded = $state(false);
+	// @ts-ignore - Used in template binding
+	let addonsLoaded = $state(false);
 
 	$effect(() => {
 		if (selectedDate && shouldShowProducts && productsLoaded) {
-			setTimeout(() => {
-				scrollToElement(productsSection);
-			}, 300); // Increased timeout to ensure content is rendered
+			// Only scroll to addons section on desktop
+			const isMobile = window.innerWidth < 768;
+			if (!isMobile) {
+				setTimeout(() => {
+					scrollToElement(addonsSection);
+				}, 300);
+			}
 		}
 	});
 
@@ -159,8 +169,17 @@
 		if (element) {
 			const elementRect = element.getBoundingClientRect();
 			const absoluteElementTop = elementRect.top + window.pageYOffset;
-			const middle = absoluteElementTop - window.innerHeight / 3;
-			window.scrollTo({ top: middle, behavior: 'smooth' });
+
+			// Check if we're on a mobile device (screen width less than 768px)
+			const isMobile = window.innerWidth < 768;
+
+			// On mobile, scroll to the top of the element
+			// On desktop, scroll to keep element in the middle third of the viewport
+			const scrollPosition = isMobile
+				? absoluteElementTop
+				: absoluteElementTop - window.innerHeight / 3;
+
+			window.scrollTo({ top: scrollPosition, behavior: 'smooth' });
 		}
 	}
 
@@ -176,18 +195,13 @@
 			durationValue = 0;
 			selectedDate = null;
 			selectedProducts = [];
-			showDurations = pricingType === 'per_product'; // Only auto-show for per_product
+			selectedAddons = [];
+			showDurations = false; // Reset showDurations
 			isBookingLocked = false;
 
 			// Add a small delay to ensure components are rendered
 			setTimeout(() => {
-				// If per_product pricing, scroll to durations
-				if (pricingType === 'per_product') {
-					scrollToElement(durationsSection);
-				} else {
-					// For other pricing types, scroll to price group selector
-					scrollToElement(priceGroupSection);
-				}
+				scrollToElement(priceGroupSection);
 			}, 100);
 		}
 	}
@@ -197,13 +211,6 @@
 		durationValue = duration.value;
 		extraPrice = duration.extraPrice;
 
-		// Log the duration change
-		console.log('Duration changed:', {
-			type: durationType,
-			value: durationValue,
-			currentSelectedDate: selectedDate
-		});
-
 		// The Calendar component will handle resetting the date if needed
 		// through its internal effect
 
@@ -211,14 +218,17 @@
 	}
 
 	function handleDateSelect(date: Date | null) {
-		console.log('Date selected:', date);
 		selectedDate = date;
 
 		if (date) {
 			// Only scroll to products section if we have a valid date
 			setTimeout(() => {
 				if (shouldShowProducts) {
-					scrollToElement(productsSection);
+					const isMobile = window.innerWidth < 768;
+					// On mobile/tablet, scroll to products section immediately
+					if (isMobile) {
+						scrollToElement(productsSection);
+					}
 				}
 			}, 300);
 		}
@@ -226,6 +236,10 @@
 
 	function handleProductSelection(products: SelectedProduct[]) {
 		selectedProducts = products;
+	}
+
+	function handleAddonSelection(addons: SelectedAddon[]) {
+		selectedAddons = addons;
 	}
 
 	function handleLockStateChange(locked: boolean) {
@@ -250,6 +264,20 @@
 			scrollToElement(durationsSection);
 		}, 100);
 	}
+
+	function handleAddonsLoaded() {
+		addonsLoaded = true;
+		if (addonsSection) {
+			scrollToElement(addonsSection);
+		}
+	}
+
+	// Export methods for parent components
+	export function getTotalPrice(): number {
+		return totalPrice();
+	}
+
+	let showAvailableTimesButton = $state(false);
 </script>
 
 <div class="space-y-16">
@@ -265,20 +293,19 @@
 	{/if}
 
 	{#if selectedLocationId !== null || !hasStartLocations}
-		{#if pricingType !== 'per_product'}
-			<section class="space-y-4" bind:this={priceGroupSection}>
-				<PriceGroupSelector
-					bind:this={priceGroupRef}
-					{priceGroups}
-					startLocationId={selectedLocationId ?? 0}
-					onQuantityChange={handlePriceGroupQuantityChange}
-					isLocked={isBookingLocked}
-					onNextStep={handleNextStep}
-					includeVat={true}
-					{extraPrice}
-				/>
-			</section>
-		{/if}
+		<section class="space-y-4" bind:this={priceGroupSection}>
+			<PriceGroupSelector
+				bind:this={priceGroupRef}
+				{priceGroups}
+				{pricingType}
+				startLocationId={selectedLocationId ?? 0}
+				onQuantityChange={handlePriceGroupQuantityChange}
+				isLocked={isBookingLocked}
+				onNextStep={handleNextStep}
+				includeVat={true}
+				{extraPrice}
+			/>
+		</section>
 	{/if}
 
 	{#if shouldShowDurations}
@@ -324,6 +351,22 @@
 						isLocked={isBookingLocked}
 						{pricingType}
 					/>
+				</section>
+
+				<section class="space-y-4" bind:this={addonsSection}>
+					<h2 class="text-center text-2xl font-semibold">Välj tillägg</h2>
+					<AddonSelection
+						startLocationId={selectedLocationId?.toString() ?? '0'}
+						experienceId={experience.id}
+						{selectedProducts}
+						onAddonsSelected={handleAddonSelection}
+						onAddonsLoaded={handleAddonsLoaded}
+						isLocked={isBookingLocked}
+						{pricingType}
+						payingCustomers={priceGroupRef?.getPayingCustomers() ?? 0}
+						onAddonsFetched={() => (showAvailableTimesButton = true)}
+						includeVat={true}
+					/>
 
 					{#if pricingType !== 'per_person' && totalPrice() > 0}
 						<div class="text-center text-xl font-semibold">
@@ -338,10 +381,11 @@
 							durationType,
 							durationValue,
 							selectedProducts,
+							selectedAddons,
 							onLockStateChange: handleLockStateChange
 						}}
 						<div class="mx-auto mt-4 max-w-2xl">
-							<AvailableStartTimes {...props} />
+							<AvailableStartTimes {...props} showButton={showAvailableTimesButton} />
 						</div>
 					{/if}
 				</section>

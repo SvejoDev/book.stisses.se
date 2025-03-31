@@ -11,18 +11,24 @@ interface AvailabilityRequest {
         productId: number;
         quantity: number;
     }>;
+    addons?: Array<{
+        addonId: number;
+        quantity: number;
+    }>;
     experienceId: number;
 }
 
-// Cache for product availability data
+// Cache for product/addon availability data
 interface AvailabilityCache {
-    [productId: number]: {
+    [id: number]: {
         maxQuantity: number;
         availability: {
             [date: string]: {
                 [minute: string]: number | null;
             };
         };
+        type: 'product' | 'addon';
+        trackAvailability: boolean;
     };
 }
 
@@ -109,27 +115,83 @@ async function loadProductData(productId: number, dates: string[]) {
         }
     });
 
-    return { maxQuantity, availability };
+    return { maxQuantity, availability, type: 'product' as const, trackAvailability: true };
 }
 
-async function checkProductAvailability(
+async function loadAddonData(addonId: number, dates: string[]) {
+    // First check if addon needs availability tracking
+    const { data: addon, error: addonError } = await supabase
+        .from('addons')
+        .select('total_quantity, track_availability')
+        .eq('id', addonId)
+        .single();
+
+    if (addonError) throw addonError;
+
+    // If addon doesn't track availability, return simplified data
+    if (!addon.track_availability) {
+        return {
+            maxQuantity: addon.total_quantity,
+            availability: {}, // Empty availability means always available
+            type: 'addon' as const,
+            trackAvailability: false
+        };
+    }
+
+    // Rest of your existing loadAddonData code for tracked addons
+    const availabilityResults = await Promise.all(
+        dates.map(date => supabase
+            .from(`availability_addon_${addonId}`)
+            .select('*')
+            .eq('datum', date)
+            .single())
+    );
+
+    // Process availability data as before
+    const availability: { [date: string]: { [minute: string]: number | null } } = {};
+    dates.forEach((date, index) => {
+        const result = availabilityResults[index];
+        availability[date] = {};
+        if (result.data) {
+            Object.entries(result.data).forEach(([key, value]) => {
+                if (key !== 'datum') {
+                    availability[date][key] = value as number | null;
+                }
+            });
+        }
+    });
+
+    return {
+        maxQuantity: addon.total_quantity,
+        availability,
+        type: 'addon' as const,
+        trackAvailability: true
+    };
+}
+
+async function checkItemAvailability(
     cache: AvailabilityCache,
-    productId: number,
+    itemId: number,
     requestedQuantity: number,
     date: string,
     startMinute: number,
     endMinute: number,
     isDebug = false
 ): Promise<boolean> {
-    const productData = cache[productId];
-    if (!productData) {
-        throw new Error(`Product ${productId} data not found in cache`);
+    const itemData = cache[itemId];
+    if (!itemData) {
+        throw new Error(`Item ${itemId} data not found in cache`);
     }
 
-    const { maxQuantity, availability } = productData;
-    const dateAvailability = availability[date];
+    const { maxQuantity, availability, type, trackAvailability } = itemData;
 
-    // If no availability data exists, all slots are available
+    // If item doesn't track availability, it's always available
+    if (!trackAvailability) {
+        return true;
+    }
+
+    // Rest of your existing checkItemAvailability code
+    const dateAvailability = availability[date];
     if (!dateAvailability) {
         return true;
     }
@@ -141,7 +203,7 @@ async function checkProductAvailability(
 
         if (bookedQuantity + requestedQuantity > maxQuantity) {
             if (isDebug) {
-                console.log(`  Not available at ${minutesToTime(minute)} - Booked: ${bookedQuantity}, Max: ${maxQuantity}, Requested: ${requestedQuantity}`);
+                console.log(`  ${type} ${itemId} not available at ${minutesToTime(minute)} - Booked: ${bookedQuantity}, Max: ${maxQuantity}, Requested: ${requestedQuantity}`);
             }
             return false;
         }
@@ -154,7 +216,7 @@ async function checkOvernightAvailability(
     cache: AvailabilityCache,
     startDate: string,
     durationValue: number,
-    products: Array<{ productId: number; quantity: number }>,
+    items: Array<{ id: number; quantity: number; type: 'product' | 'addon' }>,
     openTime: string,
     closeTime: string,
     startMinute: number
@@ -167,12 +229,12 @@ async function checkOvernightAvailability(
         dates.push(format(addDays(startDateObj, i), 'yyyy-MM-dd'));
     }
 
-    // Check all products in parallel
-    const productChecks = products.map(async ({ productId, quantity }) => {
+    // Check all items in parallel
+    const itemChecks = items.map(async ({ id, quantity }) => {
         // First day: check from start time to midnight
-        const firstDayCheck = checkProductAvailability(
+        const firstDayCheck = checkItemAvailability(
             cache,
-            productId,
+            id,
             quantity,
             dates[0],
             startMinute,
@@ -182,9 +244,9 @@ async function checkOvernightAvailability(
 
         // Middle days: check full days
         const middleDayChecks = dates.slice(1, -1).map(date =>
-            checkProductAvailability(
+            checkItemAvailability(
                 cache,
-                productId,
+                id,
                 quantity,
                 date,
                 0,
@@ -194,9 +256,9 @@ async function checkOvernightAvailability(
         );
 
         // Last day: check from midnight to close time
-        const lastDayCheck = checkProductAvailability(
+        const lastDayCheck = checkItemAvailability(
             cache,
-            productId,
+            id,
             quantity,
             dates[dates.length - 1],
             0,
@@ -209,15 +271,17 @@ async function checkOvernightAvailability(
         return results.every(result => result);
     });
 
-    // Wait for all product checks to complete
-    const results = await Promise.all(productChecks);
+    // Wait for all item checks to complete
+    const results = await Promise.all(itemChecks);
     return results.every(result => result);
 }
 
 export const POST: RequestHandler = async ({ request }) => {
     try {
         const requestData: AvailabilityRequest = await request.json();
-        const { date, durationType, durationValue, products, experienceId } = requestData;
+        const { date, durationType, durationValue, products, addons = [], experienceId } = requestData;
+        
+        console.log('Received request with addons:', addons);
         
         // Get experience details including booking foresight
         const { data: experience, error: experienceError } = await supabase
@@ -237,6 +301,7 @@ export const POST: RequestHandler = async ({ request }) => {
             durationType,
             durationValue,
             products,
+            addons,
             bookingForesightHours: experience.booking_foresight_hours
         });
 
@@ -285,25 +350,38 @@ export const POST: RequestHandler = async ({ request }) => {
             console.log('Final effective open minutes:', effectiveOpenMinutes, 'which is', minutesToTime(effectiveOpenMinutes));
         }
 
-        // Pre-load all required dates and product data
+        // Pre-load all required dates
         const startDateObj = parseISO(date);
         const dates: string[] = [];
         for (let i = 0; i < (durationType === 'overnights' ? durationValue + 1 : 1); i++) {
             dates.push(format(addDays(startDateObj, i), 'yyyy-MM-dd'));
         }
 
-        // Load all product data in parallel
+        // Load all product and addon data in parallel
         const cache: AvailabilityCache = {};
-        await Promise.all(
-            products.map(async ({ productId }) => {
+        
+        const loadPromises = [
+            ...products.map(async ({ productId }) => {
                 const data = await loadProductData(productId, dates);
                 cache[productId] = data;
+            }),
+            ...addons.map(async ({ addonId }) => {
+                const data = await loadAddonData(addonId, dates);
+                cache[addonId] = data;
             })
-        );
+        ];
+        
+        await Promise.all(loadPromises);
 
         const availableTimes: AvailableTime[] = [];
         const durationInMinutes = durationType === 'hours' ? durationValue * 60 : 0;
         const lastPossibleStartMinute = closeMinutes - durationInMinutes;
+
+        // Combine products and addons into a single array for availability checking
+        const allItems = [
+            ...products.map(p => ({ id: p.productId, quantity: p.quantity, type: 'product' as const })),
+            ...addons.map(a => ({ id: a.addonId, quantity: a.quantity, type: 'addon' as const }))
+        ];
 
         if (durationType === 'overnights') {
             // Check all start times in parallel for overnight stays
@@ -314,7 +392,7 @@ export const POST: RequestHandler = async ({ request }) => {
                         cache,
                         date,
                         durationValue,
-                        products,
+                        allItems,
                         openTime,
                         closeTime,
                         currentMinute
@@ -340,20 +418,21 @@ export const POST: RequestHandler = async ({ request }) => {
             const checks: Promise<AvailabilityResult>[] = [];
             for (let currentMinute = effectiveOpenMinutes; currentMinute <= lastPossibleStartMinute; currentMinute += 15) {
                 const endMinute = currentMinute + durationInMinutes;
+                
+                const itemChecks = allItems.map(({ id, quantity }) => 
+                    checkItemAvailability(
+                        cache,
+                        id,
+                        quantity,
+                        date,
+                        currentMinute,
+                        endMinute,
+                        true
+                    )
+                );
+                
                 checks.push(
-                    Promise.all(
-                        products.map(({ productId, quantity }) =>
-                            checkProductAvailability(
-                                cache,
-                                productId,
-                                quantity,
-                                date,
-                                currentMinute,
-                                endMinute,
-                                true
-                            )
-                        )
-                    ).then(results => ({
+                    Promise.all(itemChecks).then(results => ({
                         minute: currentMinute,
                         isAvailable: results.every(result => result)
                     }))
