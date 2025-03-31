@@ -156,7 +156,7 @@
 	$effect(() => {
 		if (selectedDate && shouldShowProducts && productsLoaded) {
 			setTimeout(() => {
-				scrollToElement(productsSection);
+				scrollToElement(addonsSection);
 			}, 300); // Increased timeout to ensure content is rendered
 		}
 	});
