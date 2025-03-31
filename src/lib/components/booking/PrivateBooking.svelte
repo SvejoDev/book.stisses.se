@@ -123,7 +123,12 @@
 		// Get the price group selector total
 		const priceGroupTotal = priceGroupRef?.totalAmount() ?? 0;
 
-		return productTotal + addonTotal + priceGroupTotal;
+		// Get the duration extra price
+		const durationTotal = extraPrice * (priceGroupRef?.getPayingCustomers() ?? 0);
+
+		const total = productTotal + addonTotal + priceGroupTotal + durationTotal;
+
+		return total;
 	});
 
 	let hasStartLocations = $derived(startLocations.length > 0);
