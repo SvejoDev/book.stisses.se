@@ -6,6 +6,7 @@
 	import AddonSelection from '$lib/components/AddonSelection.svelte';
 	import AvailableStartTimes from '$lib/components/AvailableStartTimes.svelte';
 	import PriceGroupSelector from '$lib/components/PriceGroupSelector.svelte';
+	import ContactForm from '$lib/components/ContactForm.svelte';
 
 	interface Experience {
 		id: string;
@@ -67,6 +68,11 @@
 		addonId: number;
 		quantity: number;
 		price?: number;
+	}
+
+	interface SelectedStartTime {
+		startTime: string;
+		endTime: string;
 	}
 
 	let {
@@ -278,6 +284,23 @@
 	}
 
 	let showAvailableTimesButton = $state(false);
+
+	let showContactForm = $state(false);
+
+	let selectedStartTime = $state<SelectedStartTime | null>(null);
+
+	function handleStartTimeSelect(time: SelectedStartTime) {
+		console.log('handleStartTimeSelect called with:', time);
+		selectedStartTime = time;
+		showContactForm = true;
+		console.log('showContactForm set to:', showContactForm);
+		setTimeout(() => {
+			window.scrollTo({
+				top: document.documentElement.scrollHeight,
+				behavior: 'smooth'
+			});
+		}, 100);
+	}
 </script>
 
 <div class="space-y-16">
@@ -382,7 +405,8 @@
 							durationValue,
 							selectedProducts,
 							selectedAddons,
-							onLockStateChange: handleLockStateChange
+							onLockStateChange: handleLockStateChange,
+							onStartTimeSelect: handleStartTimeSelect
 						}}
 						<div class="mx-auto mt-4 max-w-2xl">
 							<AvailableStartTimes {...props} showButton={showAvailableTimesButton} />
@@ -391,5 +415,19 @@
 				</section>
 			{/if}
 		{/if}
+	{/if}
+
+	{#if true}
+		<div class="hidden">
+			Debug: showContactForm={showContactForm}, selectedStartTime={JSON.stringify(
+				selectedStartTime
+			)}
+		</div>
+	{/if}
+
+	{#if showContactForm && selectedStartTime}
+		<section class="space-y-4">
+			<ContactForm />
+		</section>
 	{/if}
 </div>

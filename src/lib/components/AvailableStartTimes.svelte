@@ -10,16 +10,18 @@
 		durationValue,
 		selectedProducts = [],
 		selectedAddons = [],
-		onLockStateChange = () => {},
-		showButton = false
+		onLockStateChange = (locked: boolean) => {},
+		onStartTimeSelect = (time: { startTime: string; endTime: string }) => {},
+		showButton = true
 	} = $props<{
 		experienceId: number;
 		selectedDate: Date;
-		durationType: 'hours' | 'overnights';
+		durationType: string;
 		durationValue: number;
 		selectedProducts: Array<{ productId: number; quantity: number }>;
 		selectedAddons?: Array<{ addonId: number; quantity: number }>;
 		onLockStateChange?: (locked: boolean) => void;
+		onStartTimeSelect?: (time: { startTime: string; endTime: string }) => void;
 		showButton?: boolean;
 	}>();
 
@@ -71,6 +73,9 @@
 				const [endHours, endMinutes] = selectedTime.endTime.split(':').map(Number);
 				endDateTime.setHours(endHours, endMinutes, 0, 0);
 			}
+
+			// Call onStartTimeSelect with the selected time
+			onStartTimeSelect(selectedTime);
 		}
 	});
 
@@ -136,6 +141,11 @@
 
 	function handleTimeSelect(time: AvailableTime) {
 		selectedTime = time;
+		// Call onStartTimeSelect immediately when a time is selected
+		onStartTimeSelect({
+			startTime: time.startTime,
+			endTime: time.endTime
+		});
 	}
 
 	function handleReset() {
