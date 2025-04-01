@@ -30,12 +30,17 @@ const buttonVariants = tv({
 type Variant = VariantProps<typeof buttonVariants>["variant"];
 type Size = VariantProps<typeof buttonVariants>["size"];
 
-type Props = ButtonPrimitive.Props & {
+type Props = {
 	variant?: Variant;
 	size?: Size;
-};
+	class?: string;
+	builders?: any[];
+} & Omit<HTMLButtonElement, "size">;
 
-type Events = ButtonPrimitive.Events;
+type Events = {
+	click: MouseEvent;
+	keydown: KeyboardEvent;
+};
 
 export {
 	Root,
