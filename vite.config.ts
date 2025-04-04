@@ -9,5 +9,15 @@ export default defineConfig({
 			project: './project.inlang',
 			outdir: './src/lib/paraglide'
 		})
-	]
+	],
+	optimizeDeps: {
+		include: ['@lucide/svelte'],
+		exclude: []
+	},
+	resolve: {
+		dedupe: ['@lucide/svelte']
+	},
+	ssr: {
+		noExternal: ['@lucide/svelte']
+	}
 });
