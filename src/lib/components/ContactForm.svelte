@@ -8,6 +8,9 @@
 	import { superForm, type SuperValidated } from 'sveltekit-superforms/client';
 	import { zodClient } from 'sveltekit-superforms/adapters';
 	import { z } from 'zod';
+	import { stripePromise } from '$lib/stripe';
+	import { Elements, PaymentElement } from '@stripe/stripe-js';
+	import { generateBookingNumber } from '$lib/utils/booking';
 
 	// Define the form schema
 	const formSchema = z.object({
@@ -23,11 +26,16 @@
 
 	type FormSchema = z.infer<typeof formSchema>;
 
-	let { data } = $props<{
+	let { data, totalPrice } = $props<{
 		data?: {
 			form: SuperValidated<FormSchema>;
 		};
+		totalPrice: number;
 	}>();
+
+	let clientSecret = $state<string | null>(null);
+	let processing = $state(false);
+	let error = $state<string | null>(null);
 
 	const defaultData = {
 		firstName: '',
@@ -43,6 +51,49 @@
 	});
 
 	const { form: formData, enhance } = form;
+
+	async function handleSubmit(event: Event) {
+		event.preventDefault();
+		if (processing) return;
+
+		try {
+			processing = true;
+			error = null;
+
+			// Generate a unique booking number
+			const bookingNumber = generateBookingNumber();
+
+			// Create payment intent
+			const response = await fetch('/api/create-payment-intent', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					amount: totalPrice * 100, // Convert to öre
+					bookingData: {
+						bookingNumber
+					}
+				})
+			});
+
+			if (!response.ok) throw new Error('Failed to create payment intent');
+			const { clientSecret: secret } = await response.json();
+			clientSecret = secret;
+		} catch (e) {
+			error = e instanceof Error ? e.message : 'An error occurred';
+		} finally {
+			processing = false;
+		}
+	}
+
+	async function handlePayment(event: CustomEvent) {
+		// Handle successful payment
+		if (event.detail.paymentIntent.status === 'succeeded') {
+			// Store booking data
+			await storeBookingData(event.detail.paymentIntent);
+			// Redirect to success page
+			window.location.href = `/booking/success/${bookingNumber}`;
+		}
+	}
 </script>
 
 <div class="mx-auto max-w-2xl space-y-8">
@@ -125,6 +176,21 @@
 			<Form.FieldErrors />
 		</Form.Field>
 
-		<Button type="submit" class="w-full">Fortsätt till betalning</Button>
+		{#if clientSecret}
+			<Elements stripe={stripePromise} options={{ clientSecret }}>
+				<PaymentElement />
+				<button class="w-full" disabled={processing} onclick={handlePayment}>
+					{processing ? 'Processing...' : 'Pay now'}
+				</button>
+			</Elements>
+		{:else}
+			<button class="w-full" onclick={handleSubmit} disabled={processing}>
+				Continue to payment
+			</button>
+		{/if}
+
+		{#if error}
+			<p class="text-destructive">{error}</p>
+		{/if}
 	</form>
 </div>

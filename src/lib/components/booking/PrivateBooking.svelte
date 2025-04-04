@@ -427,7 +427,7 @@
 
 	{#if showContactForm && selectedStartTime}
 		<section class="space-y-4">
-			<ContactForm />
+			<ContactForm totalPrice={totalPrice()} />
 		</section>
 	{/if}
 </div>
