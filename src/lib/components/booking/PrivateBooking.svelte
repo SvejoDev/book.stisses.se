@@ -427,7 +427,22 @@
 
 	{#if showContactForm && selectedStartTime}
 		<section class="space-y-4">
-			<ContactForm />
+			<ContactForm
+				totalPrice={totalPrice()}
+				bookingData={{
+					experienceId: parseInt(experience.id),
+					experienceType: experience.type,
+					startLocationId: selectedLocationId,
+					durationId: selectedDuration,
+					startDate: selectedDate,
+					startTime: selectedStartTime.startTime,
+					endDate: selectedDate,
+					endTime: selectedStartTime.endTime,
+					priceGroups: priceGroupQuantities,
+					products: selectedProducts,
+					addons: selectedAddons
+				}}
+			/>
 		</section>
 	{/if}
 </div>

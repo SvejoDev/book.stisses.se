@@ -121,6 +121,7 @@
 	export function getNonPayingCustomers(): number {
 		return totalNonPayingCustomers;
 	}
+
 </script>
 
 <div class="space-y-6">
