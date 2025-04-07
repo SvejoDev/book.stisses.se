@@ -1,4 +1,3 @@
-// src/routes/api/webhook/+server.ts
 import { json } from '@sveltejs/kit';
 import Stripe from 'stripe';
 import { SECRET_STRIPE_KEY, STRIPE_WEBHOOK_SECRET } from '$env/static/private';

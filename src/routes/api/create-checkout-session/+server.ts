@@ -1,4 +1,3 @@
-// src/routes/api/create-checkout-session/+server.ts
 import { json } from '@sveltejs/kit';
 import Stripe from 'stripe';
 import { SECRET_STRIPE_KEY } from '$env/static/private';
@@ -114,7 +113,8 @@ export const POST: RequestHandler = async ({ request }) => {
             currency: 'sek',
             product_data: {
               name: `Booking ${bookingNumber}`,
-              description: `${experienceType} experience booking`
+              description: `${experienceType} experience booking`,
+              images: [products[0].image_url]
             },
             unit_amount: totalPrice * 100 // Convert to öre
           },
