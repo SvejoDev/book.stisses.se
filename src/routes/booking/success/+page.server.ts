@@ -1,12 +1,13 @@
 // src/routes/booking/success/+page.server.ts
 import { supabase } from '$lib/supabaseClient';
 import type { PageServerLoad } from './$types';
+import { error } from '@sveltejs/kit';
 
 export const load: PageServerLoad = async ({ url }) => {
   const bookingId = url.searchParams.get('booking_id');
   
   if (!bookingId) {
-    throw new Error('No booking ID provided');
+    throw error(400, 'No booking ID provided');
   }
 
   // Fetch booking details with all related data
@@ -14,12 +15,30 @@ export const load: PageServerLoad = async ({ url }) => {
     .from('bookings')
     .select(`
       *,
+      experience: experiences!bookings_experience_id_fkey (
+        id,
+        name,
+        type,
+        pricing_type
+      ),
+      start_location: start_locations (
+        id,
+        name
+      ),
+      duration: durations (
+        id,
+        duration_type,
+        duration_value,
+        extra_price
+      ),
       booking_price_groups (
         price_group_id,
         quantity,
         price_at_time,
         price_groups (
-          display_name
+          id,
+          display_name,
+          price
         )
       ),
       booking_products (
@@ -27,6 +46,7 @@ export const load: PageServerLoad = async ({ url }) => {
         quantity,
         price_at_time,
         products (
+          id,
           name
         )
       ),
@@ -35,6 +55,7 @@ export const load: PageServerLoad = async ({ url }) => {
         quantity,
         price_at_time,
         addons (
+          id,
           name
         )
       )
@@ -43,7 +64,12 @@ export const load: PageServerLoad = async ({ url }) => {
     .single();
 
   if (bookingError) {
-    throw new Error('Failed to load booking details');
+    console.error('Failed to load booking details:', bookingError);
+    throw error(500, 'Failed to load booking details');
+  }
+
+  if (!booking) {
+    throw error(404, 'Booking not found');
   }
 
   return {
