@@ -456,61 +456,89 @@ export const POST: RequestHandler = async ({ request }) => {
     console.log('Session metadata:', session.metadata);
     
     try {
-    // Update booking status
-      console.log('Updating booking status...');
-      const { error: bookingError } = await supabase
-      .from('bookings')
-      .update({ 
-        is_paid: true,
-        stripe_payment_id: session.payment_intent as string
-      })
-      .eq('id', session.metadata?.booking_id);
+      // Parse metadata
+      const metadata = session.metadata as any;
+      const priceGroups = JSON.parse(metadata.price_groups);
+      const products = JSON.parse(metadata.products);
+      const addons = JSON.parse(metadata.addons);
 
-      if (bookingError) {
-        console.error('❌ Error updating booking:', bookingError);
-      return json({ error: 'Failed to update booking' }, { status: 500 });
-      }
-
-      // Get booking details for availability update
-      console.log('Fetching booking details...');
-      const { data: booking } = await supabase
+      // Create the booking
+      const { data: booking, error: bookingError } = await supabase
         .from('bookings')
-        .select(`
-          *,
-          booking_products (
-            product_id,
-            quantity
-          ),
-          booking_addons (
-            addon_id,
-            quantity
-          )
-        `)
-        .eq('id', session.metadata?.booking_id)
+        .insert([
+          {
+            booking_number: metadata.booking_number,
+            first_name: metadata.first_name,
+            last_name: metadata.last_name,
+            email: metadata.email,
+            phone: metadata.phone,
+            comment: metadata.comment,
+            experience_id: metadata.experience_id,
+            experience_type: metadata.experience_type,
+            start_location_id: metadata.start_location_id,
+            duration_id: metadata.duration_id,
+            start_date: metadata.start_date,
+            start_time: metadata.start_time,
+            end_date: metadata.end_date,
+            end_time: metadata.end_time,
+            has_booking_guarantee: metadata.has_booking_guarantee === 'true',
+            total_price: parseFloat(metadata.total_price),
+            is_paid: true,
+            stripe_payment_id: session.payment_intent as string,
+            availability_confirmed: true
+          }
+        ])
+        .select()
         .single();
 
-      console.log('Fetched booking data:', booking);
-
-      if (booking) {
-        // Transform booking products and addons into the format needed
-        const products = (booking as Booking).booking_products?.map((bp: BookingProduct) => ({
-          id: bp.product_id,
-          quantity: bp.quantity
-        })) || [];
-
-        const addons = (booking as Booking).booking_addons?.map((ba: BookingAddon) => ({
-          id: ba.addon_id,
-          quantity: ba.quantity
-        })) || [];
-
-        console.log('Transformed data:', { products, addons });
-
-        // Update availability for all products and addons
-        await updateAvailabilityForBooking(booking as Booking, products, addons);
-        console.log('✅ Successfully processed webhook');
-      } else {
-        console.error('❌ No booking found for ID:', session.metadata?.booking_id);
+      if (bookingError) {
+        console.error('❌ Error creating booking:', bookingError);
+        return json({ error: 'Failed to create booking' }, { status: 500 });
       }
+
+      // Insert related records
+      await Promise.all([
+        // Insert price groups
+        supabase.from('booking_price_groups').insert(
+          Array.isArray(priceGroups) 
+            ? priceGroups.map((pg: any) => ({
+                booking_id: booking.id,
+                price_group_id: pg.id,
+                quantity: pg.quantity,
+                price_at_time: pg.price || 0
+              }))
+            : Object.entries(priceGroups).map(([id, quantity]) => ({
+                booking_id: booking.id,
+                price_group_id: parseInt(id),
+                quantity,
+                price_at_time: 0
+              }))
+        ),
+
+        // Insert products
+        supabase.from('booking_products').insert(
+          products.map((p: any) => ({
+            booking_id: booking.id,
+            product_id: p.productId,
+            quantity: p.quantity,
+            price_at_time: p.price
+          }))
+        ),
+
+        // Insert addons
+        supabase.from('booking_addons').insert(
+          addons.map((a: any) => ({
+            booking_id: booking.id,
+            addon_id: a.addonId,
+            quantity: a.quantity,
+            price_at_time: a.price
+          }))
+        )
+      ]);
+
+      // Update availability for all products and addons
+      await updateAvailabilityForBooking(booking as Booking, products, addons);
+      console.log('✅ Successfully processed webhook');
     } catch (error) {
       console.error('❌ Error processing webhook:', error);
       return json({ error: 'Internal server error' }, { status: 500 });

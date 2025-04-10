@@ -57,8 +57,6 @@ async function checkAvailability(
 }
 
 export const POST: RequestHandler = async ({ request }) => {
-  const client = await supabase.auth.getUser();
-  
   try {
     const {
       firstName,
@@ -72,7 +70,6 @@ export const POST: RequestHandler = async ({ request }) => {
       durationId,
       startDate,
       startTime,
-      endDate,
       endTime,
       priceGroups,
       products,
@@ -134,36 +131,6 @@ export const POST: RequestHandler = async ({ request }) => {
     // Generate booking number
     const bookingNumber = `BK-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
-    // Start a transaction
-    const { data: booking, error: bookingError } = await supabase
-      .from('bookings')
-      .insert([
-        {
-          booking_number: bookingNumber,
-          first_name: firstName,
-          last_name: lastName,
-          email,
-          phone,
-          comment,
-          experience_id: experienceId,
-          experience_type: experienceType,
-          start_location_id: startLocationId,
-          duration_id: durationId,
-          start_date: startDate,
-          start_time: startTime,
-          end_date: calculatedEndDate,
-          end_time: endTime,
-          has_booking_guarantee: hasBookingGuarantee,
-          total_price: totalPrice,
-          is_paid: false,
-          availability_confirmed: true // New field to track availability confirmation
-        }
-      ])
-      .select()
-      .single();
-
-    if (bookingError) throw bookingError;
-
     // Fetch experience details
     const { data: experience, error: experienceError } = await supabase
       .from('experiences')
@@ -173,45 +140,28 @@ export const POST: RequestHandler = async ({ request }) => {
 
     if (experienceError) throw experienceError;
 
-    // Insert related records
-    await Promise.all([
-      // Insert price groups
-      supabase.from('booking_price_groups').insert(
-        Array.isArray(priceGroups) 
-          ? priceGroups.map((pg) => ({
-              booking_id: booking.id,
-              price_group_id: pg.id,
-              quantity: pg.quantity,
-              price_at_time: pg.price || 0
-            }))
-          : Object.entries(priceGroups).map(([id, quantity]) => ({
-              booking_id: booking.id,
-              price_group_id: parseInt(id),
-              quantity,
-              price_at_time: 0
-            }))
-      ),
-
-      // Insert products
-      supabase.from('booking_products').insert(
-        products.map((p: any) => ({
-          booking_id: booking.id,
-          product_id: p.productId,
-          quantity: p.quantity,
-          price_at_time: p.price
-        }))
-      ),
-
-      // Insert addons
-      supabase.from('booking_addons').insert(
-        addons.map((a: any) => ({
-          booking_id: booking.id,
-          addon_id: a.addonId,
-          quantity: a.quantity,
-          price_at_time: a.price
-        }))
-      )
-    ]);
+    // Create metadata object with all booking information
+    const bookingMetadata = {
+      booking_number: bookingNumber,
+      first_name: firstName,
+      last_name: lastName,
+      email,
+      phone,
+      comment,
+      experience_id: experienceId,
+      experience_type: experienceType,
+      start_location_id: startLocationId,
+      duration_id: durationId,
+      start_date: startDate,
+      end_date: calculatedEndDate,
+      start_time: startTime,
+      end_time: endTime,
+      has_booking_guarantee: hasBookingGuarantee ? 'true' : 'false',
+      total_price: totalPrice.toString(),
+      price_groups: JSON.stringify(priceGroups),
+      products: JSON.stringify(products),
+      addons: JSON.stringify(addons)
+    };
 
     // Create Stripe checkout session
     const session = await stripe.checkout.sessions.create({
@@ -231,13 +181,10 @@ export const POST: RequestHandler = async ({ request }) => {
         }
       ],
       mode: 'payment',
-      success_url: `${request.headers.get('origin')}/booking/success?session_id={CHECKOUT_SESSION_ID}&booking_id=${booking.id}`,
-      cancel_url: `${request.headers.get('origin')}/booking/cancel?booking_id=${booking.id}`,
+      success_url: `${request.headers.get('origin')}/booking/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${request.headers.get('origin')}/booking/cancel`,
       customer_email: email,
-      metadata: {
-        booking_id: booking.id,
-        booking_number: bookingNumber
-      }
+      metadata: bookingMetadata
     });
 
     return json({ url: session.url });
