@@ -228,14 +228,45 @@
 	}
 
 	function getCalendarDays() {
+		const start = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1);
 		const end = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0);
 		const days = [];
 
-		// Only add current month's days
+		// Get the day of the week for the first day (0 = Sunday, 1 = Monday, ..., 6 = Saturday)
+		let firstDayOfWeek = start.getDay();
+		// Convert Sunday from 0 to 7 to match our Monday-first calendar
+		firstDayOfWeek = firstDayOfWeek === 0 ? 7 : firstDayOfWeek;
+		// Adjust to make Monday = 1
+		firstDayOfWeek -= 1;
+
+		// Add padding days for the start of the month
+		for (let i = firstDayOfWeek - 1; i >= 0; i--) {
+			const paddingDate = new Date(start);
+			paddingDate.setDate(paddingDate.getDate() - (i + 1));
+			days.push({
+				date: paddingDate,
+				isCurrentMonth: false
+			});
+		}
+
+		// Add current month's days
 		for (let i = 1; i <= end.getDate(); i++) {
 			days.push({
 				date: new Date(currentMonth.getFullYear(), currentMonth.getMonth(), i),
 				isCurrentMonth: true
+			});
+		}
+
+		// Add padding days for the end of the month if needed
+		const lastDayOfWeek = end.getDay();
+		const remainingDays = lastDayOfWeek === 0 ? 0 : 7 - lastDayOfWeek;
+
+		for (let i = 1; i <= remainingDays; i++) {
+			const paddingDate = new Date(end);
+			paddingDate.setDate(paddingDate.getDate() + i);
+			days.push({
+				date: paddingDate,
+				isCurrentMonth: false
 			});
 		}
 
@@ -293,10 +324,11 @@
 		</div>
 
 		<div class="days-grid">
-			{#each getCalendarDays() as { date }}
+			{#each getCalendarDays() as { date, isCurrentMonth }}
 				<button
 					class={cn(
 						'relative flex aspect-square w-full flex-col items-center justify-center rounded-full text-sm md:text-base',
+						!isCurrentMonth && 'opacity-25',
 						selectedDate && isInSelectedRange(date) && 'bg-primary text-white',
 						!isInSelectedRange(date) && isInHoveredRange(date) && 'bg-gray-100',
 						(isDateDisabled(date) || isLocked) && 'cursor-not-allowed text-gray-300',
@@ -308,7 +340,7 @@
 					onclick={() => handleDateSelect(date)}
 					onmouseenter={() => (hoveredDate = date)}
 					onmouseleave={() => (hoveredDate = null)}
-					disabled={isDateDisabled(date) || isLocked}
+					disabled={!isCurrentMonth || isDateDisabled(date) || isLocked}
 				>
 					<span class="date-number">{date.getDate()}</span>
 					{#if isDateOpen(date) && !isDateDisabled(date)}
