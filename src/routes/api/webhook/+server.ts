@@ -571,6 +571,40 @@ export const POST: RequestHandler = async ({ request }) => {
 
       // Update availability for all products and addons
       await updateAvailabilityForBooking(booking as Booking, formattedProducts, formattedAddons);
+
+      // Send booking confirmation email
+      try {
+        console.log('Attempting to send booking confirmation email for booking:', booking.id);
+        const emailEndpoint = `${PUBLIC_SUPABASE_URL}/functions/v1/send-booking-confirmation`;
+        console.log('Calling Edge Function at:', emailEndpoint);
+        
+        const response = await fetch(emailEndpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`
+          },
+          body: JSON.stringify({
+            bookingId: booking.id
+          })
+        });
+
+        const responseText = await response.text();
+        console.log('Edge Function Response:', {
+          status: response.status,
+          ok: response.ok,
+          body: responseText
+        });
+
+        if (!response.ok) {
+          console.error('Failed to send booking confirmation email:', responseText);
+        } else {
+          console.log('Successfully sent booking confirmation email');
+        }
+      } catch (error) {
+        console.error('Error sending booking confirmation email:', error);
+      }
+
       console.log('✅ Successfully processed webhook');
     } catch (error) {
       console.error('❌ Error processing webhook:', error);
