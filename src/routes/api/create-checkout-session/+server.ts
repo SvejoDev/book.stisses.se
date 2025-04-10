@@ -4,6 +4,7 @@ import { SECRET_STRIPE_KEY } from '$env/static/private';
 import type { RequestHandler } from './$types';
 import { supabase } from '$lib/supabaseClient';
 import { addDays, format, parseISO } from 'date-fns';
+import { sv } from 'date-fns/locale';
 
 const stripe = new Stripe(SECRET_STRIPE_KEY);
 
@@ -163,6 +164,15 @@ export const POST: RequestHandler = async ({ request }) => {
 
     if (bookingError) throw bookingError;
 
+    // Fetch experience details
+    const { data: experience, error: experienceError } = await supabase
+      .from('experiences')
+      .select('name')
+      .eq('id', experienceId)
+      .single();
+
+    if (experienceError) throw experienceError;
+
     // Insert related records
     await Promise.all([
       // Insert price groups
@@ -211,8 +221,8 @@ export const POST: RequestHandler = async ({ request }) => {
           price_data: {
             currency: 'sek',
             product_data: {
-              name: `Booking ${bookingNumber}`,
-              description: `${experienceType} experience booking`,
+              name: experience.name,
+              description: `${getDurationText(durationData.duration_type, durationData.duration_value)} - ${formatBookingPeriod(startDate, calculatedEndDate, startTime, endTime, durationData.duration_type === 'overnights')}`,
               images: [products[0].image_url]
             },
             unit_amount: totalPrice * 100
@@ -241,4 +251,25 @@ export const POST: RequestHandler = async ({ request }) => {
 function timeToMinutes(time: string): number {
   const [hours, minutes] = time.split(':').map(Number);
   return hours * 60 + minutes;
+}
+
+// Helper functions
+function getDurationText(type: string, value: number): string {
+  if (type === 'hours') {
+    return value === 1 ? '1 timme' : `${value} timmar`;
+  } else if (type === 'overnights') {
+    return value === 1 ? '1 övernattning' : `${value} övernattningar`;
+  }
+  return '';
+}
+
+function formatBookingPeriod(startDate: string, endDate: string, startTime: string, endTime: string, isOvernight: boolean): string {
+  const start = parseISO(startDate);
+  const end = parseISO(endDate);
+  
+  if (isOvernight) {
+    return `${format(start, 'EEEE d MMMM', { locale: sv })} ${startTime} - ${format(end, 'EEEE d MMMM', { locale: sv })} ${endTime}`;
+  }
+  
+  return `${format(start, 'EEEE d MMMM', { locale: sv })} ${startTime}-${endTime}`;
 }
