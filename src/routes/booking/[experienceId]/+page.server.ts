@@ -1,6 +1,10 @@
 import { supabase } from "$lib/supabaseClient";
 import { error } from '@sveltejs/kit';
-
+import type { Actions } from './$types';
+import { fail } from '@sveltejs/kit';
+import { superValidate } from 'sveltekit-superforms/server';
+import { formSchema } from '$lib/schemas/contact-form';
+import { zod } from 'sveltekit-superforms/adapters';
 
 export async function load({ params }) {
     const { experienceId } = params;
@@ -115,3 +119,15 @@ export async function load({ params }) {
 
     return returnData;
 }
+
+export const actions = {
+  default: async ({ request }) => {
+    const form = await superValidate(request, zod(formSchema));
+    
+    if (!form.valid) {
+      return fail(400, { form });
+    }
+    
+    return { form };
+  }
+} satisfies Actions;

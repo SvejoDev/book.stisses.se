@@ -20,6 +20,8 @@
 		pricing_type: 'per_person' | 'per_unit';
 	}
 
+	const BOOKING_GUARANTEE_ADDON_ID = 4; // Replace with your actual addon ID
+
 	let {
 		startLocationId = $bindable(''),
 		experienceId = $bindable(''),
