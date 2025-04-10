@@ -139,7 +139,7 @@
 			<Form.Control>
 				{#snippet children({ props })}
 					<Form.Label>Telefonnummer *</Form.Label>
-					<PhoneInput {...props} bind:value={$formData.phone} defaultCountry="SE" required />
+					<PhoneInput {...props} bind:value={$formData.phone} defaultCountry="SE" />
 				{/snippet}
 			</Form.Control>
 			<Form.FieldErrors />
