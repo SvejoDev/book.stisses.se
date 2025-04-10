@@ -496,8 +496,10 @@ export const POST: RequestHandler = async ({ request }) => {
         return json({ error: 'Failed to create booking' }, { status: 500 });
       }
 
+      console.log('Created booking:', booking);
+
       // Insert related records
-      await Promise.all([
+      const [priceGroupsResult, productsResult, addonsResult] = await Promise.all([
         // Insert price groups
         supabase.from('booking_price_groups').insert(
           Array.isArray(priceGroups) 
@@ -536,8 +538,39 @@ export const POST: RequestHandler = async ({ request }) => {
         )
       ]);
 
+      // Check for errors in related record insertions
+      if (priceGroupsResult.error) {
+        console.error('Error inserting price groups:', priceGroupsResult.error);
+        throw priceGroupsResult.error;
+      }
+      if (productsResult.error) {
+        console.error('Error inserting products:', productsResult.error);
+        throw productsResult.error;
+      }
+      if (addonsResult.error) {
+        console.error('Error inserting addons:', addonsResult.error);
+        throw addonsResult.error;
+      }
+
+      // Format products and addons for availability update
+      const formattedProducts = products.map((p: any) => ({
+        id: p.productId,
+        quantity: p.quantity
+      }));
+
+      const formattedAddons = addons.map((a: any) => ({
+        id: a.addonId,
+        quantity: a.quantity
+      }));
+
+      console.log('Updating availability with:', {
+        booking,
+        products: formattedProducts,
+        addons: formattedAddons
+      });
+
       // Update availability for all products and addons
-      await updateAvailabilityForBooking(booking as Booking, products, addons);
+      await updateAvailabilityForBooking(booking as Booking, formattedProducts, formattedAddons);
       console.log('✅ Successfully processed webhook');
     } catch (error) {
       console.error('❌ Error processing webhook:', error);
