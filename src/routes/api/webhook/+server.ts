@@ -501,21 +501,41 @@ export const POST: RequestHandler = async ({ request }) => {
       // Insert related records
       const [priceGroupsResult, productsResult, addonsResult] = await Promise.all([
         // Insert price groups
-        supabase.from('booking_price_groups').insert(
-          Array.isArray(priceGroups) 
-            ? priceGroups.map((pg: any) => ({
-                booking_id: booking.id,
-                price_group_id: pg.id,
-                quantity: pg.quantity,
-                price_at_time: pg.price || 0
-              }))
-            : Object.entries(priceGroups).map(([id, quantity]) => ({
-                booking_id: booking.id,
-                price_group_id: parseInt(id),
-                quantity,
-                price_at_time: 0
-              }))
-        ),
+        (async () => {
+          // First fetch the price groups to get their prices
+          const { data: priceGroupData, error: priceGroupError } = await supabase
+            .from('price_groups')
+            .select('id, price')
+            .in('id', Array.isArray(priceGroups) 
+              ? priceGroups.map(pg => pg.id)
+              : Object.keys(priceGroups).map(id => parseInt(id))
+            );
+
+          if (priceGroupError) {
+            console.error('Error fetching price groups:', priceGroupError);
+            throw priceGroupError;
+          }
+
+          // Create a map of price group IDs to prices
+          const priceMap = new Map(priceGroupData.map(pg => [pg.id, pg.price]));
+
+          // Insert the booking price groups with correct prices
+          return supabase.from('booking_price_groups').insert(
+            Array.isArray(priceGroups) 
+              ? priceGroups.map((pg: any) => ({
+                  booking_id: booking.id,
+                  price_group_id: pg.id,
+                  quantity: pg.quantity,
+                  price_at_time: priceMap.get(pg.id) || 0
+                }))
+              : Object.entries(priceGroups).map(([id, quantity]) => ({
+                  booking_id: booking.id,
+                  price_group_id: parseInt(id),
+                  quantity,
+                  price_at_time: priceMap.get(parseInt(id)) || 0
+                }))
+          );
+        })(),
 
         // Insert products
         supabase.from('booking_products').insert(

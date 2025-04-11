@@ -143,7 +143,7 @@
 									<span>{group.price_groups.display_name}</span>
 									<span>
 										{group.quantity} × {group.price_at_time
-											? `${formatPrice(group.price_at_time)} kr`
+											? `${formatPrice(group.price_at_time)}`
 											: 'Ingår'}
 									</span>
 								</div>
@@ -162,7 +162,7 @@
 									<span>{product.products.name}</span>
 									<span>
 										{product.quantity} × {product.price_at_time
-											? `${formatPrice(product.price_at_time)} kr`
+											? `${formatPrice(product.price_at_time)}`
 											: 'Ingår'}
 									</span>
 								</div>
