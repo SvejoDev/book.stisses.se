@@ -196,7 +196,7 @@
 						</div>
 						<div class="flex justify-between border-t pt-2">
 							<span class="font-semibold">Betalat</span>
-							<span class="font-semibold">{formatPrice(displayTotal())} kr</span>
+							<span class="font-semibold">{formatPrice(displayTotal())}</span>
 						</div>
 					</div>
 				</div>
