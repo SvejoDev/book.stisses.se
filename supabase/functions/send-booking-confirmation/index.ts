@@ -211,99 +211,194 @@ serve(async (req) => {
         <head>
           <meta charset="utf-8">
           <style>
-            .wrapper {
-              padding-top: 50px !important;
+            body {
+              margin: 0;
+              padding: 0;
+              background-color: #ffffff;
               font-family: Arial, sans-serif;
+              line-height: 1.6;
+              color: #2d3748;
+            }
+
+            .wrapper {
+              padding: 40px 20px;
               max-width: 600px;
               margin: 0 auto;
-              padding: 20px;
+              background-color: #ffffff;
             }
 
             hr {
-              background-color: #ddd;
+              background-color: #e2e8f0;
               height: 1px;
               border: 0;
               margin: 20px 0;
             }
 
-            * {
-              color: #3e3e3e;
+            h2 {
+              color: #1a202c;
+              font-size: 24px;
+              margin-bottom: 10px;
+            }
+
+            h3 {
+              color: #2d3748;
+              font-size: 18px;
+              margin-bottom: 8px;
             }
 
             table {
-              font-size: 12px;
+              font-size: 14px;
               width: 100%;
-              margin-top: 10px;
-              margin-bottom: 10px;
+              margin: 10px 0;
               border-collapse: collapse;
+              background-color: #ffffff;
             }
 
             table th {
               text-align: left;
-              padding: 8px;
-              border-bottom: 1px solid #ddd;
+              padding: 12px;
+              background-color: #f7fafc;
+              border-bottom: 2px solid #e2e8f0;
+              color: #4a5568;
+              font-weight: 600;
             }
 
             table td {
-              padding: 8px;
-              border-bottom: 1px solid #eee;
+              padding: 12px;
+              border-bottom: 1px solid #edf2f7;
+              color: #4a5568;
             }
 
             .order-item-box {
-              border-width: 1px;
-              border-color: #ddd;
-              border-style: solid;
-              padding: 10px 10px;
-              margin-top: 10px;
-              background-color: #fff;
-              overflow-x: auto;
+              border: 1px solid #e2e8f0;
+              border-radius: 8px;
+              padding: 20px;
+              margin: 20px 0;
+              background-color: #ffffff;
+              box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
             }
 
             .header {
               text-align: center;
-              margin-bottom: 30px;
+              margin-bottom: 40px;
+              padding-bottom: 30px;
+              border-bottom: 1px solid #e2e8f0;
             }
 
             .header img {
-              max-width: 150px;
-              margin-bottom: 20px;
+              max-width: 180px;
+              margin-bottom: 25px;
+            }
+
+            .header h2 {
+              margin: 0 0 10px 0;
+              color: #1a202c;
+            }
+
+            .header h3 {
+              margin: 0 0 15px 0;
+              color: #48bb78;
+              font-weight: normal;
+            }
+
+            .header p {
+              color: #4a5568;
+              margin: 0;
             }
 
             .booking-info {
-              background-color: #f8f9fa;
-              padding: 15px;
-              border-radius: 5px;
-              margin-bottom: 20px;
+              background-color: #f7fafc;
+              padding: 20px;
+              border-radius: 8px;
+              margin-bottom: 30px;
+              border: 1px solid #e2e8f0;
+            }
+
+            .booking-info h3 {
+              margin-top: 0;
+              color: #2d3748;
+            }
+
+            .booking-info p {
+              margin: 8px 0;
+              color: #4a5568;
+            }
+
+            .booking-info strong {
+              color: #2d3748;
             }
 
             .total-section {
-              background-color: #f8f9fa;
-              padding: 15px;
-              border-radius: 5px;
-              margin-top: 20px;
+              background-color: #f7fafc;
+              padding: 20px;
+              border-radius: 8px;
+              margin-top: 30px;
+              border: 1px solid #e2e8f0;
             }
 
             .total-section table {
               margin: 0;
+              background-color: transparent;
             }
 
             .total-section td {
-              padding: 5px 8px;
+              padding: 8px 12px;
               border: none;
             }
 
             .total-section tr:last-child {
-              font-weight: bold;
-              font-size: 14px;
+              font-weight: 600;
+              font-size: 16px;
+              color: #2d3748;
+            }
+
+            .total-section tr:last-child td {
+              padding-top: 15px;
+              border-top: 2px solid #e2e8f0;
             }
 
             .footer {
               text-align: center;
-              margin-top: 30px;
-              color: #666;
-              font-size: 12px;
-              border-top: 1px solid #ddd;
-              padding-top: 20px;
+              margin-top: 40px;
+              padding-top: 30px;
+              border-top: 1px solid #e2e8f0;
+              color: #718096;
+              font-size: 13px;
+            }
+
+            .footer p {
+              margin: 5px 0;
+            }
+
+            .footer strong {
+              color: #4a5568;
+            }
+
+            .footer a {
+              color: #4299e1;
+              text-decoration: none;
+            }
+
+            .footer a:hover {
+              text-decoration: underline;
+            }
+
+            @media only screen and (max-width: 600px) {
+              .wrapper {
+                padding: 20px 15px;
+              }
+
+              table {
+                font-size: 13px;
+              }
+
+              .header h2 {
+                font-size: 22px;
+              }
+
+              .header h3 {
+                font-size: 16px;
+              }
             }
           </style>
         </head>
@@ -311,8 +406,9 @@ serve(async (req) => {
           <div class="wrapper">
             <div class="header">
               <img src="https://stisses.se/images/logo.png" alt="Stisses" />
-              <h2>Betallänk har betalats</h2>
-              <p>${booking.booking_number}, ${booking.first_name} ${booking.last_name}</p>
+              <h2>Bekräftelse & Kvitto</h2>
+              <h3>Tack för din bokning!</h3>
+              <p>Bokningsnummer: ${booking.booking_number}, ${booking.first_name} ${booking.last_name}</p>
             </div>
 
             <div class="booking-info">
