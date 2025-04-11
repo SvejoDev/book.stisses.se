@@ -5,6 +5,7 @@ import type { RequestHandler } from './$types';
 import { supabase } from '$lib/supabaseClient';
 import { addDays, format, parseISO } from 'date-fns';
 import { sv } from 'date-fns/locale';
+import { getTotalWithVat } from '$lib/utils/price';
 
 const stripe = new Stripe(SECRET_STRIPE_KEY);
 
@@ -163,6 +164,9 @@ export const POST: RequestHandler = async ({ request }) => {
       addons: JSON.stringify(addons)
     };
 
+    // Calculate the final price including VAT if applicable
+    const finalPrice = getTotalWithVat(totalPrice, experienceType);
+
     // Create Stripe checkout session
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ['card'],
@@ -175,7 +179,7 @@ export const POST: RequestHandler = async ({ request }) => {
               description: `${getDurationText(durationData.duration_type, durationData.duration_value)} - ${formatBookingPeriod(startDate, calculatedEndDate, startTime, endTime, durationData.duration_type === 'overnights')}`,
               images: [products[0].image_url]
             },
-            unit_amount: totalPrice * 100
+            unit_amount: finalPrice * 100 // Use the VAT-adjusted price
           },
           quantity: 1
         }

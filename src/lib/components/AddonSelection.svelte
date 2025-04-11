@@ -32,7 +32,8 @@
 		pricingType = $bindable<'per_person' | 'per_product' | 'hybrid'>('per_person'),
 		payingCustomers = $bindable(0),
 		onAddonsFetched = () => {},
-		includeVat = $bindable(true)
+		includeVat = $bindable(true),
+		experienceType = $bindable<string>('private')
 	} = $props<{
 		startLocationId: string;
 		experienceId: string;
@@ -46,6 +47,7 @@
 		payingCustomers?: number;
 		onAddonsFetched?: () => void;
 		includeVat?: boolean;
+		experienceType: string;
 	}>();
 
 	let selectedQuantities = $state<Record<number, number>>({});
@@ -69,7 +71,7 @@
 				addonTotal = addon.price * payingCustomers;
 			}
 
-			return total + (includeVat ? addVat(addonTotal) : addonTotal);
+			return total + (includeVat ? addVat(addonTotal, experienceType) : addonTotal);
 		}, 0);
 
 		console.log('Addons cost:', total);
@@ -295,7 +297,7 @@
 								{#if addon.price === 0 || addon.price === undefined}
 									Ingår
 								{:else}
-									{formatPrice(includeVat ? addVat(addon.price) : addon.price)}
+									{formatPrice(includeVat ? addVat(addon.price, experienceType) : addon.price)}
 									{#if addon.pricing_type === 'per_person'}
 										per person
 									{:else}
@@ -344,7 +346,7 @@
 										<div class="text-sm font-medium">
 											Totalt: {formatPrice(
 												includeVat
-													? addVat(addon.price * selectedQuantities[addon.id])
+													? addVat(addon.price * selectedQuantities[addon.id], experienceType)
 													: addon.price * selectedQuantities[addon.id]
 											)}
 											{#if includeVat}
@@ -369,7 +371,7 @@
 										<div class="ml-4 text-sm font-medium">
 											Totalt: {formatPrice(
 												includeVat
-													? addVat(addon.price * payingCustomers)
+													? addVat(addon.price * payingCustomers, experienceType)
 													: addon.price * payingCustomers
 											)}
 											{#if includeVat}

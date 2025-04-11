@@ -20,7 +20,8 @@
 		onNextStep = $bindable(() => {}),
 		includeVat = $bindable(true),
 		extraPrice = $bindable(0),
-		pricingType = $bindable('per_person')
+		pricingType = $bindable('per_person'),
+		experienceType = $bindable<string>('private')
 	} = $props<{
 		priceGroups: PriceGroup[];
 		startLocationId: number;
@@ -30,6 +31,7 @@
 		includeVat?: boolean;
 		extraPrice?: number;
 		pricingType: 'per_person' | 'per_product' | 'hybrid';
+		experienceType: string;
 	}>();
 
 	let quantities = $state<Record<number, number>>({});
@@ -72,12 +74,13 @@
 		const baseTotal = Object.entries(quantities).reduce((sum, [groupId, quantity]) => {
 			const group = priceGroups.find((g: PriceGroup) => g.id === parseInt(groupId));
 			const basePrice = group && group.is_payable ? group.price * quantity : 0;
-			return sum + (includeVat ? addVat(basePrice) : basePrice);
+			return sum + (includeVat ? addVat(basePrice, experienceType) : basePrice);
 		}, 0);
 
 		// Calculate extra price only for paying customers
 		const totalExtraPrice = extraPrice * totalPayingCustomers;
-		const total = baseTotal + (includeVat ? addVat(totalExtraPrice) : totalExtraPrice);
+		const total =
+			baseTotal + (includeVat ? addVat(totalExtraPrice, experienceType) : totalExtraPrice);
 
 		console.log('Price Groups cost:', total);
 		return total;
@@ -105,7 +108,7 @@
 	}
 
 	function getDisplayPrice(price: number): string {
-		const displayPrice = includeVat ? addVat(price) : price;
+		const displayPrice = includeVat ? addVat(price, experienceType) : price;
 		return formatPrice(displayPrice);
 	}
 
@@ -121,7 +124,6 @@
 	export function getNonPayingCustomers(): number {
 		return totalNonPayingCustomers;
 	}
-
 </script>
 
 <div class="space-y-6">
@@ -179,7 +181,7 @@
 					<p class="mb-1 text-sm text-muted-foreground">
 						Tillägg för vald längd: {formatPrice(
 							includeVat
-								? addVat(extraPrice * totalPayingCustomers)
+								? addVat(extraPrice * totalPayingCustomers, experienceType)
 								: extraPrice * totalPayingCustomers
 						)}
 						{#if includeVat}

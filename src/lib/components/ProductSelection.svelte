@@ -8,6 +8,7 @@
 		CardTitle
 	} from '$lib/components/ui/card';
 	import { cn } from '$lib/utils';
+	import { addVat } from '$lib/utils/price';
 
 	interface Product {
 		id: number;
@@ -26,7 +27,9 @@
 			products: Array<{ productId: number; quantity: number; price?: number }>
 		) => {},
 		onProductsLoaded = () => {},
-		pricingType = $bindable<'per_person' | 'per_product' | 'hybrid'>('per_person')
+		pricingType = $bindable<'per_person' | 'per_product' | 'hybrid'>('per_person'),
+		experienceType = $bindable<string>('private'),
+		includeVat = $bindable(true)
 	} = $props<{
 		startLocationId: string;
 		experienceId: string;
@@ -36,6 +39,8 @@
 		) => void;
 		onProductsLoaded?: () => void;
 		pricingType?: 'per_person' | 'per_product' | 'hybrid';
+		experienceType: string;
+		includeVat?: boolean;
 	}>();
 
 	let selectedQuantities = $state<Record<number, number>>({});
@@ -51,7 +56,8 @@
 		const total = Object.entries(selectedQuantities).reduce((total, [productId, quantity]) => {
 			const product = products.find((p) => p.id === parseInt(productId));
 			if (product?.price) {
-				return total + product.price * quantity;
+				const basePrice = product.price * quantity;
+				return total + (includeVat ? addVat(basePrice, experienceType) : basePrice);
 			}
 			return total;
 		}, 0);

@@ -467,7 +467,7 @@ serve(async (req) => {
                 </tr>
                 <tr>
                   <td>Moms</td>
-                  <td style="text-align: right">${formatPrice(vatAmount)} kr</td>
+                  <td style="text-align: right">${isPrivate ? formatPrice(vatAmount) : '0,00'} kr</td>
                 </tr>
                 <tr>
                   <td>Totalt pris</td>

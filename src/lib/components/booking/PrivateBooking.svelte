@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { formatPrice, getTotalWithVat, isVatExempt } from '$lib/utils/price';
 	import StartLocations from '$lib/components/StartLocations.svelte';
 	import BookingDurations from '$lib/components/BookingDurations.svelte';
 	import Calendar from '$lib/components/Calendar.svelte';
@@ -132,10 +133,14 @@
 		// Get the duration extra price
 		const durationTotal = extraPrice * (priceGroupRef?.getPayingCustomers() ?? 0);
 
-		const total = productTotal + addonTotal + priceGroupTotal + durationTotal;
+		// Calculate base total
+		const baseTotal = productTotal + addonTotal + priceGroupTotal + durationTotal;
 
-		return total;
+		return baseTotal;
 	});
+
+	let showVat = $derived(!isVatExempt(experience.type));
+	let displayTotal = $derived(() => getTotalWithVat(totalPrice(), experience.type));
 
 	let hasStartLocations = $derived(startLocations.length > 0);
 
@@ -327,6 +332,7 @@
 				onNextStep={handleNextStep}
 				includeVat={true}
 				{extraPrice}
+				experienceType={experience.type}
 			/>
 		</section>
 	{/if}
@@ -373,6 +379,7 @@
 						onProductsLoaded={() => (productsLoaded = true)}
 						isLocked={isBookingLocked}
 						{pricingType}
+						experienceType={experience.type}
 					/>
 				</section>
 
@@ -389,11 +396,17 @@
 						payingCustomers={priceGroupRef?.getPayingCustomers() ?? 0}
 						onAddonsFetched={() => (showAvailableTimesButton = true)}
 						includeVat={true}
+						experienceType={experience.type}
 					/>
 
 					{#if pricingType !== 'per_person' && totalPrice() > 0}
 						<div class="text-center text-xl font-semibold">
-							Totalt att betala: {totalPrice()} kr
+							Totalt att betala: {formatPrice(displayTotal())}
+							{#if showVat}
+								<span class="text-sm text-muted-foreground">(inkl. moms)</span>
+							{:else}
+								<span class="text-sm text-muted-foreground">(exkl. moms)</span>
+							{/if}
 						</div>
 					{/if}
 

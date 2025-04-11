@@ -319,6 +319,7 @@
 				onNextStep={handleNextStep}
 				includeVat={false}
 				{extraPrice}
+				experienceType={experience.type}
 			/>
 		</section>
 	{/if}
@@ -365,6 +366,7 @@
 						onProductsLoaded={() => (productsLoaded = true)}
 						isLocked={isBookingLocked}
 						{pricingType}
+						experienceType={experience.type}
 					/>
 				</section>
 
@@ -381,6 +383,7 @@
 						payingCustomers={priceGroupRef?.getPayingCustomers() ?? 0}
 						onAddonsFetched={() => (showAvailableTimesButton = true)}
 						includeVat={false}
+						experienceType={experience.type}
 					/>
 
 					{#if pricingType !== 'per_person' && totalPrice() > 0}

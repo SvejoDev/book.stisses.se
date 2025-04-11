@@ -1,12 +1,11 @@
 <script lang="ts">
 	import type { PageData } from './$types';
-	import { formatPrice } from '$lib/utils/price';
+	import { formatPrice, calculateVatAmount, isVatExempt } from '$lib/utils/price';
 	import { format } from 'date-fns';
 	import { sv } from 'date-fns/locale';
 
 	let { data } = $props<{ data: PageData }>();
 	let booking = $derived(data.booking);
-	let isPrivate = $derived(booking.experience?.type === 'private');
 
 	function formatDateTime(date: string, time: string): string {
 		const dateTime = new Date(`${date}T${time}`);
@@ -60,25 +59,13 @@
 
 	let total = $derived(() => priceGroupTotal() + productTotal() + addonTotal() + durationTotal());
 
-	// For private bookings, VAT is included in the total
-	// For other bookings, prices are ex VAT
-	let vatAmount = $derived(() => {
-		if (isPrivate) {
-			// Calculate VAT portion of the total (VAT is already included)
-			return total() - total() / 1.25;
-		} else {
-			// Calculate VAT to be added
-			return total() * 0.25;
-		}
-	});
+	let vatAmount = $derived(() =>
+		calculateVatAmount(total(), booking.experience?.type || 'private')
+	);
 
-	let displayTotal = $derived(() => {
-		if (isPrivate) {
-			return total(); // Total already includes VAT
-		} else {
-			return total() + vatAmount(); // Add VAT to total
-		}
-	});
+	let displayTotal = $derived(() => total() + vatAmount());
+
+	let showVat = $derived(() => !isVatExempt(booking.experience?.type || 'private'));
 </script>
 
 <svelte:head>
@@ -194,29 +181,24 @@
 			<!-- Totals -->
 			<section class="mt-6 rounded-lg bg-gray-50 p-6">
 				<div class="space-y-3">
-					{#if isPrivate}
-						<div class="flex items-baseline justify-between">
-							<div class="space-y-1">
-								<span class="text-lg font-semibold">Totalt att betala</span>
-								<p class="text-sm text-gray-600">Alla priser är inklusive moms</p>
-							</div>
-							<div class="text-right">
-								<span class="text-2xl font-bold">{formatPrice(total())}</span>
-								<p class="text-sm text-gray-600">varav moms {formatPrice(vatAmount())}</p>
-							</div>
+					<div class="flex flex-col gap-2">
+						<div class="flex justify-between">
+							<span>Totalt (exkl. moms)</span>
+							<span>{formatPrice(total())}</span>
 						</div>
-					{:else}
-						<div class="flex items-baseline justify-between">
-							<div class="space-y-1">
-								<span class="text-lg font-semibold">Totalt att betala</span>
-								<p class="text-sm text-gray-600">Exklusive moms</p>
-							</div>
-							<div class="text-right">
-								<span class="text-2xl font-bold">{formatPrice(total())}</span>
-								<p class="text-sm text-gray-600">+ moms {formatPrice(vatAmount())}</p>
-							</div>
+						<div class="flex justify-between">
+							<span>Moms</span>
+							<span>{showVat() ? formatPrice(vatAmount()) : '0,00'} kr</span>
 						</div>
-					{/if}
+						<div class="flex justify-between">
+							<span>Totalt pris</span>
+							<span>{formatPrice(displayTotal())}</span>
+						</div>
+						<div class="flex justify-between border-t pt-2">
+							<span class="font-semibold">Betalat</span>
+							<span class="font-semibold">{formatPrice(displayTotal())} kr</span>
+						</div>
+					</div>
 				</div>
 			</section>
 
