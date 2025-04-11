@@ -200,9 +200,11 @@ serve(async (req) => {
 
     const durationTotal = (booking.duration?.extra_price || 0) * payingCustomers;
     const total = priceGroupTotal + productTotal + addonTotal + durationTotal;
-    const isPrivate = booking.experience?.type === 'private';
-    const vatAmount = isPrivate ? total - total / 1.25 : total * 0.25;
-    const displayTotal = isPrivate ? total : total + vatAmount;
+    
+    // Update VAT calculation to properly handle exempt types
+    const isVatExempt = ['company', 'school'].includes(booking.experience?.type || 'private');
+    const vatAmount = isVatExempt ? 0 : total * 0.25;
+    const displayTotal = total + vatAmount;
 
     // Generate email HTML
     const emailHtml = `
@@ -434,7 +436,7 @@ serve(async (req) => {
                       <td>${group.price_groups.display_name}</td>
                       <td>${group.quantity}</td>
                       <td>${group.price_at_time ? `${formatPrice(group.price_at_time)} kr` : '0,00 kr'}</td>
-                      <td>${group.price_at_time ? `${formatPrice(group.price_at_time * 0.25)} kr (25%)` : '0,00 kr (25%)'}</td>
+                      <td>${isVatExempt ? '0,00 kr (0%)' : `${formatPrice(group.price_at_time * 0.25)} kr (25%)`}</td>
                     </tr>
                   `).join('')}
 
@@ -443,7 +445,7 @@ serve(async (req) => {
                       <td>${product.products.name}</td>
                       <td>${product.quantity}</td>
                       <td>${product.price_at_time ? `${formatPrice(product.price_at_time)} kr` : '0,00 kr'}</td>
-                      <td>${product.price_at_time ? `${formatPrice(product.price_at_time * 0.25)} kr (25%)` : '0,00 kr (25%)'}</td>
+                      <td>${isVatExempt ? '0,00 kr (0%)' : `${formatPrice(product.price_at_time * 0.25)} kr (25%)`}</td>
                     </tr>
                   `).join('')}
 
@@ -452,7 +454,7 @@ serve(async (req) => {
                       <td>${addon.addons.name}</td>
                       <td>${addon.quantity}</td>
                       <td>${addon.price_at_time ? `${formatPrice(addon.price_at_time)} kr` : '0,00 kr'}</td>
-                      <td>${addon.price_at_time ? `${formatPrice(addon.price_at_time * 0.25)} kr (25%)` : '0,00 kr (0%)'}</td>
+                      <td>${isVatExempt ? '0,00 kr (0%)' : `${formatPrice(addon.price_at_time * 0.25)} kr (25%)`}</td>
                     </tr>
                   `).join('')}
                 </tbody>
@@ -467,7 +469,7 @@ serve(async (req) => {
                 </tr>
                 <tr>
                   <td>Moms</td>
-                  <td style="text-align: right">${isPrivate ? formatPrice(vatAmount) : '0,00'} kr</td>
+                  <td style="text-align: right">${isVatExempt ? '0,00' : formatPrice(vatAmount)} kr</td>
                 </tr>
                 <tr>
                   <td>Totalt pris</td>
