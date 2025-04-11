@@ -42,6 +42,31 @@ function formatDateTime(date: string, time: string): string {
   });
 }
 
+function formatDate(date: string): string {
+  const dateObj = new Date(date);
+  return dateObj.toLocaleString('sv-SE', {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric'
+  });
+}
+
+function formatTime(time: string): string {
+  const [hours, minutes] = time.split(':');
+  return `${hours}:${minutes}`;
+}
+
+function getDateTimeDisplay(booking: any): string {
+  const isSameDay = booking.start_date === booking.end_date;
+  
+  if (isSameDay) {
+    return `${formatDate(booking.start_date)} ${formatTime(booking.start_time)} till ${formatTime(booking.end_time)}`;
+  } else {
+    return `${formatDate(booking.start_date)} ${formatTime(booking.start_time)} till ${formatDate(booking.end_date)} ${formatTime(booking.end_time)}`;
+  }
+}
+
 function formatPrice(price: number): string {
   return new Intl.NumberFormat('sv-SE').format(price);
 }
@@ -184,99 +209,196 @@ serve(async (req) => {
       <!DOCTYPE html>
       <html>
         <head>
+          <meta charset="utf-8">
           <style>
-            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-            .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-            .header { text-align: center; margin-bottom: 30px; }
-            .section { margin-bottom: 20px; }
-            .total { background-color: #f8f9fa; padding: 15px; margin-top: 20px; }
+            .wrapper {
+              padding-top: 50px !important;
+              font-family: Arial, sans-serif;
+              max-width: 600px;
+              margin: 0 auto;
+              padding: 20px;
+            }
+
+            hr {
+              background-color: #ddd;
+              height: 1px;
+              border: 0;
+              margin: 20px 0;
+            }
+
+            * {
+              color: #3e3e3e;
+            }
+
+            table {
+              font-size: 12px;
+              width: 100%;
+              margin-top: 10px;
+              margin-bottom: 10px;
+              border-collapse: collapse;
+            }
+
+            table th {
+              text-align: left;
+              padding: 8px;
+              border-bottom: 1px solid #ddd;
+            }
+
+            table td {
+              padding: 8px;
+              border-bottom: 1px solid #eee;
+            }
+
+            .order-item-box {
+              border-width: 1px;
+              border-color: #ddd;
+              border-style: solid;
+              padding: 10px 10px;
+              margin-top: 10px;
+              background-color: #fff;
+              overflow-x: auto;
+            }
+
+            .header {
+              text-align: center;
+              margin-bottom: 30px;
+            }
+
+            .header img {
+              max-width: 150px;
+              margin-bottom: 20px;
+            }
+
+            .booking-info {
+              background-color: #f8f9fa;
+              padding: 15px;
+              border-radius: 5px;
+              margin-bottom: 20px;
+            }
+
+            .total-section {
+              background-color: #f8f9fa;
+              padding: 15px;
+              border-radius: 5px;
+              margin-top: 20px;
+            }
+
+            .total-section table {
+              margin: 0;
+            }
+
+            .total-section td {
+              padding: 5px 8px;
+              border: none;
+            }
+
+            .total-section tr:last-child {
+              font-weight: bold;
+              font-size: 14px;
+            }
+
+            .footer {
+              text-align: center;
+              margin-top: 30px;
+              color: #666;
+              font-size: 12px;
+              border-top: 1px solid #ddd;
+              padding-top: 20px;
+            }
           </style>
         </head>
         <body>
-          <div class="container">
+          <div class="wrapper">
             <div class="header">
-              <h1>Bokningsbekräftelse</h1>
-              <p>Bokningsnummer: ${booking.booking_number}</p>
+              <img src="https://stisses.se/images/logo.png" alt="Stisses" />
+              <h2>Betallänk har betalats</h2>
+              <p>${booking.booking_number}, ${booking.first_name} ${booking.last_name}</p>
             </div>
 
-            <div class="section">
-              <h2>${booking.experience?.name}</h2>
-              <p><strong>Startplats:</strong> ${booking.start_location?.name}</p>
-              <p><strong>Längd:</strong> ${getDurationText(
-                booking.duration?.duration_type,
-                booking.duration?.duration_value
-              )}</p>
+            <div class="booking-info">
+              <h3>${getDateTimeDisplay(booking)}</h3>
+              <p><strong>${booking.experience?.name}</strong></p>
+              <p>Startplats: ${booking.start_location?.name}</p>
+              <p>Längd: ${getDurationText(booking.duration?.duration_type, booking.duration?.duration_value)}</p>
             </div>
 
-            <div class="section">
-              <h3>Tidpunkt</h3>
-              <p>Start: ${formatDateTime(booking.start_date, booking.start_time)}</p>
-              <p>Slut: ${formatDateTime(booking.end_date, booking.end_time)}</p>
+            <div class="order-item-box">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Produkt</th>
+                    <th>Antal</th>
+                    <th>Pris</th>
+                    <th>Moms</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${booking.booking_price_groups.map(group => `
+                    <tr>
+                      <td>${group.price_groups.display_name}</td>
+                      <td>${group.quantity}</td>
+                      <td>${group.price_at_time ? `${formatPrice(group.price_at_time)} kr` : '0,00 kr'}</td>
+                      <td>${group.price_at_time ? `${formatPrice(group.price_at_time * 0.25)} kr (25%)` : '0,00 kr (25%)'}</td>
+                    </tr>
+                  `).join('')}
+
+                  ${booking.booking_products.map(product => `
+                    <tr>
+                      <td>${product.products.name}</td>
+                      <td>${product.quantity}</td>
+                      <td>${product.price_at_time ? `${formatPrice(product.price_at_time)} kr` : '0,00 kr'}</td>
+                      <td>${product.price_at_time ? `${formatPrice(product.price_at_time * 0.25)} kr (25%)` : '0,00 kr (25%)'}</td>
+                    </tr>
+                  `).join('')}
+
+                  ${booking.booking_addons.map(addon => `
+                    <tr>
+                      <td>${addon.addons.name}</td>
+                      <td>${addon.quantity}</td>
+                      <td>${addon.price_at_time ? `${formatPrice(addon.price_at_time)} kr` : '0,00 kr'}</td>
+                      <td>${addon.price_at_time ? `${formatPrice(addon.price_at_time * 0.25)} kr (25%)` : '0,00 kr (0%)'}</td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
             </div>
 
-            <div class="section">
-              <h3>Kontaktuppgifter</h3>
-              <p>${booking.first_name} ${booking.last_name}</p>
-              <p>${booking.email}</p>
-              <p>${booking.phone}</p>
-            </div>
-
-            ${booking.booking_price_groups.length ? `
-              <div class="section">
-                <h3>Antal personer</h3>
-                ${booking.booking_price_groups.map(group => `
-                  <p>${group.price_groups.display_name}: ${group.quantity} × ${
-                    group.price_at_time ? `${formatPrice(group.price_at_time)} kr` : 'Ingår'
-                  }</p>
-                `).join('')}
-              </div>
-            ` : ''}
-
-            ${booking.booking_products.length ? `
-              <div class="section">
-                <h3>Utrustning</h3>
-                ${booking.booking_products.map(product => `
-                  <p>${product.products.name}: ${product.quantity} × ${
-                    product.price_at_time ? `${formatPrice(product.price_at_time)} kr` : 'Ingår'
-                  }</p>
-                `).join('')}
-              </div>
-            ` : ''}
-
-            ${booking.booking_addons.length ? `
-              <div class="section">
-                <h3>Tillägg</h3>
-                ${booking.booking_addons.map(addon => `
-                  <p>${addon.addons.name}: ${addon.quantity} × ${
-                    addon.price_at_time ? `${formatPrice(addon.price_at_time)} kr` : 'Ingår'
-                  }</p>
-                `).join('')}
-              </div>
-            ` : ''}
-
-            <div class="total">
-              <h3>Totalt att betala</h3>
-              <p style="font-size: 1.2em; font-weight: bold;">
-                ${formatPrice(displayTotal)} kr
-                <br>
-                <span style="font-size: 0.8em; font-weight: normal;">
-                  ${isPrivate 
-                    ? `(varav moms ${formatPrice(vatAmount)} kr)`
-                    : `+ moms ${formatPrice(vatAmount)} kr`}
-                </span>
-              </p>
+            <div class="total-section">
+              <table>
+                <tr>
+                  <td>Totalt (exkl. moms)</td>
+                  <td style="text-align: right">${formatPrice(total)} kr</td>
+                </tr>
+                <tr>
+                  <td>Moms</td>
+                  <td style="text-align: right">${formatPrice(vatAmount)} kr</td>
+                </tr>
+                <tr>
+                  <td>Totalt pris</td>
+                  <td style="text-align: right">${formatPrice(displayTotal)} kr</td>
+                </tr>
+                <tr>
+                  <td>Betalat</td>
+                  <td style="text-align: right">${formatPrice(displayTotal)} kr</td>
+                </tr>
+              </table>
             </div>
 
             ${booking.comment ? `
-              <div class="section">
+              <div class="order-item-box">
                 <h3>Meddelande</h3>
                 <p>${booking.comment}</p>
               </div>
             ` : ''}
 
-            <div style="text-align: center; margin-top: 30px; color: #666;">
-              <p>Tack för din bokning! Spara denna bekräftelse.</p>
-              <p>Vid frågor, kontakta oss på info@stisses.se</p>
+            <div class="footer">
+              <p><strong>Stisses Sport och Fritid AB</strong></p>
+              <p>+46703259638</p>
+              <p>559416-1308 (SE559416130801)</p>
+              <p>Reningsverksvägen 2 26232 Ängelholm</p>
+              <hr>
+              <p>Några frågor? Kontakta oss på <a href="mailto:info@stisses.se">info@stisses.se</a></p>
+              <p style="color: #999; font-size: 11px; margin-top: 20px;">© ${new Date().getFullYear()} Stisses Sport och Fritid AB | Ängelholm, Sweden. All rights reserved.</p>
             </div>
           </div>
         </body>
