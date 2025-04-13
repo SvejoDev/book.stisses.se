@@ -352,6 +352,7 @@
 					bind:isLoading={isLoadingDurations}
 					onDurationSelect={handleDurationSelect}
 					isLocked={isBookingLocked}
+					experienceType={experience.type}
 				/>
 			</div>
 		</section>

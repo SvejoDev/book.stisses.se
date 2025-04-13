@@ -9,9 +9,13 @@ export function shouldShowPricesExcludingVat(experienceType: string): boolean {
     return SHOW_PRICES_EXCLUDING_VAT.includes(experienceType);
 }
 
-// Add VAT to a price
-export function addVat(price: number): number {
-    return price * (1 + VAT_RATE);
+/**
+ * Add VAT to a price that excludes VAT
+ * @param priceExcludingVat - Price excluding VAT
+ * @returns Price including VAT
+ */
+export function addVat(priceExcludingVat: number): number {
+    return priceExcludingVat * (1 + VAT_RATE);
 }
 
 /**
@@ -56,24 +60,25 @@ export function getFinalPrice(basePrice: number, experienceType: string): number
     return basePrice;
 }
 
-// Get display price based on experience type
-export function getDisplayPrice(price: number, experienceType: string): number {
-    if (shouldShowPricesExcludingVat(experienceType)) {
-        return removeVat(price);
-    }
-    return price;
+/**
+ * Get the display price based on experience type
+ * @param priceExcludingVat - Base price excluding VAT from database
+ * @param experienceType - Type of experience
+ * @returns Price to display (with VAT for private, without for business/school)
+ */
+export function getDisplayPrice(priceExcludingVat: number, experienceType: ExperienceType): number {
+    return experienceType === 'private' ? addVat(priceExcludingVat) : priceExcludingVat;
 }
 
 /**
  * Gets both VAT-inclusive and VAT-exclusive prices
- * @param price - Total price (including VAT)
+ * @param priceExcludingVat - Base price excluding VAT from database
  * @param experienceType - Type of experience
  * @returns Object containing both prices
  */
-export function getBothPrices(price: number, experienceType: ExperienceType): PriceResult {
-    const priceExcludingVat = removeVat(price);
+export function getBothPrices(priceExcludingVat: number, experienceType: ExperienceType): PriceResult {
     return {
         priceExcludingVat,
-        priceIncludingVat: price
+        priceIncludingVat: experienceType === 'private' ? addVat(priceExcludingVat) : priceExcludingVat
     };
 } 

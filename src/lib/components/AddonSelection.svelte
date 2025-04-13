@@ -8,7 +8,7 @@
 		CardTitle
 	} from '$lib/components/ui/card';
 	import { cn } from '$lib/utils';
-	import { getBothPrices, formatPrice } from '$lib/utils/price';
+	import { formatPrice, getDisplayPrice } from '$lib/utils/price';
 
 	interface Addon {
 		id: number;
@@ -19,8 +19,6 @@
 		price?: number;
 		pricing_type: 'per_person' | 'per_unit';
 	}
-
-	const BOOKING_GUARANTEE_ADDON_ID = 4; // Replace with your actual addon ID
 
 	let {
 		startLocationId = $bindable(''),
@@ -66,15 +64,12 @@
 			let addonTotal = 0;
 			if (addon.pricing_type === 'per_unit') {
 				const quantity = selectedQuantities[addon.id] || 0;
-				addonTotal = addon.price * quantity;
+				addonTotal = addon.price * quantity; // price from DB is already excluding VAT
 			} else if (addon.pricing_type === 'per_person' && selectedPerPersonAddons[addon.id]) {
-				addonTotal = addon.price * payingCustomers;
+				addonTotal = addon.price * payingCustomers; // price from DB is already excluding VAT
 			}
 
-			return (
-				total +
-				(includeVat ? getBothPrices(addonTotal, experienceType).priceIncludingVat : addonTotal)
-			);
+			return total + getDisplayPrice(addonTotal, experienceType);
 		}, 0);
 
 		console.log('Addons cost:', total);
@@ -300,18 +295,16 @@
 								{#if addon.price === 0 || addon.price === undefined}
 									Ingår
 								{:else}
-									{formatPrice(
-										includeVat
-											? getBothPrices(addon.price, experienceType).priceIncludingVat
-											: addon.price
-									)}
+									{formatPrice(getDisplayPrice(addon.price, experienceType))}
 									{#if addon.pricing_type === 'per_person'}
 										per person
 									{:else}
 										per enhet
 									{/if}
-									{#if includeVat}
+									{#if experienceType === 'private'}
 										<span class="text-xs">(inkl. moms)</span>
+									{:else}
+										<span class="text-xs">(exkl. moms)</span>
 									{/if}
 								{/if}
 							</p>
@@ -352,15 +345,12 @@
 									{:else if selectedQuantities[addon.id]}
 										<div class="text-sm font-medium">
 											Totalt: {formatPrice(
-												includeVat
-													? getBothPrices(
-															addon.price * selectedQuantities[addon.id],
-															experienceType
-														).priceIncludingVat
-													: addon.price * selectedQuantities[addon.id]
+												getDisplayPrice(addon.price * selectedQuantities[addon.id], experienceType)
 											)}
-											{#if includeVat}
+											{#if experienceType === 'private'}
 												<span class="text-xs">(inkl. moms)</span>
+											{:else}
+												<span class="text-xs">(exkl. moms)</span>
 											{/if}
 										</div>
 									{/if}
@@ -380,13 +370,12 @@
 									{:else if selectedPerPersonAddons[addon.id]}
 										<div class="ml-4 text-sm font-medium">
 											Totalt: {formatPrice(
-												includeVat
-													? getBothPrices(addon.price * payingCustomers, experienceType)
-															.priceIncludingVat
-													: addon.price * payingCustomers
+												getDisplayPrice(addon.price * payingCustomers, experienceType)
 											)}
-											{#if includeVat}
+											{#if experienceType === 'private'}
 												<span class="text-xs">(inkl. moms)</span>
+											{:else}
+												<span class="text-xs">(exkl. moms)</span>
 											{/if}
 										</div>
 									{/if}

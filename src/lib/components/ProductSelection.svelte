@@ -8,7 +8,7 @@
 		CardTitle
 	} from '$lib/components/ui/card';
 	import { cn } from '$lib/utils';
-	import { getBothPrices } from '$lib/utils/price';
+	import { getBothPrices, getDisplayPrice, formatPrice } from '$lib/utils/price';
 
 	interface Product {
 		id: number;
@@ -57,10 +57,7 @@
 			const product = products.find((p) => p.id === parseInt(productId));
 			if (product?.price) {
 				const basePrice = product.price * quantity;
-				return (
-					total +
-					(includeVat ? getBothPrices(basePrice, experienceType).priceIncludingVat : basePrice)
-				);
+				return total + getDisplayPrice(basePrice, experienceType);
 			}
 			return total;
 		}, 0);
@@ -212,7 +209,14 @@
 							<CardTitle>{product.name}</CardTitle>
 							<CardDescription>{product.description}</CardDescription>
 							{#if pricingType !== 'per_person' && product.price}
-								<p class="mt-1 text-sm text-muted-foreground">{product.price} SEK</p>
+								<p class="mt-1 text-sm text-muted-foreground">
+									{formatPrice(getDisplayPrice(product.price, experienceType))}
+									{#if experienceType === 'private'}
+										<span class="text-xs">(inkl. moms)</span>
+									{:else}
+										<span class="text-xs">(exkl. moms)</span>
+									{/if}
+								</p>
 							{/if}
 						</div>
 					</CardHeader>
@@ -245,7 +249,17 @@
 								</div>
 								{#if pricingType !== 'per_person' && product.price && selectedQuantities[product.id]}
 									<div class="text-sm font-medium">
-										Totalt: {product.price * selectedQuantities[product.id]} kr
+										Totalt: {formatPrice(
+											getDisplayPrice(
+												product.price * selectedQuantities[product.id],
+												experienceType
+											)
+										)}
+										{#if experienceType === 'private'}
+											<span class="text-xs">(inkl. moms)</span>
+										{:else}
+											<span class="text-xs">(exkl. moms)</span>
+										{/if}
 									</div>
 								{/if}
 							</div>
