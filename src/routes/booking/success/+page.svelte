@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { PageData } from './$types';
-	import { formatPrice, calculateVatAmount, getBothPrices } from '$lib/utils/price';
+	import { formatPrice, calculateVatAmount, removeVat, addVat } from '$lib/utils/price';
 	import { format } from 'date-fns';
 	import { sv } from 'date-fns/locale';
 
@@ -57,12 +57,18 @@
 		return (booking.duration?.extra_price || 0) * payingCustomers;
 	});
 
-	let total = $derived(() => priceGroupTotal() + productTotal() + addonTotal() + durationTotal());
+	// All prices in the database are stored excluding VAT
+	let totalExcludingVat = $derived(
+		() => priceGroupTotal() + productTotal() + addonTotal() + durationTotal()
+	);
 
 	// Get both prices for display
-	let prices = $derived(() => getBothPrices(total(), booking.experience?.type || 'private'));
+	let prices = $derived({
+		priceExcludingVat: totalExcludingVat(),
+		priceIncludingVat: addVat(totalExcludingVat())
+	});
 
-	let vatAmount = $derived(() => calculateVatAmount(prices().priceIncludingVat));
+	let vatAmount = $derived(() => prices.priceIncludingVat - prices.priceExcludingVat);
 </script>
 
 <svelte:head>
@@ -181,7 +187,7 @@
 					<div class="flex flex-col gap-2">
 						<div class="flex justify-between">
 							<span>Totalt (exkl. moms)</span>
-							<span>{formatPrice(prices().priceExcludingVat)}</span>
+							<span>{formatPrice(prices.priceExcludingVat)}</span>
 						</div>
 						<div class="flex justify-between">
 							<span>Moms</span>
@@ -189,11 +195,11 @@
 						</div>
 						<div class="flex justify-between">
 							<span>Totalt pris</span>
-							<span>{formatPrice(prices().priceIncludingVat)}</span>
+							<span>{formatPrice(prices.priceIncludingVat)}</span>
 						</div>
 						<div class="flex justify-between border-t pt-2">
 							<span class="font-semibold">Betalat</span>
-							<span class="font-semibold">{formatPrice(prices().priceIncludingVat)}</span>
+							<span class="font-semibold">{formatPrice(prices.priceIncludingVat)}</span>
 						</div>
 					</div>
 				</div>

@@ -96,6 +96,11 @@
 		}
 		return type;
 	}
+
+	// Format price with correct VAT handling
+	function getFormattedPrice(price: number): string {
+		return formatPrice(getDisplayPrice(price, experienceType));
+	}
 </script>
 
 <div class="w-full max-w-xs">
@@ -121,11 +126,11 @@
 						{duration.duration_value}
 						{getDurationTypeText(duration.duration_type, duration.duration_value)}
 						{#if duration.extra_price > 0}
-							(+{formatPrice(getDisplayPrice(duration.extra_price, experienceType))}
+							(+{getFormattedPrice(duration.extra_price)}
 							{#if experienceType === 'private'}
 								<span class="left ml-1">inkl. moms</span>
 							{:else}
-								<span class="text-xs">exkl. moms</span>
+								<span class="ml-1 text-xs">exkl. moms</span>
 							{/if})
 						{/if}
 					</Select.Item>

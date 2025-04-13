@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { cn } from '$lib/utils';
-	import { getBothPrices, formatPrice } from '$lib/utils/price';
+	import { getBothPrices, formatPrice, getDisplayPrice } from '$lib/utils/price';
 
 	interface PriceGroup {
 		id: number;
@@ -70,22 +70,19 @@
 	let calculatedTotal = $derived(() => {
 		if (pricingType === 'per_product') return 0;
 
-		// Calculate base price from price groups
+		// Calculate base price from price groups using getDisplayPrice
 		const baseTotal = Object.entries(quantities).reduce((sum, [groupId, quantity]) => {
 			const group = priceGroups.find((g: PriceGroup) => g.id === parseInt(groupId));
-			const basePrice = group && group.is_payable ? group.price * quantity : 0;
-			return (
-				sum + (includeVat ? getBothPrices(basePrice, experienceType).priceIncludingVat : basePrice)
-			);
+			if (!group || !group.is_payable) return sum;
+
+			// Use getDisplayPrice for consistent handling based on experienceType
+			return sum + getDisplayPrice(group.price * quantity, experienceType);
 		}, 0);
 
-		// Calculate extra price only for paying customers
-		const totalExtraPrice = extraPrice * totalPayingCustomers;
-		const total =
-			baseTotal +
-			(includeVat
-				? getBothPrices(totalExtraPrice, experienceType).priceIncludingVat
-				: totalExtraPrice);
+		// Calculate extra price only for paying customers using getDisplayPrice
+		const extraPriceTotal = getDisplayPrice(extraPrice * totalPayingCustomers, experienceType);
+
+		const total = baseTotal + extraPriceTotal;
 
 		console.log('Price Groups cost:', total);
 		return total;
@@ -112,11 +109,9 @@
 		}
 	}
 
-	function getDisplayPrice(price: number): string {
-		const displayPrice = includeVat
-			? getBothPrices(price, experienceType).priceIncludingVat
-			: price;
-		return formatPrice(displayPrice);
+	// Use getDisplayPrice for consistent price display
+	function getFormattedPrice(price: number): string {
+		return formatPrice(getDisplayPrice(price, experienceType));
 	}
 
 	// Export methods for parent components
@@ -148,8 +143,8 @@
 						<p class="font-medium">{group.display_name}</p>
 						{#if pricingType !== 'per_product' && group.is_payable}
 							<p class="text-sm text-muted-foreground">
-								{getDisplayPrice(group.price)} per person
-								{#if includeVat}
+								{getFormattedPrice(group.price)} per person
+								{#if experienceType === 'private'}
 									<span class="text-xs">(inkl. moms)</span>
 								{:else}
 									<span class="text-xs">(exkl. moms)</span>
@@ -187,11 +182,9 @@
 				{#if extraPrice > 0 && totalPayingCustomers > 0}
 					<p class="mb-1 text-sm text-muted-foreground">
 						Tillägg för vald längd: {formatPrice(
-							includeVat
-								? getBothPrices(extraPrice * totalPayingCustomers, experienceType).priceIncludingVat
-								: extraPrice * totalPayingCustomers
+							getDisplayPrice(extraPrice * totalPayingCustomers, experienceType)
 						)}
-						{#if includeVat}
+						{#if experienceType === 'private'}
 							<span class="text-xs">(inkl. moms)</span>
 						{:else}
 							<span class="text-xs">(exkl. moms)</span>
@@ -200,7 +193,7 @@
 				{/if}
 				<p class="text-lg font-medium">
 					Totalt: {formatPrice(calculatedTotal())}
-					{#if includeVat}
+					{#if experienceType === 'private'}
 						<span class="text-sm text-muted-foreground">(inkl. moms)</span>
 					{:else}
 						<span class="text-sm text-muted-foreground">(exkl. moms)</span>

@@ -6,6 +6,7 @@ import { createClient } from '@supabase/supabase-js';
 import { PUBLIC_SUPABASE_URL } from '$env/static/public';
 import { SUPABASE_SERVICE_ROLE_KEY } from '$env/static/private';
 import { addDays, format, parseISO } from 'date-fns';
+import { getPaymentPrice } from '$lib/utils/price';
 
 // Create a Supabase client with the service role key for the webhook
 const supabase = createClient(
@@ -461,6 +462,17 @@ export const POST: RequestHandler = async ({ request }) => {
       const priceGroups = JSON.parse(metadata.price_groups);
       const products = JSON.parse(metadata.products);
       const addons = JSON.parse(metadata.addons);
+      
+      // Ensure the total price includes VAT
+      const experienceType = metadata.experience_type;
+      const rawTotalPrice = parseFloat(metadata.total_price);
+      const totalPriceIncludingVat = getPaymentPrice(rawTotalPrice, experienceType);
+      
+      console.log('Price calculations:', {
+        rawTotalPrice,
+        experienceType,
+        totalPriceIncludingVat
+      });
 
       // Create the booking
       const { data: booking, error: bookingError } = await supabase
@@ -482,7 +494,7 @@ export const POST: RequestHandler = async ({ request }) => {
             end_date: metadata.end_date,
             end_time: metadata.end_time,
             has_booking_guarantee: metadata.has_booking_guarantee === 'true',
-            total_price: parseFloat(metadata.total_price),
+            total_price: Math.round(totalPriceIncludingVat), // Round to integer for database compatibility
             is_paid: true,
             stripe_payment_id: session.payment_intent as string,
             availability_confirmed: true

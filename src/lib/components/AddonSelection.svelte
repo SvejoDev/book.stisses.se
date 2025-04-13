@@ -64,12 +64,12 @@
 			let addonTotal = 0;
 			if (addon.pricing_type === 'per_unit') {
 				const quantity = selectedQuantities[addon.id] || 0;
-				addonTotal = addon.price * quantity; // price from DB is already excluding VAT
+				addonTotal = getDisplayPrice(addon.price * quantity, experienceType);
 			} else if (addon.pricing_type === 'per_person' && selectedPerPersonAddons[addon.id]) {
-				addonTotal = addon.price * payingCustomers; // price from DB is already excluding VAT
+				addonTotal = getDisplayPrice(addon.price * payingCustomers, experienceType);
 			}
 
-			return total + getDisplayPrice(addonTotal, experienceType);
+			return total + addonTotal;
 		}, 0);
 
 		console.log('Addons cost:', total);

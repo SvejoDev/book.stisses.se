@@ -5,7 +5,7 @@ import type { RequestHandler } from './$types';
 import { supabase } from '$lib/supabaseClient';
 import { addDays, format, parseISO } from 'date-fns';
 import { sv } from 'date-fns/locale';
-import { getBothPrices } from '$lib/utils/price';
+import { getBothPrices, getPaymentPrice } from '$lib/utils/price';
 
 const stripe = new Stripe(SECRET_STRIPE_KEY);
 
@@ -164,8 +164,10 @@ export const POST: RequestHandler = async ({ request }) => {
       addons: JSON.stringify(addons)
     };
 
-    // Calculate the final price including VAT if applicable
-    const finalPrice = getBothPrices(totalPrice, experienceType).priceIncludingVat;
+    // Calculate the final price for payment (always including VAT regardless of experience type)
+    // For private experiences, totalPrice already includes VAT
+    // For company/school experiences, we need to add VAT
+    const finalPrice = getPaymentPrice(totalPrice, experienceType);
 
     // Create Stripe checkout session
     const session = await stripe.checkout.sessions.create({
@@ -177,9 +179,9 @@ export const POST: RequestHandler = async ({ request }) => {
             product_data: {
               name: experience.name,
               description: `${getDurationText(durationData.duration_type, durationData.duration_value)} - ${formatBookingPeriod(startDate, calculatedEndDate, startTime, endTime, durationData.duration_type === 'overnights')}`,
-              images: [products[0].image_url]
+              images: [products[0]?.image_url]
             },
-            unit_amount: finalPrice * 100 // Use the VAT-adjusted price
+            unit_amount: Math.round(finalPrice * 100) // Round to whole cents
           },
           quantity: 1
         }

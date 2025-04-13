@@ -14,12 +14,12 @@ import { sv } from 'https://deno.land/x/date_fns@v2.22.1/locale/index.js'
 // Price calculation functions
 const VAT_RATE = 0.25; // 25% VAT in Sweden
 
-function removeVat(priceWithVat: number): number {
-    return priceWithVat / (1 + VAT_RATE);
+function removeVat(priceIncludingVat: number): number {
+    return priceIncludingVat / (1 + VAT_RATE);
 }
 
-function calculateVatAmount(priceWithVat: number): number {
-    return priceWithVat - removeVat(priceWithVat);
+function calculateVatAmount(priceIncludingVat: number): number {
+    return priceIncludingVat - removeVat(priceIncludingVat);
 }
 
 function formatPrice(price: number): string {
@@ -29,14 +29,14 @@ function formatPrice(price: number): string {
     }).format(price);
 }
 
-function getBothPrices(price: number, experienceType: string): {
+function getBothPrices(priceIncludingVat: number, experienceType: string): {
     priceExcludingVat: number;
     priceIncludingVat: number;
 } {
-    const priceExcludingVat = removeVat(price);
+    // All prices in database are already including VAT
     return {
-        priceExcludingVat,
-        priceIncludingVat: price
+        priceExcludingVat: removeVat(priceIncludingVat),
+        priceIncludingVat: priceIncludingVat
     };
 }
 

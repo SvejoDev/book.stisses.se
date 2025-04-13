@@ -56,8 +56,7 @@
 		const total = Object.entries(selectedQuantities).reduce((total, [productId, quantity]) => {
 			const product = products.find((p) => p.id === parseInt(productId));
 			if (product?.price) {
-				const basePrice = product.price * quantity;
-				return total + getDisplayPrice(basePrice, experienceType);
+				return total + getDisplayPrice(product.price * quantity, experienceType);
 			}
 			return total;
 		}, 0);
@@ -155,6 +154,7 @@
 			.filter(([_, quantity]) => quantity > 0)
 			.map(([productId, quantity]) => {
 				const product = products.find((p) => p.id === parseInt(productId));
+
 				return {
 					productId: parseInt(productId),
 					quantity,
