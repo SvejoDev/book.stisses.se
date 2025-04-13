@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { formatPrice, getTotalWithVat, isVatExempt } from '$lib/utils/price';
+	import { formatPrice, getBothPrices, calculateVatAmount } from '$lib/utils/price';
 	import StartLocations from '$lib/components/StartLocations.svelte';
 	import BookingDurations from '$lib/components/BookingDurations.svelte';
 	import Calendar from '$lib/components/Calendar.svelte';
@@ -139,8 +139,11 @@
 		return baseTotal;
 	});
 
-	let showVat = $derived(!isVatExempt(experience.type));
-	let displayTotal = $derived(() => getTotalWithVat(totalPrice(), experience.type));
+	let showVat = $derived(!['company', 'school'].includes(experience.type));
+	let displayTotal = $derived(() => {
+		const prices = getBothPrices(totalPrice(), experience.type);
+		return prices.priceIncludingVat;
+	});
 
 	let hasStartLocations = $derived(startLocations.length > 0);
 

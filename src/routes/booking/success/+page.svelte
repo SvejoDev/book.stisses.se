@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { PageData } from './$types';
-	import { formatPrice, calculateVatAmount, isVatExempt } from '$lib/utils/price';
+	import { formatPrice, calculateVatAmount, getBothPrices } from '$lib/utils/price';
 	import { format } from 'date-fns';
 	import { sv } from 'date-fns/locale';
 
@@ -59,13 +59,10 @@
 
 	let total = $derived(() => priceGroupTotal() + productTotal() + addonTotal() + durationTotal());
 
-	let vatAmount = $derived(() =>
-		calculateVatAmount(total(), booking.experience?.type || 'private')
-	);
+	// Get both prices for display
+	let prices = $derived(() => getBothPrices(total(), booking.experience?.type || 'private'));
 
-	let displayTotal = $derived(() => total() + vatAmount());
-
-	let showVat = $derived(() => !isVatExempt(booking.experience?.type || 'private'));
+	let vatAmount = $derived(() => calculateVatAmount(prices().priceIncludingVat));
 </script>
 
 <svelte:head>
@@ -184,19 +181,19 @@
 					<div class="flex flex-col gap-2">
 						<div class="flex justify-between">
 							<span>Totalt (exkl. moms)</span>
-							<span>{formatPrice(total())}</span>
+							<span>{formatPrice(prices().priceExcludingVat)}</span>
 						</div>
 						<div class="flex justify-between">
 							<span>Moms</span>
-							<span>{showVat() ? formatPrice(vatAmount()) : '0,00'} kr</span>
+							<span>{formatPrice(vatAmount())}</span>
 						</div>
 						<div class="flex justify-between">
 							<span>Totalt pris</span>
-							<span>{formatPrice(displayTotal())}</span>
+							<span>{formatPrice(prices().priceIncludingVat)}</span>
 						</div>
 						<div class="flex justify-between border-t pt-2">
 							<span class="font-semibold">Betalat</span>
-							<span class="font-semibold">{formatPrice(displayTotal())}</span>
+							<span class="font-semibold">{formatPrice(prices().priceIncludingVat)}</span>
 						</div>
 					</div>
 				</div>

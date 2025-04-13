@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { cn } from '$lib/utils';
-	import { addVat, formatPrice } from '$lib/utils/price';
+	import { getBothPrices, formatPrice } from '$lib/utils/price';
 
 	interface PriceGroup {
 		id: number;
@@ -74,13 +74,18 @@
 		const baseTotal = Object.entries(quantities).reduce((sum, [groupId, quantity]) => {
 			const group = priceGroups.find((g: PriceGroup) => g.id === parseInt(groupId));
 			const basePrice = group && group.is_payable ? group.price * quantity : 0;
-			return sum + (includeVat ? addVat(basePrice, experienceType) : basePrice);
+			return (
+				sum + (includeVat ? getBothPrices(basePrice, experienceType).priceIncludingVat : basePrice)
+			);
 		}, 0);
 
 		// Calculate extra price only for paying customers
 		const totalExtraPrice = extraPrice * totalPayingCustomers;
 		const total =
-			baseTotal + (includeVat ? addVat(totalExtraPrice, experienceType) : totalExtraPrice);
+			baseTotal +
+			(includeVat
+				? getBothPrices(totalExtraPrice, experienceType).priceIncludingVat
+				: totalExtraPrice);
 
 		console.log('Price Groups cost:', total);
 		return total;
@@ -108,7 +113,9 @@
 	}
 
 	function getDisplayPrice(price: number): string {
-		const displayPrice = includeVat ? addVat(price, experienceType) : price;
+		const displayPrice = includeVat
+			? getBothPrices(price, experienceType).priceIncludingVat
+			: price;
 		return formatPrice(displayPrice);
 	}
 
@@ -181,7 +188,7 @@
 					<p class="mb-1 text-sm text-muted-foreground">
 						Tillägg för vald längd: {formatPrice(
 							includeVat
-								? addVat(extraPrice * totalPayingCustomers, experienceType)
+								? getBothPrices(extraPrice * totalPayingCustomers, experienceType).priceIncludingVat
 								: extraPrice * totalPayingCustomers
 						)}
 						{#if includeVat}

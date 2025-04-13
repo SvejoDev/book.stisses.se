@@ -5,7 +5,7 @@ import type { RequestHandler } from './$types';
 import { supabase } from '$lib/supabaseClient';
 import { addDays, format, parseISO } from 'date-fns';
 import { sv } from 'date-fns/locale';
-import { getTotalWithVat } from '$lib/utils/price';
+import { getBothPrices } from '$lib/utils/price';
 
 const stripe = new Stripe(SECRET_STRIPE_KEY);
 
@@ -165,7 +165,7 @@ export const POST: RequestHandler = async ({ request }) => {
     };
 
     // Calculate the final price including VAT if applicable
-    const finalPrice = getTotalWithVat(totalPrice, experienceType);
+    const finalPrice = getBothPrices(totalPrice, experienceType).priceIncludingVat;
 
     // Create Stripe checkout session
     const session = await stripe.checkout.sessions.create({

@@ -8,7 +8,7 @@
 		CardTitle
 	} from '$lib/components/ui/card';
 	import { cn } from '$lib/utils';
-	import { addVat } from '$lib/utils/price';
+	import { getBothPrices } from '$lib/utils/price';
 
 	interface Product {
 		id: number;
@@ -57,7 +57,10 @@
 			const product = products.find((p) => p.id === parseInt(productId));
 			if (product?.price) {
 				const basePrice = product.price * quantity;
-				return total + (includeVat ? addVat(basePrice, experienceType) : basePrice);
+				return (
+					total +
+					(includeVat ? getBothPrices(basePrice, experienceType).priceIncludingVat : basePrice)
+				);
 			}
 			return total;
 		}, 0);

@@ -8,7 +8,7 @@
 		CardTitle
 	} from '$lib/components/ui/card';
 	import { cn } from '$lib/utils';
-	import { addVat, formatPrice } from '$lib/utils/price';
+	import { getBothPrices, formatPrice } from '$lib/utils/price';
 
 	interface Addon {
 		id: number;
@@ -71,7 +71,10 @@
 				addonTotal = addon.price * payingCustomers;
 			}
 
-			return total + (includeVat ? addVat(addonTotal, experienceType) : addonTotal);
+			return (
+				total +
+				(includeVat ? getBothPrices(addonTotal, experienceType).priceIncludingVat : addonTotal)
+			);
 		}, 0);
 
 		console.log('Addons cost:', total);
@@ -297,7 +300,11 @@
 								{#if addon.price === 0 || addon.price === undefined}
 									Ingår
 								{:else}
-									{formatPrice(includeVat ? addVat(addon.price, experienceType) : addon.price)}
+									{formatPrice(
+										includeVat
+											? getBothPrices(addon.price, experienceType).priceIncludingVat
+											: addon.price
+									)}
 									{#if addon.pricing_type === 'per_person'}
 										per person
 									{:else}
@@ -346,7 +353,10 @@
 										<div class="text-sm font-medium">
 											Totalt: {formatPrice(
 												includeVat
-													? addVat(addon.price * selectedQuantities[addon.id], experienceType)
+													? getBothPrices(
+															addon.price * selectedQuantities[addon.id],
+															experienceType
+														).priceIncludingVat
 													: addon.price * selectedQuantities[addon.id]
 											)}
 											{#if includeVat}
@@ -371,7 +381,8 @@
 										<div class="ml-4 text-sm font-medium">
 											Totalt: {formatPrice(
 												includeVat
-													? addVat(addon.price * payingCustomers, experienceType)
+													? getBothPrices(addon.price * payingCustomers, experienceType)
+															.priceIncludingVat
 													: addon.price * payingCustomers
 											)}
 											{#if includeVat}

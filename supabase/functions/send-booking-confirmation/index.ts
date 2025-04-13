@@ -11,6 +11,35 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.38.0"
 import { format } from 'https://deno.land/x/date_fns@v2.22.1/format/index.js'
 import { sv } from 'https://deno.land/x/date_fns@v2.22.1/locale/index.js'
 
+// Price calculation functions
+const VAT_RATE = 0.25; // 25% VAT in Sweden
+
+function removeVat(priceWithVat: number): number {
+    return priceWithVat / (1 + VAT_RATE);
+}
+
+function calculateVatAmount(priceWithVat: number): number {
+    return priceWithVat - removeVat(priceWithVat);
+}
+
+function formatPrice(price: number): string {
+    return new Intl.NumberFormat('sv-SE', {
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0
+    }).format(price);
+}
+
+function getBothPrices(price: number, experienceType: string): {
+    priceExcludingVat: number;
+    priceIncludingVat: number;
+} {
+    const priceExcludingVat = removeVat(price);
+    return {
+        priceExcludingVat,
+        priceIncludingVat: price
+    };
+}
+
 console.log('Edge Function initializing...');
 
 const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY');
@@ -65,10 +94,6 @@ function getDateTimeDisplay(booking: any): string {
   } else {
     return `${formatDate(booking.start_date)} ${formatTime(booking.start_time)} till ${formatDate(booking.end_date)} ${formatTime(booking.end_time)}`;
   }
-}
-
-function formatPrice(price: number): string {
-  return new Intl.NumberFormat('sv-SE').format(price);
 }
 
 function getDurationText(type: string, value: number): string {
@@ -177,7 +202,7 @@ serve(async (req) => {
       email: booking.email
     });
 
-    // Calculate totals (similar to your success page)
+    // Calculate totals (exactly like the success page)
     const priceGroupTotal = booking.booking_price_groups.reduce(
       (sum, group) => sum + (group.price_at_time || 0) * group.quantity,
       0
@@ -201,10 +226,9 @@ serve(async (req) => {
     const durationTotal = (booking.duration?.extra_price || 0) * payingCustomers;
     const total = priceGroupTotal + productTotal + addonTotal + durationTotal;
     
-    // Update VAT calculation to properly handle exempt types
-    const isVatExempt = ['company', 'school'].includes(booking.experience?.type || 'private');
-    const vatAmount = isVatExempt ? 0 : total * 0.25;
-    const displayTotal = total + vatAmount;
+    // Get both prices for display using the same function as the success page
+    const prices = getBothPrices(total, booking.experience?.type || 'private');
+    const vatAmount = calculateVatAmount(prices.priceIncludingVat);
 
     // Generate email HTML
     const emailHtml = `
@@ -435,8 +459,8 @@ serve(async (req) => {
                     <tr>
                       <td>${group.price_groups.display_name}</td>
                       <td>${group.quantity}</td>
-                      <td>${group.price_at_time ? `${formatPrice(group.price_at_time)} kr` : '0,00 kr'}</td>
-                      <td>${isVatExempt ? '0,00 kr (0%)' : `${formatPrice(group.price_at_time * 0.25)} kr (25%)`}</td>
+                      <td>${formatPrice(group.price_at_time || 0)} kr</td>
+                      <td>${formatPrice(calculateVatAmount(group.price_at_time || 0))} kr (25%)</td>
                     </tr>
                   `).join('')}
 
@@ -444,8 +468,8 @@ serve(async (req) => {
                     <tr>
                       <td>${product.products.name}</td>
                       <td>${product.quantity}</td>
-                      <td>${product.price_at_time ? `${formatPrice(product.price_at_time)} kr` : '0,00 kr'}</td>
-                      <td>${isVatExempt ? '0,00 kr (0%)' : `${formatPrice(product.price_at_time * 0.25)} kr (25%)`}</td>
+                      <td>${formatPrice(product.price_at_time || 0)} kr</td>
+                      <td>${formatPrice(calculateVatAmount(product.price_at_time || 0))} kr (25%)</td>
                     </tr>
                   `).join('')}
 
@@ -453,8 +477,8 @@ serve(async (req) => {
                     <tr>
                       <td>${addon.addons.name}</td>
                       <td>${addon.quantity}</td>
-                      <td>${addon.price_at_time ? `${formatPrice(addon.price_at_time)} kr` : '0,00 kr'}</td>
-                      <td>${isVatExempt ? '0,00 kr (0%)' : `${formatPrice(addon.price_at_time * 0.25)} kr (25%)`}</td>
+                      <td>${formatPrice(addon.price_at_time || 0)} kr</td>
+                      <td>${formatPrice(calculateVatAmount(addon.price_at_time || 0))} kr (25%)</td>
                     </tr>
                   `).join('')}
                 </tbody>
@@ -465,19 +489,19 @@ serve(async (req) => {
               <table>
                 <tr>
                   <td>Totalt (exkl. moms)</td>
-                  <td style="text-align: right">${formatPrice(total)} kr</td>
+                  <td style="text-align: right">${formatPrice(prices.priceExcludingVat)} kr</td>
                 </tr>
                 <tr>
                   <td>Moms</td>
-                  <td style="text-align: right">${isVatExempt ? '0,00' : formatPrice(vatAmount)} kr</td>
+                  <td style="text-align: right">${formatPrice(vatAmount)} kr</td>
                 </tr>
                 <tr>
                   <td>Totalt pris</td>
-                  <td style="text-align: right">${formatPrice(displayTotal)} kr</td>
+                  <td style="text-align: right">${formatPrice(prices.priceIncludingVat)} kr</td>
                 </tr>
                 <tr>
                   <td>Betalat</td>
-                  <td style="text-align: right">${formatPrice(displayTotal)} kr</td>
+                  <td style="text-align: right">${formatPrice(prices.priceIncludingVat)} kr</td>
                 </tr>
               </table>
             </div>
