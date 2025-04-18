@@ -454,6 +454,7 @@ export const POST: RequestHandler = async ({ request }) => {
   if (event.type === 'checkout.session.completed') {
     const session = event.data.object as Stripe.Checkout.Session;
     console.log('\n💳 Processing completed checkout session:', session.id);
+    console.log('Session Amount Total (in öre/cents):', session.amount_total);
     console.log('Session metadata:', session.metadata);
     
     try {
@@ -463,15 +464,16 @@ export const POST: RequestHandler = async ({ request }) => {
       const products = JSON.parse(metadata.products);
       const addons = JSON.parse(metadata.addons);
       
-      // Ensure the total price includes VAT
-      const experienceType = metadata.experience_type;
-      const rawTotalPrice = parseFloat(metadata.total_price);
-      const totalPriceIncludingVat = getPaymentPrice(rawTotalPrice, experienceType);
-      
+      // Use session.amount_total as the definitive source for the paid amount (incl. VAT)
+      if (session.amount_total === null || session.amount_total === undefined) {
+        console.error('❌ Stripe session amount_total is missing!');
+        throw new Error('Stripe session is missing final amount information.');
+      }
+      const totalPriceIncludingVat = session.amount_total / 100; // Convert from öre/cents to SEK/base currency
+
       console.log('Price calculations:', {
-        rawTotalPrice,
-        experienceType,
-        totalPriceIncludingVat
+        totalPriceIncludingVat: totalPriceIncludingVat,
+        source: 'session.amount_total'
       });
 
       // Create the booking

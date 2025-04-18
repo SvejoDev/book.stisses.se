@@ -1,5 +1,10 @@
 <script lang="ts">
-	import { formatPrice, getBothPrices, calculateVatAmount } from '$lib/utils/price';
+	import {
+		formatPrice,
+		getBothPrices,
+		calculateVatAmount,
+		getDisplayPrice
+	} from '$lib/utils/price';
 	import StartLocations from '$lib/components/StartLocations.svelte';
 	import BookingDurations from '$lib/components/BookingDurations.svelte';
 	import Calendar from '$lib/components/Calendar.svelte';
@@ -136,13 +141,19 @@
 		// Calculate base total
 		const baseTotal = productTotal + addonTotal + priceGroupTotal + durationTotal;
 
+		console.log('PrivateBooking totalPrice components (excl. VAT):');
+		console.log('  productTotal:', productTotal);
+		console.log('  addonTotal:', addonTotal);
+		console.log('  priceGroupTotal (from selector):', priceGroupTotal);
+		console.log('  durationTotal:', durationTotal);
+		console.log('  baseTotal (sum of components):', baseTotal);
+
 		return baseTotal;
 	});
 
-	let showVat = $derived(!['company', 'school'].includes(experience.type));
 	let displayTotal = $derived(() => {
-		const prices = getBothPrices(totalPrice(), experience.type);
-		return prices.priceIncludingVat;
+		// Use getDisplayPrice to determine whether to display incl or excl VAT based on experience type
+		return getDisplayPrice(totalPrice(), experience.type);
 	});
 
 	let hasStartLocations = $derived(startLocations.length > 0);
@@ -325,6 +336,7 @@
 
 	{#if selectedLocationId !== null || !hasStartLocations}
 		<section class="space-y-4" bind:this={priceGroupSection}>
+			{console.log('Price Groups passed to selector:', priceGroups)}
 			<PriceGroupSelector
 				bind:this={priceGroupRef}
 				{priceGroups}
@@ -406,11 +418,6 @@
 					{#if pricingType !== 'per_person' && totalPrice() > 0}
 						<div class="text-center text-xl font-semibold">
 							Totalt att betala: {formatPrice(displayTotal())}
-							{#if showVat}
-								<span class="text-sm text-muted-foreground">(inkl. moms)</span>
-							{:else}
-								<span class="text-sm text-muted-foreground">(exkl. moms)</span>
-							{/if}
 						</div>
 					{/if}
 

@@ -8,7 +8,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts"
 // Follow Deno and Supabase Edge Function conventions
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.38.0"
-import { format } from 'https://deno.land/x/date_fns@v2.22.1/format/index.js'
+import { format as formatDateFn } from 'https://deno.land/x/date_fns@v2.22.1/format/index.js'
 import { sv } from 'https://deno.land/x/date_fns@v2.22.1/locale/index.js'
 
 // Price calculation functions
@@ -18,25 +18,14 @@ function removeVat(priceIncludingVat: number): number {
     return priceIncludingVat / (1 + VAT_RATE);
 }
 
-function calculateVatAmount(priceIncludingVat: number): number {
-    return priceIncludingVat - removeVat(priceIncludingVat);
-}
-
-function formatPrice(price: number): string {
-    return new Intl.NumberFormat('sv-SE', {
-        minimumFractionDigits: 0,
-        maximumFractionDigits: 0
-    }).format(price);
-}
-
-function getBothPrices(priceIncludingVat: number, experienceType: string): {
+function getBothPrices(priceExcludingVat: number, experienceType: string): {
     priceExcludingVat: number;
     priceIncludingVat: number;
 } {
-    // All prices in database are already including VAT
+    // All prices in database are stored excluding VAT
     return {
-        priceExcludingVat: removeVat(priceIncludingVat),
-        priceIncludingVat: priceIncludingVat
+        priceExcludingVat: priceExcludingVat,
+        priceIncludingVat: addVat(priceExcludingVat)
     };
 }
 
@@ -49,8 +38,6 @@ console.log('RESEND_API_KEY present:', !!RESEND_API_KEY);
 const supabaseUrl = Deno.env.get('SUPABASE_URL');
 const supabaseServiceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 
-console.log('SUPABASE_URL present:', !!supabaseUrl);
-console.log('SUPABASE_SERVICE_ROLE_KEY present:', !!supabaseServiceRoleKey);
 
 if (!RESEND_API_KEY) throw new Error('Missing RESEND_API_KEY');
 if (!supabaseUrl) throw new Error('Missing SUPABASE_URL');
@@ -105,16 +92,381 @@ function getDurationText(type: string, value: number): string {
   return '';
 }
 
+function calculatePriceExcludingVat(totalIncludingVat: number): number {
+    return totalIncludingVat / (1 + VAT_RATE);
+}
+
+function calculateVatAmountFromIncluded(totalIncludingVat: number): number {
+    const priceExcludingVat = calculatePriceExcludingVat(totalIncludingVat);
+    return totalIncludingVat - priceExcludingVat;
+}
+
+function calculateVatAmountFromExcluded(priceExcludingVat: number): number {
+    return priceExcludingVat * VAT_RATE;
+}
+
+function formatPrice(amount: number): string {
+    // Deno doesn't have Intl built-in in the same way, format manually for SEK
+    // Ensure rounding to nearest whole number for SEK
+    const roundedAmount = Math.round(amount);
+    return `${roundedAmount.toLocaleString('sv-SE')} kr`;
+}
+
+function generateEmailHtml(booking: any): string {
+    const totalPriceIncludingVat = booking.total_price || 0;
+    const totalPriceExcludingVat = calculatePriceExcludingVat(totalPriceIncludingVat);
+    const totalVatAmount = calculateVatAmountFromIncluded(totalPriceIncludingVat);
+
+    // Helper to safely access nested properties
+    const get = (obj: any, path: string, defaultValue: any = null) => {
+        const keys = path.split('.');
+        let result = obj;
+        for (const key of keys) {
+            result = result?.[key];
+            if (result === undefined || result === null) {
+                return defaultValue;
+            }
+        }
+        return result;
+    };
+
+    const bookingPriceGroupsHtml = (booking.booking_price_groups || []).map((group: any) => {
+        const priceExclVat = get(group, 'price_at_time', 0);
+        const itemVat = calculateVatAmountFromExcluded(priceExclVat);
+        return `
+        <tr>
+            <td>${get(group, 'price_groups.display_name', 'Okänd grupp')}</td>
+            <td style="text-align: center;">${get(group, 'quantity', 0)}</td>
+            <td style="text-align: right;">${formatPrice(priceExclVat)}</td>
+            <td style="text-align: right;">${formatPrice(itemVat)}</td>
+        </tr>
+    `;
+    }).join('');
+
+    const bookingProductsHtml = (booking.booking_products || []).map((product: any) => {
+        const priceExclVat = get(product, 'price_at_time', 0);
+        const itemVat = calculateVatAmountFromExcluded(priceExclVat);
+        return `
+        <tr>
+            <td>${get(product, 'products.name', 'Okänd produkt')}</td>
+            <td style="text-align: center;">${get(product, 'quantity', 0)}</td>
+            <td style="text-align: right;">${formatPrice(priceExclVat)}</td>
+            <td style="text-align: right;">${formatPrice(itemVat)}</td>
+        </tr>
+    `;
+    }).join('');
+
+    const bookingAddonsHtml = (booking.booking_addons || []).map((addon: any) => {
+        const priceExclVat = get(addon, 'price_at_time', 0);
+        const itemVat = calculateVatAmountFromExcluded(priceExclVat);
+        return `
+        <tr>
+            <td>${get(addon, 'addons.name', 'Okänt tillägg')}</td>
+            <td style="text-align: center;">${get(addon, 'quantity', 0)}</td>
+            <td style="text-align: right;">${formatPrice(priceExclVat)}</td>
+            <td style="text-align: right;">${formatPrice(itemVat)}</td>
+        </tr>
+    `;
+    }).join('');
+
+    // Calculate Duration Cost
+    const payingCustomersCount = (booking.booking_price_groups || []).reduce((sum: number, group: any) => sum + get(group, 'quantity', 0), 0);
+    const durationExtraPrice = get(booking, 'duration.extra_price', 0);
+    const durationCostExclVat = durationExtraPrice * payingCustomersCount;
+    const durationItemVat = calculateVatAmountFromExcluded(durationCostExclVat);
+
+    let durationHtml = '';
+    if (durationCostExclVat > 0) {
+        durationHtml = `
+        <tr>
+            <td>Avgift för tidslängd (${getDurationText(get(booking, 'duration.duration_type'), get(booking, 'duration.duration_value'))})</td>
+            <td style="text-align: center;">(${payingCustomersCount} pers × ${formatPrice(durationExtraPrice)})</td>
+            <td style="text-align: right;">${formatPrice(durationCostExclVat)}</td>
+            <td style="text-align: right;">${formatPrice(durationItemVat)}</td>
+        </tr>
+        `;
+    }
+
+    const commentHtml = booking.comment ? `
+        <div class="section comment-section">
+            <h3>Meddelande från dig</h3>
+            <p>${booking.comment.replace(/\\n/g, '<br>')}</p>
+        </div>
+    ` : '';
+
+    return `
+      <!DOCTYPE html>
+      <html lang="sv">
+        <head>
+          <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>Bokningsbekräftelse - ${booking.booking_number}</title>
+          <style>
+            body {
+              margin: 0;
+              padding: 0;
+              background-color: #f3f4f6; /* Light gray background */
+              font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+              line-height: 1.6;
+              color: #374151; /* Gray 700 */
+            }
+            .wrapper {
+              max-width: 600px;
+              margin: 20px auto;
+              background-color: #ffffff;
+              border: 1px solid #e5e7eb; /* Gray 200 */
+              border-radius: 8px;
+              overflow: hidden;
+            }
+            .content {
+              padding: 24px 32px;
+            }
+            .header {
+              text-align: center;
+              padding: 24px 32px;
+              border-bottom: 1px solid #e5e7eb; /* Gray 200 */
+            }
+            .header img {
+              max-width: 160px;
+              margin-bottom: 16px;
+            }
+            .header h1 {
+              font-size: 24px;
+              font-weight: 600;
+              color: #111827; /* Gray 900 */
+              margin: 0 0 8px 0;
+            }
+            .header p {
+              font-size: 16px;
+              color: #6b7280; /* Gray 500 */
+              margin: 4px 0 0 0;
+            }
+            .section {
+              margin-bottom: 24px;
+              padding-bottom: 24px;
+              border-bottom: 1px solid #e5e7eb; /* Gray 200 */
+            }
+            .section:last-child {
+              margin-bottom: 0;
+              padding-bottom: 0;
+              border-bottom: none;
+            }
+            .section h2 {
+              font-size: 18px;
+              font-weight: 600;
+              color: #1f2937; /* Gray 800 */
+              margin: 0 0 12px 0;
+            }
+            .section h3 {
+              font-size: 14px;
+              font-weight: 500;
+              color: #6b7280; /* Gray 500 */
+              margin: 0 0 4px 0;
+            }
+            .section p {
+              font-size: 16px;
+              color: #1f2937; /* Gray 800 */
+              margin: 0 0 8px 0;
+            }
+            .grid-2 {
+              display: grid;
+              grid-template-columns: repeat(2, minmax(0, 1fr));
+              gap: 16px;
+              margin-bottom: 16px;
+            }
+            table {
+              width: 100%;
+              border-collapse: collapse;
+              font-size: 14px;
+            }
+            th, td {
+              padding: 8px 4px;
+              text-align: left;
+              border-bottom: 1px solid #f3f4f6; /* Gray 100 */
+              color: #374151; /* Gray 700 */
+            }
+            th {
+              font-weight: 500;
+              color: #6b7280; /* Gray 500 */
+              background-color: #f9fafb; /* Gray 50 */
+            }
+            td:last-child {
+              text-align: right;
+            }
+            .totals-section {
+              background-color: #f9fafb; /* Gray 50 */
+              padding: 16px;
+              border-radius: 6px;
+              margin-top: 16px;
+            }
+            .totals-section table {
+              font-size: 16px;
+            }
+            .totals-section td {
+              border: none;
+              padding: 4px 0;
+            }
+            .totals-section .total-row td {
+               padding-top: 8px;
+               border-top: 1px solid #e5e7eb; /* Gray 200 */
+               font-weight: 600;
+               color: #111827; /* Gray 900 */
+            }
+            .totals-section .paid-row td {
+               font-weight: 600;
+               color: #059669; /* Green 600 */
+            }
+            .comment-section p {
+                white-space: pre-wrap;
+                font-size: 14px;
+                color: #4b5563; /* Gray 600 */
+                background-color: #f9fafb; /* Gray 50 */
+                padding: 12px;
+                border-radius: 4px;
+            }
+            .footer {
+              text-align: center;
+              padding: 24px 32px;
+              border-top: 1px solid #e5e7eb; /* Gray 200 */
+              background-color: #f9fafb; /* Gray 50 */
+              font-size: 12px;
+              color: #6b7280; /* Gray 500 */
+            }
+            .footer p {
+              margin: 4px 0;
+            }
+            .footer a {
+              color: #4f46e5; /* Indigo 600 */
+              text-decoration: none;
+            }
+            .footer a:hover {
+              text-decoration: underline;
+            }
+
+            @media only screen and (max-width: 600px) {
+              .content { padding: 16px 20px; }
+              .header { padding: 16px 20px; }
+              .footer { padding: 16px 20px; }
+              .header h1 { font-size: 20px; }
+              .header p { font-size: 14px; }
+              .section h2 { font-size: 16px; }
+              .section p, .section h3, table { font-size: 14px; }
+              .grid-2 { grid-template-columns: 1fr; }
+              .totals-section table { font-size: 14px; }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="wrapper">
+            <div class="header">
+              <img src="https://stisses.se/images/logo.png" alt="Stisses Logotyp" />
+              <h1>Bokningsbekräftelse</h1>
+              <p>Tack för din bokning, ${booking.first_name}!</p>
+              <p style="font-size: 14px;">Bokningsnummer: <strong>${booking.booking_number}</strong></p>
+            </div>
+
+            <div class="content">
+              <div class="section">
+                <h2>Aktivitet</h2>
+                <div class="grid-2">
+                    <div>
+                        <h3>Namn</h3>
+                        <p>${get(booking, 'experience.name', 'Okänd aktivitet')}</p>
+                    </div>
+                    <div>
+                        <h3>Startplats</h3>
+                        <p>${get(booking, 'start_location.name', 'Okänd startplats')}</p>
+                    </div>
+                </div>
+                 <div>
+                    <h3>Längd</h3>
+                    <p>${getDurationText(get(booking, 'duration.duration_type'), get(booking, 'duration.duration_value'))}</p>
+                </div>
+              </div>
+
+              <div class="section">
+                <h2>Datum & Tid</h2>
+                <p><strong>Start:</strong> ${formatDateTime(booking.start_date, booking.start_time)}</p>
+                <p><strong>Slut:</strong> ${formatDateTime(booking.end_date, booking.end_time)}</p>
+              </div>
+
+              <div class="section">
+                <h2>Kontaktuppgifter</h2>
+                <p>${booking.first_name} ${booking.last_name}</p>
+                <p>${booking.email}</p>
+                <p>${booking.phone}</p>
+              </div>
+
+              <div class="section">
+                <h2>Bokningsdetaljer</h2>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Produkt</th>
+                      <th style="text-align: center;">Antal</th>
+                      <th style="text-align: right;">Pris (exkl. moms)</th>
+                      <th style="text-align: right;">Moms</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${bookingPriceGroupsHtml}
+                    ${bookingProductsHtml}
+                    ${bookingAddonsHtml}
+                    ${durationHtml}
+                  </tbody>
+                </table>
+
+                <div class="totals-section">
+                  <table>
+                    <tr>
+                      <td>Totalt (exkl. moms)</td>
+                      <td>${formatPrice(totalPriceExcludingVat)}</td>
+                    </tr>
+                    <tr>
+                      <td>Moms (${VAT_RATE * 100}%)</td>
+                      <td>${formatPrice(totalVatAmount)}</td>
+                    </tr>
+                    <tr class="total-row">
+                      <td>Totalt pris (inkl. moms)</td>
+                      <td>${formatPrice(totalPriceIncludingVat)}</td>
+                    </tr>
+                    <tr class="paid-row">
+                      <td>Betalat</td>
+                      <td>${formatPrice(totalPriceIncludingVat)}</td>
+                    </tr>
+                  </table>
+                </div>
+              </div>
+
+              ${commentHtml}
+
+            </div>
+
+            <div class="footer">
+              <p><strong>Stisses Sport och Fritid AB</strong></p>
+              <p>Organisationsnummer: 559416-1308</p>
+              <p>Momsregisternummer: SE559416130801</p>
+              <p>Reningsverksvägen 2, 26232 Ängelholm</p>
+              <p>Vid frågor, kontakta oss på <a href="mailto:info@stisses.se">info@stisses.se</a> eller ring <a href="tel:+46703259638">+46703259638</a>.</p>
+              <p style="margin-top: 16px;">© ${new Date().getFullYear()} Stisses Sport och Fritid AB. Alla rättigheter förbehållna.</p>
+            </div>
+          </div>
+        </body>
+      </html>
+    `;
+}
+
 serve(async (req) => {
+  if (req.method !== 'POST') {
+    return new Response(JSON.stringify({ error: 'Method Not Allowed' }), {
+      status: 405,
+      headers: { 'Content-Type': 'application/json', 'Allow': 'POST' },
+    });
+  }
+
   try {
     console.log('Received request to send booking confirmation');
-    
-    // Log the request details
-    console.log('Request headers:', Object.fromEntries(req.headers.entries()));
-    
     const body = await req.json();
-    console.log('Request body:', body);
-    
     const { bookingId } = body;
 
     if (!bookingId) {
@@ -126,63 +478,52 @@ serve(async (req) => {
     }
 
     console.log('Fetching booking details for ID:', bookingId);
-    
+
     // Fetch booking details with all related data
+    // Ensure total_price is selected via *
     const { data: booking, error: bookingError } = await supabase
       .from('bookings')
       .select(`
-        *,
-        experience:experiences!bookings_experience_id_fkey (
-          id,
-          name,
-          type,
-          pricing_type
-        ),
-        start_location:start_locations (
-          id,
-          name
-        ),
-        duration:durations (
-          id,
-          duration_type,
-          duration_value,
-          extra_price
-        ),
-        booking_price_groups (
-          price_group_id,
-          quantity,
-          price_at_time,
-          price_groups (
-            id,
-            display_name,
-            price
-          )
-        ),
-        booking_products (
-          product_id,
-          quantity,
-          price_at_time,
-          products (
-            id,
-            name
-          )
-        ),
-        booking_addons (
-          addon_id,
-          quantity,
-          price_at_time,
-          addons (
-            id,
-            name
-          )
-        )
+        *,\
+        experience:experiences!bookings_experience_id_fkey (\
+          name\
+        ),\
+        start_location:start_locations (\
+          name\
+        ),\
+        duration:durations (\
+          duration_type,\
+          duration_value,\
+          extra_price\
+        ),\
+        booking_price_groups (\
+          quantity,\
+          price_at_time,\
+          price_groups (\
+            display_name\
+          )\
+        ),\
+        booking_products (\
+          quantity,\
+          price_at_time,\
+          products (\
+            name\
+          )\
+        ),\
+        booking_addons (\
+          quantity,\
+          price_at_time,\
+          addons (\
+            name\
+          )\
+        )\
       `)
       .eq('id', bookingId)
       .single();
 
     if (bookingError) {
       console.error('Error fetching booking:', bookingError);
-      return new Response(JSON.stringify({ error: 'Error fetching booking', details: bookingError }), {
+      return new Response(JSON.stringify({ error: 'Error fetching booking', details: bookingError.message }), {
         status: 500,
         headers: { 'Content-Type': 'application/json' },
       });
@@ -196,341 +537,27 @@ serve(async (req) => {
       });
     }
 
+    if (booking.total_price === null || booking.total_price === undefined) {
+      console.error('Booking total_price is missing for ID:', bookingId);
+      // Potentially fallback or handle differently if needed
+      return new Response(JSON.stringify({ error: 'Booking price information is incomplete' }), {
+        status: 500,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
     console.log('Found booking:', {
       id: booking.id,
       number: booking.booking_number,
-      email: booking.email
+      email: booking.email,
+      total_price: booking.total_price
     });
 
-    // Calculate totals (exactly like the success page)
-    const priceGroupTotal = booking.booking_price_groups.reduce(
-      (sum, group) => sum + (group.price_at_time || 0) * group.quantity,
-      0
-    );
+    // Generate email HTML using the new function
+    const emailHtml = generateEmailHtml(booking);
 
-    const productTotal = booking.booking_products.reduce(
-      (sum, product) => sum + (product.price_at_time || 0) * product.quantity,
-      0
-    );
-
-    const addonTotal = booking.booking_addons.reduce(
-      (sum, addon) => sum + (addon.price_at_time || 0) * addon.quantity,
-      0
-    );
-
-    const payingCustomers = booking.booking_price_groups.reduce(
-      (sum, group) => sum + group.quantity,
-      0
-    );
-
-    const durationTotal = (booking.duration?.extra_price || 0) * payingCustomers;
-    const total = priceGroupTotal + productTotal + addonTotal + durationTotal;
-    
-    // Get both prices for display using the same function as the success page
-    const prices = getBothPrices(total, booking.experience?.type || 'private');
-    const vatAmount = calculateVatAmount(prices.priceIncludingVat);
-
-    // Generate email HTML
-    const emailHtml = `
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <meta charset="utf-8">
-          <style>
-            body {
-              margin: 0;
-              padding: 0;
-              background-color: #ffffff;
-              font-family: Arial, sans-serif;
-              line-height: 1.6;
-              color: #2d3748;
-            }
-
-            .wrapper {
-              padding: 40px 20px;
-              max-width: 600px;
-              margin: 0 auto;
-              background-color: #ffffff;
-            }
-
-            hr {
-              background-color: #e2e8f0;
-              height: 1px;
-              border: 0;
-              margin: 20px 0;
-            }
-
-            h2 {
-              color: #1a202c;
-              font-size: 24px;
-              margin-bottom: 10px;
-            }
-
-            h3 {
-              color: #2d3748;
-              font-size: 18px;
-              margin-bottom: 8px;
-            }
-
-            table {
-              font-size: 14px;
-              width: 100%;
-              margin: 10px 0;
-              border-collapse: collapse;
-              background-color: #ffffff;
-            }
-
-            table th {
-              text-align: left;
-              padding: 12px;
-              background-color: #f7fafc;
-              border-bottom: 2px solid #e2e8f0;
-              color: #4a5568;
-              font-weight: 600;
-            }
-
-            table td {
-              padding: 12px;
-              border-bottom: 1px solid #edf2f7;
-              color: #4a5568;
-            }
-
-            .order-item-box {
-              border: 1px solid #e2e8f0;
-              border-radius: 8px;
-              padding: 20px;
-              margin: 20px 0;
-              background-color: #ffffff;
-              box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
-            }
-
-            .header {
-              text-align: center;
-              margin-bottom: 40px;
-              padding-bottom: 30px;
-              border-bottom: 1px solid #e2e8f0;
-            }
-
-            .header img {
-              max-width: 180px;
-              margin-bottom: 25px;
-            }
-
-            .header h2 {
-              margin: 0 0 10px 0;
-              color: #1a202c;
-            }
-
-            .header h3 {
-              margin: 0 0 15px 0;
-              color: #48bb78;
-              font-weight: normal;
-            }
-
-            .header p {
-              color: #4a5568;
-              margin: 0;
-            }
-
-            .booking-info {
-              background-color: #f7fafc;
-              padding: 20px;
-              border-radius: 8px;
-              margin-bottom: 30px;
-              border: 1px solid #e2e8f0;
-            }
-
-            .booking-info h3 {
-              margin-top: 0;
-              color: #2d3748;
-            }
-
-            .booking-info p {
-              margin: 8px 0;
-              color: #4a5568;
-            }
-
-            .booking-info strong {
-              color: #2d3748;
-            }
-
-            .total-section {
-              background-color: #f7fafc;
-              padding: 20px;
-              border-radius: 8px;
-              margin-top: 30px;
-              border: 1px solid #e2e8f0;
-            }
-
-            .total-section table {
-              margin: 0;
-              background-color: transparent;
-            }
-
-            .total-section td {
-              padding: 8px 12px;
-              border: none;
-            }
-
-            .total-section tr:last-child {
-              font-weight: 600;
-              font-size: 16px;
-              color: #2d3748;
-            }
-
-            .total-section tr:last-child td {
-              padding-top: 15px;
-              border-top: 2px solid #e2e8f0;
-            }
-
-            .footer {
-              text-align: center;
-              margin-top: 40px;
-              padding-top: 30px;
-              border-top: 1px solid #e2e8f0;
-              color: #718096;
-              font-size: 13px;
-            }
-
-            .footer p {
-              margin: 5px 0;
-            }
-
-            .footer strong {
-              color: #4a5568;
-            }
-
-            .footer a {
-              color: #4299e1;
-              text-decoration: none;
-            }
-
-            .footer a:hover {
-              text-decoration: underline;
-            }
-
-            @media only screen and (max-width: 600px) {
-              .wrapper {
-                padding: 20px 15px;
-              }
-
-              table {
-                font-size: 13px;
-              }
-
-              .header h2 {
-                font-size: 22px;
-              }
-
-              .header h3 {
-                font-size: 16px;
-              }
-            }
-          </style>
-        </head>
-        <body>
-          <div class="wrapper">
-            <div class="header">
-              <img src="https://stisses.se/images/logo.png" alt="Stisses" />
-              <h2>Bekräftelse & Kvitto</h2>
-              <h3>Tack för din bokning!</h3>
-              <p>Bokningsnummer: ${booking.booking_number}, ${booking.first_name} ${booking.last_name}</p>
-            </div>
-
-            <div class="booking-info">
-              <h3>${getDateTimeDisplay(booking)}</h3>
-              <p><strong>${booking.experience?.name}</strong></p>
-              <p>Startplats: ${booking.start_location?.name}</p>
-              <p>Längd: ${getDurationText(booking.duration?.duration_type, booking.duration?.duration_value)}</p>
-            </div>
-
-            <div class="order-item-box">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Produkt</th>
-                    <th>Antal</th>
-                    <th>Pris</th>
-                    <th>Moms</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  ${booking.booking_price_groups.map(group => `
-                    <tr>
-                      <td>${group.price_groups.display_name}</td>
-                      <td>${group.quantity}</td>
-                      <td>${formatPrice(group.price_at_time || 0)} kr</td>
-                      <td>${formatPrice(calculateVatAmount(group.price_at_time || 0))} kr (25%)</td>
-                    </tr>
-                  `).join('')}
-
-                  ${booking.booking_products.map(product => `
-                    <tr>
-                      <td>${product.products.name}</td>
-                      <td>${product.quantity}</td>
-                      <td>${formatPrice(product.price_at_time || 0)} kr</td>
-                      <td>${formatPrice(calculateVatAmount(product.price_at_time || 0))} kr (25%)</td>
-                    </tr>
-                  `).join('')}
-
-                  ${booking.booking_addons.map(addon => `
-                    <tr>
-                      <td>${addon.addons.name}</td>
-                      <td>${addon.quantity}</td>
-                      <td>${formatPrice(addon.price_at_time || 0)} kr</td>
-                      <td>${formatPrice(calculateVatAmount(addon.price_at_time || 0))} kr (25%)</td>
-                    </tr>
-                  `).join('')}
-                </tbody>
-              </table>
-            </div>
-
-            <div class="total-section">
-              <table>
-                <tr>
-                  <td>Totalt (exkl. moms)</td>
-                  <td style="text-align: right">${formatPrice(prices.priceExcludingVat)} kr</td>
-                </tr>
-                <tr>
-                  <td>Moms</td>
-                  <td style="text-align: right">${formatPrice(vatAmount)} kr</td>
-                </tr>
-                <tr>
-                  <td>Totalt pris</td>
-                  <td style="text-align: right">${formatPrice(prices.priceIncludingVat)} kr</td>
-                </tr>
-                <tr>
-                  <td>Betalat</td>
-                  <td style="text-align: right">${formatPrice(prices.priceIncludingVat)} kr</td>
-                </tr>
-              </table>
-            </div>
-
-            ${booking.comment ? `
-              <div class="order-item-box">
-                <h3>Meddelande</h3>
-                <p>${booking.comment}</p>
-              </div>
-            ` : ''}
-
-            <div class="footer">
-              <p><strong>Stisses Sport och Fritid AB</strong></p>
-              <p>+46703259638</p>
-              <p>559416-1308 (SE559416130801)</p>
-              <p>Reningsverksvägen 2 26232 Ängelholm</p>
-              <hr>
-              <p>Några frågor? Kontakta oss på <a href="mailto:info@stisses.se">info@stisses.se</a></p>
-              <p style="color: #999; font-size: 11px; margin-top: 20px;">© ${new Date().getFullYear()} Stisses Sport och Fritid AB | Ängelholm, Sweden. All rights reserved.</p>
-            </div>
-          </div>
-        </body>
-      </html>
-    `
-
-    // Generate and send email
-    console.log('Preparing to send email to:', booking.email);
-    
     // Send email using Resend
+    console.log('Preparing to send email to:', booking.email);
     const resendResponse = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: {
@@ -538,9 +565,9 @@ serve(async (req) => {
         Authorization: `Bearer ${RESEND_API_KEY}`,
       },
       body: JSON.stringify({
-        from: 'Stisses <noreply@svejo.se>',
+        from: 'Stisses Bokning <noreply@svejo.se>', // Consider a more specific sender name
         to: booking.email,
-        subject: `Bokningsbekräftelse - ${booking.booking_number}`,
+        subject: `Bokningsbekräftelse - ${booking.booking_number} - Stisses`, // Add company name for clarity
         html: emailHtml,
       }),
     });
@@ -548,39 +575,40 @@ serve(async (req) => {
     const resendData = await resendResponse.json();
     console.log('Resend API response:', {
       status: resendResponse.status,
-      data: resendData
+      ok: resendResponse.ok,
+      data: resendData // Be mindful of logging sensitive data if any
     });
 
     if (!resendResponse.ok) {
       console.error('Resend API error:', resendData);
-      return new Response(JSON.stringify({ error: 'Failed to send email', details: resendData }), {
-        status: resendResponse.status,
+      // Don't block the webhook completion, but log the error
+      // Optionally, you could implement retries or alert monitoring
+      return new Response(JSON.stringify({ warning: 'Booking confirmed, but failed to send email', details: resendData }), {
+        status: 502, // Bad Gateway or similar, indicating an upstream failure
         headers: { 'Content-Type': 'application/json' },
       });
     }
 
-    console.log('Successfully sent email');
-    return new Response(JSON.stringify({ success: true, data: resendData }), {
+    console.log('Successfully sent email for booking ID:', booking.id);
+    return new Response(JSON.stringify({ success: true, message: "Email sent successfully", resend_id: resendData?.id }), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
     });
+
   } catch (error) {
-    console.error('Error in send-booking-confirmation:', error);
-    return new Response(JSON.stringify({ error: error.message }), {
+    console.error('Critical error in send-booking-confirmation:', error);
+    return new Response(JSON.stringify({ error: error.message || 'Internal Server Error' }), {
       status: 500,
       headers: { 'Content-Type': 'application/json' },
     });
   }
 });
 
-/* To invoke locally:
+/* Example Invocation (for testing)
 
-  1. Run `supabase start` (see: https://supabase.com/docs/reference/cli/supabase-start)
-  2. Make an HTTP request:
-
-  curl -i --location --request POST 'http://127.0.0.1:54321/functions/v1/send-booking-confirmation' \
-    --header 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0' \
-    --header 'Content-Type: application/json' \
-    --data '{"name":"Functions"}'
+curl -i --location --request POST 'http://127.0.0.1:54321/functions/v1/send-booking-confirmation' \
+  --header "Authorization: Bearer YOUR_SUPABASE_ANON_KEY" \
+  --header 'Content-Type: application/json' \
+  --data '{"bookingId": YOUR_BOOKING_ID}' # Replace with a real booking ID
 
 */

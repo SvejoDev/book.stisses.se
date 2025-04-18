@@ -9,20 +9,27 @@ const stripe = new Stripe(SECRET_STRIPE_KEY);
 
 export const load: PageServerLoad = async ({ url }) => {
   const sessionId = url.searchParams.get('session_id');
-  
+
   if (!sessionId) {
-    throw error(400, 'No session ID provided');
+    console.error('No session ID provided in URL');
+    throw error(400, 'Bokningssession saknas.'); // User-friendly error
   }
 
   try {
-    // Fetch the Stripe session
+    console.log('Fetching Stripe session for ID:', sessionId);
+    // Fetch the Stripe session to get the booking_number
     const session = await stripe.checkout.sessions.retrieve(sessionId);
-    
+
     if (!session || !session.metadata?.booking_number) {
-      throw error(400, 'Invalid session');
+      console.error('Invalid or incomplete Stripe session:', session?.id);
+      throw error(400, 'Ogiltig bokningssession.');
     }
 
-    // Fetch booking details with all related data using booking number
+    const bookingNumber = session.metadata.booking_number;
+    console.log('Found booking number from Stripe session:', bookingNumber);
+
+    // Fetch booking details using the booking number
+    // Selecting * includes total_price which was set by the webhook
     const { data: booking, error: bookingError } = await supabase
       .from('bookings')
       .select(`
@@ -44,17 +51,14 @@ export const load: PageServerLoad = async ({ url }) => {
           extra_price
         ),
         booking_price_groups (
-          price_group_id,
           quantity,
           price_at_time,
           price_groups (
             id,
-            display_name,
-            price
+            display_name
           )
         ),
         booking_products (
-          product_id,
           quantity,
           price_at_time,
           products (
@@ -63,7 +67,6 @@ export const load: PageServerLoad = async ({ url }) => {
           )
         ),
         booking_addons (
-          addon_id,
           quantity,
           price_at_time,
           addons (
@@ -72,23 +75,33 @@ export const load: PageServerLoad = async ({ url }) => {
           )
         )
       `)
-      .eq('booking_number', session.metadata.booking_number)
+      .eq('booking_number', bookingNumber)
       .single();
 
     if (bookingError) {
-      console.error('Failed to load booking details:', bookingError);
-      throw error(500, 'Failed to load booking details');
+      console.error(`Error fetching booking details for booking_number ${bookingNumber}:`, bookingError);
+      throw error(500, 'Kunde inte ladda bokningsinformationen.');
     }
 
     if (!booking) {
-      throw error(404, 'Booking not found');
+      console.error(`Booking not found for booking_number ${bookingNumber}`);
+      throw error(404, 'Bokningen kunde inte hittas.');
     }
 
+    console.log('Successfully fetched booking data:', booking.id);
+
+    // The booking object now contains all necessary details including total_price
     return {
       booking
     };
-  } catch (e) {
-    console.error('Error loading booking:', e);
-    throw error(500, 'Failed to load booking details');
+
+  } catch (e: any) {
+    // Catch Stripe errors or other issues
+    console.error('Error loading success page:', e);
+    if (e instanceof error) {
+      throw e; // Re-throw SvelteKit errors
+    }
+    // Provide a generic error for other types of exceptions
+    throw error(500, 'Ett fel uppstod vid hämtning av bokningsbekräftelsen.');
   }
 };
