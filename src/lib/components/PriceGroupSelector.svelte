@@ -73,14 +73,8 @@
 			return sum + group.price * quantity;
 		}, 0);
 
+		console.log('Price Groups base cost (calculated excl. VAT):', baseTotal);
 		return baseTotal;
-	});
-
-	// This derived property calculates the total including the extra price, still excl. VAT
-	let calculatedTotalExclVat = $derived(() => {
-		const extraPriceTotal = extraPrice * totalPayingCustomers;
-		const total = calculatedBaseTotalExclVat() + extraPriceTotal;
-		return total;
 	});
 
 	$effect(() => {
@@ -111,7 +105,7 @@
 
 	// Export methods for parent components
 	export function totalAmount(): number {
-		return calculatedTotalExclVat();
+		return calculatedBaseTotalExclVat();
 	}
 
 	export function getPayingCustomers(): number {
@@ -172,7 +166,7 @@
 	</div>
 
 	<div class="flex flex-col items-center gap-4">
-		{#if pricingType !== 'per_product' && calculatedTotalExclVat() > 0}
+		{#if pricingType !== 'per_product' && calculatedBaseTotalExclVat() > 0}
 			<div class="text-center">
 				{#if extraPrice > 0 && totalPayingCustomers > 0}
 					<p class="mb-1 text-sm text-muted-foreground">
@@ -182,7 +176,12 @@
 					</p>
 				{/if}
 				<p class="text-lg font-medium">
-					Totalt: {formatPrice(getDisplayPrice(calculatedTotalExclVat(), experienceType))}
+					Totalt: {formatPrice(
+						getDisplayPrice(
+							calculatedBaseTotalExclVat() + extraPrice * totalPayingCustomers,
+							experienceType
+						)
+					)}
 					{#if experienceType === 'private'}
 						<span class="text-sm text-muted-foreground">(inkl. moms)</span>
 					{:else}

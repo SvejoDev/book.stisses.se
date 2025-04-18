@@ -165,9 +165,8 @@ export const POST: RequestHandler = async ({ request }) => {
     };
 
     // Calculate the final price for payment (always including VAT regardless of experience type)
-    // For private experiences, totalPrice already includes VAT
-    // For company/school experiences, we need to add VAT
-    const finalPrice = getPaymentPrice(totalPrice, experienceType);
+    console.log('Checkout session: Calling getPaymentPrice with:', { totalPrice: totalPrice, experienceType: experienceType });
+    const finalPrice = getPaymentPrice(parseFloat(totalPrice), experienceType);
 
     // Create Stripe checkout session
     const session = await stripe.checkout.sessions.create({
