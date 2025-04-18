@@ -141,13 +141,6 @@
 		// Calculate base total
 		const baseTotal = productTotal + addonTotal + priceGroupTotal + durationTotal;
 
-		console.log('PrivateBooking totalPrice components (excl. VAT):');
-		console.log('  productTotal:', productTotal);
-		console.log('  addonTotal:', addonTotal);
-		console.log('  priceGroupTotal (from selector):', priceGroupTotal);
-		console.log('  durationTotal:', durationTotal);
-		console.log('  baseTotal (sum of components):', baseTotal);
-
 		return baseTotal;
 	});
 
@@ -439,14 +432,6 @@
 				</section>
 			{/if}
 		{/if}
-	{/if}
-
-	{#if true}
-		<div class="hidden">
-			Debug: showContactForm={showContactForm}, selectedStartTime={JSON.stringify(
-				selectedStartTime
-			)}
-		</div>
 	{/if}
 
 	{#if showContactForm && selectedStartTime}

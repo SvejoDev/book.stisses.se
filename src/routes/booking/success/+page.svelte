@@ -51,38 +51,6 @@
 		() => (booking.duration?.extra_price || 0) * payingCustomersCount()
 	);
 
-	// New derived value: sum of explicitly listed items (excl. VAT)
-	let calculatedItemsTotalExclVat = $derived(() => {
-		const priceGroupsTotal =
-			booking.booking_price_groups?.reduce(
-				(
-					sum: number,
-					group: { quantity: number | null | undefined; price_at_time: number | null | undefined }
-				) => sum + (group.quantity || 0) * (group.price_at_time || 0),
-				0
-			) || 0;
-
-		const productsTotal =
-			booking.booking_products?.reduce(
-				(
-					sum: number,
-					product: { quantity: number | null | undefined; price_at_time: number | null | undefined }
-				) => sum + (product.quantity || 0) * (product.price_at_time || 0),
-				0
-			) || 0;
-
-		const addonsTotal =
-			booking.booking_addons?.reduce(
-				(
-					sum: number,
-					addon: { quantity: number | null | undefined; price_at_time: number | null | undefined }
-				) => sum + (addon.quantity || 0) * (addon.price_at_time || 0),
-				0
-			) || 0;
-
-		return priceGroupsTotal + productsTotal + addonsTotal + durationCostExclVat();
-	});
-
 	// --- Formatting Helpers ---
 	function formatDateTime(date: string, time: string): string {
 		try {
@@ -258,11 +226,7 @@
 				<h3 class="sr-only">Prisöversikt</h3>
 				<div class="space-y-3">
 					<div class="flex justify-between text-base text-gray-700">
-						<span>Summa av listade detaljer (exkl. moms)</span>
-						<span>{formatPrice(calculatedItemsTotalExclVat())}</span>
-					</div>
-					<div class="flex justify-between text-base text-gray-700">
-						<span>Totalt enligt bokning (exkl. moms)</span>
+						<span>Totalt (exkl. moms)</span>
 						<span>{formatPrice(totalPriceExcludingVat())}</span>
 					</div>
 					<div class="flex justify-between text-base text-gray-700">

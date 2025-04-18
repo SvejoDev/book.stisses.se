@@ -60,12 +60,6 @@
 		}, 0)
 	);
 
-	// Log changes in customer counts
-	$effect(() => {
-		console.log('Paying customers:', totalPayingCustomers);
-		console.log('Non-paying customers:', totalNonPayingCustomers);
-	});
-
 	// Calculate total amount EXCLUDING extra price and VAT
 	let calculatedBaseTotalExclVat = $derived(() => {
 		if (pricingType === 'per_product') return 0;
@@ -79,7 +73,6 @@
 			return sum + group.price * quantity;
 		}, 0);
 
-		console.log('Price Groups base cost (calculated excl. VAT):', baseTotal);
 		return baseTotal;
 	});
 
@@ -87,7 +80,6 @@
 	let calculatedTotalExclVat = $derived(() => {
 		const extraPriceTotal = extraPrice * totalPayingCustomers;
 		const total = calculatedBaseTotalExclVat() + extraPriceTotal;
-		console.log('Price Groups total cost (calculated excl. VAT, including duration extra):', total);
 		return total;
 	});
 
