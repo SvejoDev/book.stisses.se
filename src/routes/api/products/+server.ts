@@ -22,7 +22,6 @@ export const GET: RequestHandler = async ({ url }) => {
     const experienceId = url.searchParams.get('experienceId');
     const pricingType = url.searchParams.get('pricingType') || 'per_person';
     
-    console.log('Fetching products with:', { startLocationId, experienceId, pricingType });
 
     if (!experienceId) {
         return new Response('Experience ID is required', { status: 400 });
@@ -100,7 +99,6 @@ export const GET: RequestHandler = async ({ url }) => {
         }
 
         const products = Array.from(productMap.values());
-        console.log('Transformed products:', products);
         return json(products);
     } catch (error) {
         console.error('Error fetching products:', error);

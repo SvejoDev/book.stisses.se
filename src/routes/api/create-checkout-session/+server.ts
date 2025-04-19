@@ -165,7 +165,6 @@ export const POST: RequestHandler = async ({ request }) => {
     };
 
     // Calculate the final price for payment (always including VAT regardless of experience type)
-    console.log('Checkout session: Calling getPaymentPrice with:', { totalPrice: totalPrice, experienceType: experienceType });
     const finalPrice = getPaymentPrice(parseFloat(totalPrice), experienceType);
 
     // Create Stripe checkout session

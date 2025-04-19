@@ -36,7 +36,6 @@ function minutesToTime(minutes: number): string {
 
 // Helper function to generate dates between start and end date
 function generateDateRange(startDate: string, endDate: string): string[] {
-  console.log('Generating date range:', { startDate, endDate });
   const dates: string[] = [];
   const start = parseISO(startDate);
   const end = parseISO(endDate);
@@ -47,7 +46,6 @@ function generateDateRange(startDate: string, endDate: string): string[] {
     current = addDays(current, 1);
   }
   
-  console.log('Generated dates:', dates);
   return dates;
 }
 
@@ -67,24 +65,13 @@ async function checkQuantityLimit(
   requestedQuantity: number,
   maxQuantity: number
 ): Promise<boolean> {
-  console.log(`\n🔍 Checking quantity limit for ${tableName}:`, {
-    date,
-    startMinutes,
-    endMinutes,
-    requestedQuantity,
-    maxQuantity
-  });
-
   const { data: currentAvailability } = await supabase
     .from(tableName)
     .select('*')
     .eq('datum', date)
     .single();
 
-  console.log('Current availability:', currentAvailability);
-
   if (!currentAvailability) {
-    console.log('No existing availability data, checking against maxQuantity:', maxQuantity);
     return requestedQuantity <= maxQuantity;
   }
 
@@ -95,8 +82,6 @@ async function checkQuantityLimit(
     const wouldBeBooked = currentlyBooked + requestedQuantity;
 
     if (wouldBeBooked > maxQuantity) {
-      console.error(`❌ Quantity limit exceeded for ${tableName} at ${date} ${minutesToTime(minute)}`);
-      console.error(`Current: ${currentlyBooked}, Requested: ${requestedQuantity}, Max: ${maxQuantity}`);
       return false;
     }
   }
@@ -107,28 +92,22 @@ async function checkQuantityLimit(
 
 // Helper function to check if date exists and create if it doesn't
 async function ensureDateExists(tableName: string, date: string) {
-  console.log(`Ensuring date ${date} exists in ${tableName}`);
-  
-  // First check if date exists
   const { data, error: checkError } = await supabase
     .from(tableName)
     .select('datum')
     .eq('datum', date);
 
   if (checkError) {
-    console.error(`Error checking date in ${tableName}:`, checkError);
     throw checkError;
   }
 
   // If date doesn't exist, create it
   if (!data || data.length === 0) {
-    console.log(`Creating new date entry for ${date} in ${tableName}`);
     const { error: insertError } = await supabase
       .from(tableName)
       .insert({ datum: date });
 
     if (insertError) {
-      console.error(`Error inserting date in ${tableName}:`, insertError);
       throw insertError;
     }
   }
@@ -143,14 +122,6 @@ async function updateAvailability(
   quantity: number,
   maxQuantity: number
 ) {
-  console.log(`\n📝 Updating availability for ${tableName}:`, {
-    date,
-    startMinutes,
-    endMinutes,
-    quantity,
-    maxQuantity
-  });
-
   try {
     // Ensure the date exists first
     await ensureDateExists(tableName, date);
@@ -176,8 +147,6 @@ async function updateAvailability(
       updates[slotKey] = quantity;
     }
 
-    console.log('Updating slots:', updates);
-
     // Update the availability
     const { error: updateError } = await supabase
       .from(tableName)
@@ -185,13 +154,9 @@ async function updateAvailability(
       .eq('datum', date);
 
     if (updateError) {
-      console.error(`Error updating ${tableName}:`, updateError);
       throw updateError;
     }
-
-    console.log('✅ Successfully updated availability');
   } catch (error) {
-    console.error(`Failed to update availability for ${tableName}:`, error);
     throw error;
   }
 }
@@ -223,16 +188,6 @@ async function updateAvailabilityForBooking(
   products: Array<{ id: number; quantity: number }>,
   addons: Array<{ id: number; quantity: number }>
 ) {
-  console.log('\n🎯 Starting availability update for booking:', {
-    bookingId: bookingData.id,
-    startDate: bookingData.start_date,
-    endDate: bookingData.end_date,
-    startTime: bookingData.start_time,
-    endTime: bookingData.end_time,
-    products,
-    addons
-  });
-
   const startDate = bookingData.start_date;
   const startTime = bookingData.start_time;
   const endTime = bookingData.end_time;
@@ -244,8 +199,6 @@ async function updateAvailabilityForBooking(
     .eq('id', bookingData.duration_id)
     .single();
 
-  console.log('Duration data:', durationData);
-  
   // Check if it's an overnight booking based on duration type
   const isOvernight = durationData?.duration_type === 'overnights';
   const endDate = isOvernight 
@@ -256,20 +209,8 @@ async function updateAvailabilityForBooking(
   const startMinutes = timeToMinutes(startTime);
   const endMinutes = timeToMinutes(endTime);
 
-  console.log('Booking details:', {
-    dates,
-    startMinutes,
-    endMinutes,
-    isOvernight,
-    durationType: durationData?.duration_type,
-    durationValue: durationData?.duration_value,
-    calculatedEndDate: endDate
-  });
-
   // Handle products first (all products have availability tracking)
   for (const product of products) {
-    console.log(`\n📦 Processing product ${product.id}`);
-    
     try {
       // Get product's max quantity
       const { data: productData, error: productError } = await supabase
@@ -279,24 +220,16 @@ async function updateAvailabilityForBooking(
         .single();
 
       if (productError) {
-        console.error(`Error fetching product ${product.id}:`, productError);
         throw productError;
       }
 
       if (!productData) {
-        console.error(`❌ Product ${product.id} not found`);
         throw new Error(`Product ${product.id} not found`);
       }
-
-      console.log('Product data:', productData);
 
       const tableName = `availability_product_${product.id}`;
 
       if (isOvernight) {
-        console.log('Processing overnight booking for product', product.id);
-        
-        // First day: startTime to midnight
-        console.log('Processing first day of overnight booking');
         await updateAvailability(
           tableName,
           dates[0],
@@ -306,9 +239,7 @@ async function updateAvailabilityForBooking(
           productData.total_quantity
         );
 
-        // Middle days (if any): full day coverage
         if (dates.length > 2) {
-          console.log('Processing middle days');
           for (let i = 1; i < dates.length - 1; i++) {
             await updateAvailability(
               tableName,
@@ -321,8 +252,6 @@ async function updateAvailabilityForBooking(
           }
         }
 
-        // Last day: midnight to endTime
-        console.log('Processing last day');
         await updateAvailability(
           tableName,
           dates[dates.length - 1],
@@ -332,8 +261,6 @@ async function updateAvailabilityForBooking(
           productData.total_quantity
         );
       } else {
-        // Single day booking
-        console.log('Processing single day booking');
         await updateAvailability(
           tableName,
           startDate,
@@ -344,15 +271,12 @@ async function updateAvailabilityForBooking(
         );
       }
     } catch (error) {
-      console.error(`Error processing product ${product.id}:`, error);
       throw error;
     }
   }
 
   // Handle addons (need to check track_availability)
   for (const addon of addons) {
-    console.log(`\n🔧 Processing addon ${addon.id}`);
-    
     try {
       // Check if addon tracks availability and get max quantity
       const { data: addonData } = await supabase
@@ -362,18 +286,13 @@ async function updateAvailabilityForBooking(
         .single();
 
       if (!addonData) {
-        console.error(`❌ Addon ${addon.id} not found`);
         throw new Error(`Addon ${addon.id} not found`);
       }
-
-      console.log('Addon data:', addonData);
 
       if (addonData.track_availability) {
         const tableName = `availability_addon_${addon.id}`;
 
         if (isOvernight) {
-          // First day: startTime to midnight
-          console.log('Processing first day of overnight booking');
           await updateAvailability(
             tableName,
             dates[0],
@@ -383,9 +302,7 @@ async function updateAvailabilityForBooking(
             addonData.total_quantity
           );
 
-          // Middle days (if any): full day coverage
           if (dates.length > 2) {
-            console.log('Processing middle days');
             for (let i = 1; i < dates.length - 1; i++) {
               await updateAvailability(
                 tableName,
@@ -398,8 +315,6 @@ async function updateAvailabilityForBooking(
             }
           }
 
-          // Last day: midnight to endTime
-          console.log('Processing last day');
           await updateAvailability(
             tableName,
             dates[dates.length - 1],
@@ -409,8 +324,6 @@ async function updateAvailabilityForBooking(
             addonData.total_quantity
           );
         } else {
-          // Single day booking
-          console.log('Processing single day booking');
           await updateAvailability(
             tableName,
             startDate,
@@ -420,16 +333,11 @@ async function updateAvailabilityForBooking(
             addonData.total_quantity
           );
         }
-      } else {
-        console.log(`Skipping availability update for addon ${addon.id} (not tracked)`);
       }
     } catch (error) {
-      console.error(`Error processing addon ${addon.id}:`, error);
       throw error;
     }
   }
-
-  console.log('✅ Completed availability update for booking');
 }
 
 export const POST: RequestHandler = async ({ request }) => {
@@ -439,44 +347,29 @@ export const POST: RequestHandler = async ({ request }) => {
   let event: Stripe.Event;
 
   try {
-    console.log('\n🎬 Processing webhook event');
     event = stripe.webhooks.constructEvent(
       body,
       signature!,
       STRIPE_WEBHOOK_SECRET
     );
-    console.log('Event type:', event.type);
   } catch (err) {
-    console.error('❌ Webhook signature verification failed:', err);
     return json({ error: 'Invalid signature' }, { status: 400 });
   }
 
   if (event.type === 'checkout.session.completed') {
     const session = event.data.object as Stripe.Checkout.Session;
-    console.log('\n💳 Processing completed checkout session:', session.id);
-    console.log('Session Amount Total (in öre/cents):', session.amount_total);
-    console.log('Session metadata:', session.metadata);
     
     try {
-      // Parse metadata
       const metadata = session.metadata as any;
       const priceGroups = JSON.parse(metadata.price_groups);
       const products = JSON.parse(metadata.products);
       const addons = JSON.parse(metadata.addons);
       
-      // Use session.amount_total as the definitive source for the paid amount (incl. VAT)
       if (session.amount_total === null || session.amount_total === undefined) {
-        console.error('❌ Stripe session amount_total is missing!');
         throw new Error('Stripe session is missing final amount information.');
       }
-      const totalPriceIncludingVat = session.amount_total / 100; // Convert from öre/cents to SEK/base currency
+      const totalPriceIncludingVat = session.amount_total / 100;
 
-      console.log('Price calculations:', {
-        totalPriceIncludingVat: totalPriceIncludingVat,
-        source: 'session.amount_total'
-      });
-
-      // Create the booking
       const { data: booking, error: bookingError } = await supabase
         .from('bookings')
         .insert([
@@ -496,7 +389,7 @@ export const POST: RequestHandler = async ({ request }) => {
             end_date: metadata.end_date,
             end_time: metadata.end_time,
             has_booking_guarantee: metadata.has_booking_guarantee === 'true',
-            total_price: Math.round(totalPriceIncludingVat), // Round to integer for database compatibility
+            total_price: Math.round(totalPriceIncludingVat),
             is_paid: true,
             stripe_payment_id: session.payment_intent as string,
             availability_confirmed: true
@@ -506,17 +399,11 @@ export const POST: RequestHandler = async ({ request }) => {
         .single();
 
       if (bookingError) {
-        console.error('❌ Error creating booking:', bookingError);
         return json({ error: 'Failed to create booking' }, { status: 500 });
       }
 
-      console.log('Created booking:', booking);
-
-      // Insert related records
       const [priceGroupsResult, productsResult, addonsResult] = await Promise.all([
-        // Insert price groups
         (async () => {
-          // First fetch the price groups to get their prices
           const { data: priceGroupData, error: priceGroupError } = await supabase
             .from('price_groups')
             .select('id, price')
@@ -526,14 +413,11 @@ export const POST: RequestHandler = async ({ request }) => {
             );
 
           if (priceGroupError) {
-            console.error('Error fetching price groups:', priceGroupError);
             throw priceGroupError;
           }
 
-          // Create a map of price group IDs to prices
           const priceMap = new Map(priceGroupData.map(pg => [pg.id, pg.price]));
 
-          // Insert the booking price groups with correct prices
           return supabase.from('booking_price_groups').insert(
             Array.isArray(priceGroups) 
               ? priceGroups.map((pg: any) => ({
@@ -551,7 +435,6 @@ export const POST: RequestHandler = async ({ request }) => {
           );
         })(),
 
-        // Insert products
         supabase.from('booking_products').insert(
           products.map((p: any) => ({
             booking_id: booking.id,
@@ -561,7 +444,6 @@ export const POST: RequestHandler = async ({ request }) => {
           }))
         ),
 
-        // Insert addons
         supabase.from('booking_addons').insert(
           addons.map((a: any) => ({
             booking_id: booking.id,
@@ -572,21 +454,16 @@ export const POST: RequestHandler = async ({ request }) => {
         )
       ]);
 
-      // Check for errors in related record insertions
       if (priceGroupsResult.error) {
-        console.error('Error inserting price groups:', priceGroupsResult.error);
         throw priceGroupsResult.error;
       }
       if (productsResult.error) {
-        console.error('Error inserting products:', productsResult.error);
         throw productsResult.error;
       }
       if (addonsResult.error) {
-        console.error('Error inserting addons:', addonsResult.error);
         throw addonsResult.error;
       }
 
-      // Format products and addons for availability update
       const formattedProducts = products.map((p: any) => ({
         id: p.productId,
         quantity: p.quantity
@@ -597,20 +474,10 @@ export const POST: RequestHandler = async ({ request }) => {
         quantity: a.quantity
       }));
 
-      console.log('Updating availability with:', {
-        booking,
-        products: formattedProducts,
-        addons: formattedAddons
-      });
-
-      // Update availability for all products and addons
       await updateAvailabilityForBooking(booking as Booking, formattedProducts, formattedAddons);
 
-      // Send booking confirmation email
       try {
-        console.log('Attempting to send booking confirmation email for booking:', booking.id);
         const emailEndpoint = `${PUBLIC_SUPABASE_URL}/functions/v1/send-booking-confirmation`;
-        console.log('Calling Edge Function at:', emailEndpoint);
         
         const response = await fetch(emailEndpoint, {
           method: 'POST',
@@ -623,25 +490,11 @@ export const POST: RequestHandler = async ({ request }) => {
           })
         });
 
-        const responseText = await response.text();
-        console.log('Edge Function Response:', {
-          status: response.status,
-          ok: response.ok,
-          body: responseText
-        });
-
-        if (!response.ok) {
-          console.error('Failed to send booking confirmation email:', responseText);
-        } else {
-          console.log('Successfully sent booking confirmation email');
-        }
+        await response.text();
       } catch (error) {
-        console.error('Error sending booking confirmation email:', error);
+        // Email sending failed, but we don't want to fail the whole webhook
       }
-
-      console.log('✅ Successfully processed webhook');
     } catch (error) {
-      console.error('❌ Error processing webhook:', error);
       return json({ error: 'Internal server error' }, { status: 500 });
     }
   }
