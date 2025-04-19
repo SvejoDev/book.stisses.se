@@ -5,6 +5,7 @@ import type { RequestHandler } from './$types';
 import { supabase } from '$lib/supabaseClient';
 import { addDays, format, parseISO } from 'date-fns';
 import { sv } from 'date-fns/locale';
+import { getBothPrices, getPaymentPrice } from '$lib/utils/price';
 
 const stripe = new Stripe(SECRET_STRIPE_KEY);
 
@@ -163,6 +164,10 @@ export const POST: RequestHandler = async ({ request }) => {
       addons: JSON.stringify(addons)
     };
 
+    // Calculate the final price for payment (always including VAT regardless of experience type)
+    console.log('Checkout session: Calling getPaymentPrice with:', { totalPrice: totalPrice, experienceType: experienceType });
+    const finalPrice = getPaymentPrice(parseFloat(totalPrice), experienceType);
+
     // Create Stripe checkout session
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ['card'],
@@ -173,9 +178,9 @@ export const POST: RequestHandler = async ({ request }) => {
             product_data: {
               name: experience.name,
               description: `${getDurationText(durationData.duration_type, durationData.duration_value)} - ${formatBookingPeriod(startDate, calculatedEndDate, startTime, endTime, durationData.duration_type === 'overnights')}`,
-              images: [products[0].image_url]
+              images: [products[0]?.image_url]
             },
-            unit_amount: totalPrice * 100
+            unit_amount: Math.round(finalPrice * 100) // Round to whole cents
           },
           quantity: 1
         }

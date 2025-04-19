@@ -1,4 +1,10 @@
 <script lang="ts">
+	import {
+		formatPrice,
+		getBothPrices,
+		calculateVatAmount,
+		getDisplayPrice
+	} from '$lib/utils/price';
 	import StartLocations from '$lib/components/StartLocations.svelte';
 	import BookingDurations from '$lib/components/BookingDurations.svelte';
 	import Calendar from '$lib/components/Calendar.svelte';
@@ -132,9 +138,15 @@
 		// Get the duration extra price
 		const durationTotal = extraPrice * (priceGroupRef?.getPayingCustomers() ?? 0);
 
-		const total = productTotal + addonTotal + priceGroupTotal + durationTotal;
+		// Calculate base total
+		const baseTotal = productTotal + addonTotal + priceGroupTotal + durationTotal;
 
-		return total;
+		return baseTotal;
+	});
+
+	let displayTotal = $derived(() => {
+		// Use getDisplayPrice to determine whether to display incl or excl VAT based on experience type
+		return getDisplayPrice(totalPrice(), experience.type);
 	});
 
 	let hasStartLocations = $derived(startLocations.length > 0);
@@ -317,6 +329,7 @@
 
 	{#if selectedLocationId !== null || !hasStartLocations}
 		<section class="space-y-4" bind:this={priceGroupSection}>
+			{console.log('Price Groups passed to selector:', priceGroups)}
 			<PriceGroupSelector
 				bind:this={priceGroupRef}
 				{priceGroups}
@@ -327,6 +340,7 @@
 				onNextStep={handleNextStep}
 				includeVat={true}
 				{extraPrice}
+				experienceType={experience.type}
 			/>
 		</section>
 	{/if}
@@ -343,6 +357,7 @@
 					bind:isLoading={isLoadingDurations}
 					onDurationSelect={handleDurationSelect}
 					isLocked={isBookingLocked}
+					experienceType={experience.type}
 				/>
 			</div>
 		</section>
@@ -373,6 +388,7 @@
 						onProductsLoaded={() => (productsLoaded = true)}
 						isLocked={isBookingLocked}
 						{pricingType}
+						experienceType={experience.type}
 					/>
 				</section>
 
@@ -389,11 +405,12 @@
 						payingCustomers={priceGroupRef?.getPayingCustomers() ?? 0}
 						onAddonsFetched={() => (showAvailableTimesButton = true)}
 						includeVat={true}
+						experienceType={experience.type}
 					/>
 
 					{#if pricingType !== 'per_person' && totalPrice() > 0}
 						<div class="text-center text-xl font-semibold">
-							Totalt att betala: {totalPrice()} kr
+							Totalt att betala: {formatPrice(displayTotal())}
 						</div>
 					{/if}
 
@@ -415,14 +432,6 @@
 				</section>
 			{/if}
 		{/if}
-	{/if}
-
-	{#if true}
-		<div class="hidden">
-			Debug: showContactForm={showContactForm}, selectedStartTime={JSON.stringify(
-				selectedStartTime
-			)}
-		</div>
 	{/if}
 
 	{#if showContactForm && selectedStartTime}

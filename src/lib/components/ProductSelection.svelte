@@ -8,6 +8,7 @@
 		CardTitle
 	} from '$lib/components/ui/card';
 	import { cn } from '$lib/utils';
+	import { getBothPrices, getDisplayPrice, formatPrice } from '$lib/utils/price';
 
 	interface Product {
 		id: number;
@@ -26,7 +27,9 @@
 			products: Array<{ productId: number; quantity: number; price?: number }>
 		) => {},
 		onProductsLoaded = () => {},
-		pricingType = $bindable<'per_person' | 'per_product' | 'hybrid'>('per_person')
+		pricingType = $bindable<'per_person' | 'per_product' | 'hybrid'>('per_person'),
+		experienceType = $bindable<string>('private'),
+		includeVat = $bindable(true)
 	} = $props<{
 		startLocationId: string;
 		experienceId: string;
@@ -36,6 +39,8 @@
 		) => void;
 		onProductsLoaded?: () => void;
 		pricingType?: 'per_person' | 'per_product' | 'hybrid';
+		experienceType: string;
+		includeVat?: boolean;
 	}>();
 
 	let selectedQuantities = $state<Record<number, number>>({});
@@ -51,7 +56,7 @@
 		const total = Object.entries(selectedQuantities).reduce((total, [productId, quantity]) => {
 			const product = products.find((p) => p.id === parseInt(productId));
 			if (product?.price) {
-				return total + product.price * quantity;
+				return total + getDisplayPrice(product.price * quantity, experienceType);
 			}
 			return total;
 		}, 0);
@@ -149,6 +154,7 @@
 			.filter(([_, quantity]) => quantity > 0)
 			.map(([productId, quantity]) => {
 				const product = products.find((p) => p.id === parseInt(productId));
+
 				return {
 					productId: parseInt(productId),
 					quantity,
@@ -203,7 +209,14 @@
 							<CardTitle>{product.name}</CardTitle>
 							<CardDescription>{product.description}</CardDescription>
 							{#if pricingType !== 'per_person' && product.price}
-								<p class="mt-1 text-sm text-muted-foreground">{product.price} SEK</p>
+								<p class="mt-1 text-sm text-muted-foreground">
+									{formatPrice(getDisplayPrice(product.price, experienceType))}
+									{#if experienceType === 'private'}
+										<span class="text-xs">(inkl. moms)</span>
+									{:else}
+										<span class="text-xs">(exkl. moms)</span>
+									{/if}
+								</p>
 							{/if}
 						</div>
 					</CardHeader>
@@ -236,7 +249,17 @@
 								</div>
 								{#if pricingType !== 'per_person' && product.price && selectedQuantities[product.id]}
 									<div class="text-sm font-medium">
-										Totalt: {product.price * selectedQuantities[product.id]} kr
+										Totalt: {formatPrice(
+											getDisplayPrice(
+												product.price * selectedQuantities[product.id],
+												experienceType
+											)
+										)}
+										{#if experienceType === 'private'}
+											<span class="text-xs">(inkl. moms)</span>
+										{:else}
+											<span class="text-xs">(exkl. moms)</span>
+										{/if}
 									</div>
 								{/if}
 							</div>

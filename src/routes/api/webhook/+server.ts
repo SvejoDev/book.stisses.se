@@ -6,6 +6,7 @@ import { createClient } from '@supabase/supabase-js';
 import { PUBLIC_SUPABASE_URL } from '$env/static/public';
 import { SUPABASE_SERVICE_ROLE_KEY } from '$env/static/private';
 import { addDays, format, parseISO } from 'date-fns';
+import { getPaymentPrice } from '$lib/utils/price';
 
 // Create a Supabase client with the service role key for the webhook
 const supabase = createClient(
@@ -453,6 +454,7 @@ export const POST: RequestHandler = async ({ request }) => {
   if (event.type === 'checkout.session.completed') {
     const session = event.data.object as Stripe.Checkout.Session;
     console.log('\n💳 Processing completed checkout session:', session.id);
+    console.log('Session Amount Total (in öre/cents):', session.amount_total);
     console.log('Session metadata:', session.metadata);
     
     try {
@@ -461,6 +463,18 @@ export const POST: RequestHandler = async ({ request }) => {
       const priceGroups = JSON.parse(metadata.price_groups);
       const products = JSON.parse(metadata.products);
       const addons = JSON.parse(metadata.addons);
+      
+      // Use session.amount_total as the definitive source for the paid amount (incl. VAT)
+      if (session.amount_total === null || session.amount_total === undefined) {
+        console.error('❌ Stripe session amount_total is missing!');
+        throw new Error('Stripe session is missing final amount information.');
+      }
+      const totalPriceIncludingVat = session.amount_total / 100; // Convert from öre/cents to SEK/base currency
+
+      console.log('Price calculations:', {
+        totalPriceIncludingVat: totalPriceIncludingVat,
+        source: 'session.amount_total'
+      });
 
       // Create the booking
       const { data: booking, error: bookingError } = await supabase
@@ -482,7 +496,7 @@ export const POST: RequestHandler = async ({ request }) => {
             end_date: metadata.end_date,
             end_time: metadata.end_time,
             has_booking_guarantee: metadata.has_booking_guarantee === 'true',
-            total_price: parseFloat(metadata.total_price),
+            total_price: Math.round(totalPriceIncludingVat), // Round to integer for database compatibility
             is_paid: true,
             stripe_payment_id: session.payment_intent as string,
             availability_confirmed: true
@@ -501,21 +515,41 @@ export const POST: RequestHandler = async ({ request }) => {
       // Insert related records
       const [priceGroupsResult, productsResult, addonsResult] = await Promise.all([
         // Insert price groups
-        supabase.from('booking_price_groups').insert(
-          Array.isArray(priceGroups) 
-            ? priceGroups.map((pg: any) => ({
-                booking_id: booking.id,
-                price_group_id: pg.id,
-                quantity: pg.quantity,
-                price_at_time: pg.price || 0
-              }))
-            : Object.entries(priceGroups).map(([id, quantity]) => ({
-                booking_id: booking.id,
-                price_group_id: parseInt(id),
-                quantity,
-                price_at_time: 0
-              }))
-        ),
+        (async () => {
+          // First fetch the price groups to get their prices
+          const { data: priceGroupData, error: priceGroupError } = await supabase
+            .from('price_groups')
+            .select('id, price')
+            .in('id', Array.isArray(priceGroups) 
+              ? priceGroups.map(pg => pg.id)
+              : Object.keys(priceGroups).map(id => parseInt(id))
+            );
+
+          if (priceGroupError) {
+            console.error('Error fetching price groups:', priceGroupError);
+            throw priceGroupError;
+          }
+
+          // Create a map of price group IDs to prices
+          const priceMap = new Map(priceGroupData.map(pg => [pg.id, pg.price]));
+
+          // Insert the booking price groups with correct prices
+          return supabase.from('booking_price_groups').insert(
+            Array.isArray(priceGroups) 
+              ? priceGroups.map((pg: any) => ({
+                  booking_id: booking.id,
+                  price_group_id: pg.id,
+                  quantity: pg.quantity,
+                  price_at_time: priceMap.get(pg.id) || 0
+                }))
+              : Object.entries(priceGroups).map(([id, quantity]) => ({
+                  booking_id: booking.id,
+                  price_group_id: parseInt(id),
+                  quantity,
+                  price_at_time: priceMap.get(parseInt(id)) || 0
+                }))
+          );
+        })(),
 
         // Insert products
         supabase.from('booking_products').insert(
@@ -571,6 +605,40 @@ export const POST: RequestHandler = async ({ request }) => {
 
       // Update availability for all products and addons
       await updateAvailabilityForBooking(booking as Booking, formattedProducts, formattedAddons);
+
+      // Send booking confirmation email
+      try {
+        console.log('Attempting to send booking confirmation email for booking:', booking.id);
+        const emailEndpoint = `${PUBLIC_SUPABASE_URL}/functions/v1/send-booking-confirmation`;
+        console.log('Calling Edge Function at:', emailEndpoint);
+        
+        const response = await fetch(emailEndpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`
+          },
+          body: JSON.stringify({
+            bookingId: booking.id
+          })
+        });
+
+        const responseText = await response.text();
+        console.log('Edge Function Response:', {
+          status: response.status,
+          ok: response.ok,
+          body: responseText
+        });
+
+        if (!response.ok) {
+          console.error('Failed to send booking confirmation email:', responseText);
+        } else {
+          console.log('Successfully sent booking confirmation email');
+        }
+      } catch (error) {
+        console.error('Error sending booking confirmation email:', error);
+      }
+
       console.log('✅ Successfully processed webhook');
     } catch (error) {
       console.error('❌ Error processing webhook:', error);

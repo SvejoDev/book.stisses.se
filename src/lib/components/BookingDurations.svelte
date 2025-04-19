@@ -1,6 +1,7 @@
 <script lang="ts">
 	import * as Select from '$lib/components/ui/select';
 	import { cn } from '$lib/utils';
+	import { getDisplayPrice, formatPrice } from '$lib/utils/price';
 
 	interface Duration {
 		id: number;
@@ -18,7 +19,8 @@
 		isLoading = $bindable(false),
 		isLocked = $bindable(false),
 		onDurationSelect = () => {},
-		extraPrice = $bindable(0)
+		extraPrice = $bindable(0),
+		experienceType = $bindable<'private' | 'company' | 'school'>('private')
 	} = $props<{
 		startLocationId: string;
 		experienceId: string;
@@ -27,6 +29,7 @@
 		isLoading?: boolean;
 		isLocked?: boolean;
 		onDurationSelect?: (duration: { type: string; value: number; extraPrice: number }) => void;
+		experienceType?: 'private' | 'company' | 'school';
 	}>();
 
 	let displayText = $state('Välj längd på bokning');
@@ -93,6 +96,11 @@
 		}
 		return type;
 	}
+
+	// Format price with correct VAT handling
+	function getFormattedPrice(price: number): string {
+		return formatPrice(getDisplayPrice(price, experienceType));
+	}
 </script>
 
 <div class="w-full max-w-xs">
@@ -118,7 +126,12 @@
 						{duration.duration_value}
 						{getDurationTypeText(duration.duration_type, duration.duration_value)}
 						{#if duration.extra_price > 0}
-							(+{duration.extra_price} kr)
+							(+{getFormattedPrice(duration.extra_price)}
+							{#if experienceType === 'private'}
+								<span class="left ml-1">inkl. moms</span>
+							{:else}
+								<span class="ml-1 text-xs">exkl. moms</span>
+							{/if})
 						{/if}
 					</Select.Item>
 				{/each}

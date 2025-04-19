@@ -40,6 +40,7 @@
 			priceGroups={data.priceGroups}
 			openDates={data.openDates}
 			blockedDates={data.blockedDates}
+			pricingType={data.experience.pricing_type}
 		/>
 	{:else if data.experience.type === 'company'}
 		<CompanyBooking experience={data.experience} />

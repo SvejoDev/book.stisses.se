@@ -32,15 +32,15 @@ export const GET: RequestHandler = async ({ url }) => {
         // Build the filter conditions
         const filters = [
             // Base products for this experience
-            `experience_id.eq.${experienceId},start_location_id.is.null`
+            `and(experience_id.eq.${experienceId},start_location_id.is.null)`
         ];
 
         // Add location-specific conditions if a start location is selected
         if (startLocationId && startLocationId !== '0') {
             // Global products for this location
-            filters.push(`experience_id.is.null,start_location_id.eq.${startLocationId}`);
+            filters.push(`and(experience_id.is.null,start_location_id.eq.${startLocationId})`);
             // Specific products for both experience and location
-            filters.push(`experience_id.eq.${experienceId},start_location_id.eq.${startLocationId}`);
+            filters.push(`and(experience_id.eq.${experienceId},start_location_id.eq.${startLocationId})`);
         }
 
         const { data, error } = await supabase

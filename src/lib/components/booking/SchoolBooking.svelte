@@ -7,6 +7,7 @@
 	import AvailableStartTimes from '$lib/components/AvailableStartTimes.svelte';
 	import PriceGroupSelector from '$lib/components/PriceGroupSelector.svelte';
 	import ContactForm from '$lib/components/ContactForm.svelte';
+	import { getDisplayPrice, formatPrice } from '$lib/utils/price';
 
 	interface Experience {
 		id: string;
@@ -134,6 +135,11 @@
 		const total = productTotal + addonTotal + priceGroupTotal + durationTotal;
 
 		return total;
+	});
+
+	let displayTotal = $derived(() => {
+		// Use getDisplayPrice to determine whether to display incl or excl VAT based on experience type
+		return getDisplayPrice(totalPrice(), experience.type);
 	});
 
 	let hasStartLocations = $derived(startLocations.length > 0);
@@ -282,10 +288,8 @@
 	let selectedStartTime = $state<SelectedStartTime | null>(null);
 
 	function handleStartTimeSelect(time: SelectedStartTime) {
-		console.log('handleStartTimeSelect called with:', time);
 		selectedStartTime = time;
 		showContactForm = true;
-		console.log('showContactForm set to:', showContactForm);
 		setTimeout(() => {
 			window.scrollTo({
 				top: document.documentElement.scrollHeight,
@@ -319,6 +323,7 @@
 				onNextStep={handleNextStep}
 				includeVat={false}
 				{extraPrice}
+				experienceType={experience.type}
 			/>
 		</section>
 	{/if}
@@ -335,6 +340,7 @@
 					bind:isLoading={isLoadingDurations}
 					onDurationSelect={handleDurationSelect}
 					isLocked={isBookingLocked}
+					experienceType={experience.type}
 				/>
 			</div>
 		</section>
@@ -365,6 +371,7 @@
 						onProductsLoaded={() => (productsLoaded = true)}
 						isLocked={isBookingLocked}
 						{pricingType}
+						experienceType={experience.type}
 					/>
 				</section>
 
@@ -381,11 +388,17 @@
 						payingCustomers={priceGroupRef?.getPayingCustomers() ?? 0}
 						onAddonsFetched={() => (showAvailableTimesButton = true)}
 						includeVat={false}
+						experienceType={experience.type}
 					/>
 
 					{#if pricingType !== 'per_person' && totalPrice() > 0}
 						<div class="text-center text-xl font-semibold">
-							Totalt att betala: {totalPrice()} kr
+							Totalt att betala: {formatPrice(displayTotal())}
+							{#if experience.type === 'private'}
+								<span class="text-sm text-muted-foreground">(inkl. moms)</span>
+							{:else}
+								<span class="text-sm text-muted-foreground">(exkl. moms)</span>
+							{/if}
 						</div>
 					{/if}
 

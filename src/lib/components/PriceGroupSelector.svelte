@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { cn } from '$lib/utils';
-	import { addVat, formatPrice } from '$lib/utils/price';
+	import { getBothPrices, formatPrice, getDisplayPrice } from '$lib/utils/price';
 
 	interface PriceGroup {
 		id: number;
@@ -20,7 +20,8 @@
 		onNextStep = $bindable(() => {}),
 		includeVat = $bindable(true),
 		extraPrice = $bindable(0),
-		pricingType = $bindable('per_person')
+		pricingType = $bindable('per_person'),
+		experienceType = $bindable<string>('private')
 	} = $props<{
 		priceGroups: PriceGroup[];
 		startLocationId: number;
@@ -30,6 +31,7 @@
 		includeVat?: boolean;
 		extraPrice?: number;
 		pricingType: 'per_person' | 'per_product' | 'hybrid';
+		experienceType: string;
 	}>();
 
 	let quantities = $state<Record<number, number>>({});
@@ -58,29 +60,21 @@
 		}, 0)
 	);
 
-	// Log changes in customer counts
-	$effect(() => {
-		console.log('Paying customers:', totalPayingCustomers);
-		console.log('Non-paying customers:', totalNonPayingCustomers);
-	});
-
-	// Calculate total amount including extra price for paying customers
-	let calculatedTotal = $derived(() => {
+	// Calculate total amount EXCLUDING extra price and VAT
+	let calculatedBaseTotalExclVat = $derived(() => {
 		if (pricingType === 'per_product') return 0;
 
-		// Calculate base price from price groups
+		// Calculate base price from price groups using group.price (excl. VAT)
 		const baseTotal = Object.entries(quantities).reduce((sum, [groupId, quantity]) => {
 			const group = priceGroups.find((g: PriceGroup) => g.id === parseInt(groupId));
-			const basePrice = group && group.is_payable ? group.price * quantity : 0;
-			return sum + (includeVat ? addVat(basePrice) : basePrice);
+			if (!group || !group.is_payable) return sum;
+
+			// Use group.price which is always excl. VAT for the calculation
+			return sum + group.price * quantity;
 		}, 0);
 
-		// Calculate extra price only for paying customers
-		const totalExtraPrice = extraPrice * totalPayingCustomers;
-		const total = baseTotal + (includeVat ? addVat(totalExtraPrice) : totalExtraPrice);
-
-		console.log('Price Groups cost:', total);
-		return total;
+		console.log('Price Groups base cost (calculated excl. VAT):', baseTotal);
+		return baseTotal;
 	});
 
 	$effect(() => {
@@ -104,14 +98,14 @@
 		}
 	}
 
-	function getDisplayPrice(price: number): string {
-		const displayPrice = includeVat ? addVat(price) : price;
-		return formatPrice(displayPrice);
+	// Use getDisplayPrice for consistent price display
+	function getFormattedPrice(price: number): string {
+		return formatPrice(getDisplayPrice(price, experienceType));
 	}
 
 	// Export methods for parent components
 	export function totalAmount(): number {
-		return calculatedTotal();
+		return calculatedBaseTotalExclVat();
 	}
 
 	export function getPayingCustomers(): number {
@@ -121,7 +115,6 @@
 	export function getNonPayingCustomers(): number {
 		return totalNonPayingCustomers;
 	}
-
 </script>
 
 <div class="space-y-6">
@@ -139,8 +132,8 @@
 						<p class="font-medium">{group.display_name}</p>
 						{#if pricingType !== 'per_product' && group.is_payable}
 							<p class="text-sm text-muted-foreground">
-								{getDisplayPrice(group.price)} per person
-								{#if includeVat}
+								{getFormattedPrice(group.price)} per person
+								{#if experienceType === 'private'}
 									<span class="text-xs">(inkl. moms)</span>
 								{:else}
 									<span class="text-xs">(exkl. moms)</span>
@@ -173,25 +166,23 @@
 	</div>
 
 	<div class="flex flex-col items-center gap-4">
-		{#if pricingType !== 'per_product' && calculatedTotal() > 0}
+		{#if pricingType !== 'per_product' && calculatedBaseTotalExclVat() > 0}
 			<div class="text-center">
 				{#if extraPrice > 0 && totalPayingCustomers > 0}
 					<p class="mb-1 text-sm text-muted-foreground">
 						Tillägg för vald längd: {formatPrice(
-							includeVat
-								? addVat(extraPrice * totalPayingCustomers)
-								: extraPrice * totalPayingCustomers
+							getDisplayPrice(extraPrice * totalPayingCustomers, experienceType)
 						)}
-						{#if includeVat}
-							<span class="text-xs">(inkl. moms)</span>
-						{:else}
-							<span class="text-xs">(exkl. moms)</span>
-						{/if}
 					</p>
 				{/if}
 				<p class="text-lg font-medium">
-					Totalt: {formatPrice(calculatedTotal())}
-					{#if includeVat}
+					Totalt: {formatPrice(
+						getDisplayPrice(
+							calculatedBaseTotalExclVat() + extraPrice * totalPayingCustomers,
+							experienceType
+						)
+					)}
+					{#if experienceType === 'private'}
 						<span class="text-sm text-muted-foreground">(inkl. moms)</span>
 					{:else}
 						<span class="text-sm text-muted-foreground">(exkl. moms)</span>
