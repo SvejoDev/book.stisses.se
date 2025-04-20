@@ -16,6 +16,12 @@ interface AvailabilityUpdate {
     maxQuantity: number;
 }
 
+// Cache for availability data
+const availabilityCache = new Map<string, Map<string, number>>();
+
+// Cache for booking data
+const bookingCache = new Map<string, any>();
+
 // Helper function to generate dates between start and end date
 function generateDateRange(startDate: string, endDate: string): string[] {
     const dates: string[] = [];
@@ -31,104 +37,178 @@ function generateDateRange(startDate: string, endDate: string): string[] {
     return dates;
 }
 
-async function updateAvailability(updates: AvailabilityUpdate[], isSubtract: boolean = false) {
-    for (const update of updates) {
-        const { tableName, date, startMinutes, endMinutes, quantity, maxQuantity } = update;
-        
-        console.log(`${isSubtract ? 'Subtracting from' : 'Adding to'} availability table: ${tableName}`);
-        console.log(`Date: ${date}, Time: ${startMinutes}-${endMinutes}, Quantity: ${quantity}`);
+// Helper function to get or create cache key
+function getCacheKey(tableName: string, date: string): string {
+    return `${tableName}_${date}`;
+}
 
-        // Ensure the date exists in the availability table
-        const { data: existingDate } = await supabaseServer
-            .from(tableName)
-            .select('datum')
-            .eq('datum', date)
-            .single();
-
-        if (!existingDate) {
-            console.log(`Creating new date entry for ${date} in ${tableName}`);
-            await supabaseServer
+// Helper function to load availability data into cache
+async function loadAvailabilityIntoCache(tableName: string, dates: string[]): Promise<void> {
+    const loadPromises = dates.map(async date => {
+        const cacheKey = getCacheKey(tableName, date);
+        if (!availabilityCache.has(cacheKey)) {
+            const { data } = await supabaseServer
                 .from(tableName)
-                .insert({ datum: date });
-        }
-
-        // Generate update object for all time slots
-        const updates: Record<string, number> = {};
-        for (let minute = startMinutes; minute <= endMinutes; minute += 15) {
-            const slotKey = minute.toString();
-            // Get current value for the slot
-            const { data: currentSlot } = await supabaseServer
-                .from(tableName)
-                .select(slotKey)
+                .select('*')
                 .eq('datum', date)
                 .single();
 
-            const currentValue = ((currentSlot as unknown) as Record<string, number | null>)?.[slotKey] || 0;
-            const newValue = isSubtract 
-                ? Math.max(0, currentValue - quantity)  // Subtract but don't go below 0
-                : currentValue + quantity;
+            if (data) {
+                const slotMap = new Map<string, number>();
+                Object.entries(data).forEach(([key, value]) => {
+                    if (key !== 'datum') {
+                        slotMap.set(key, value as number);
+                    }
+                });
+                availabilityCache.set(cacheKey, slotMap);
+            } else {
+                availabilityCache.set(cacheKey, new Map<string, number>());
+            }
+        }
+    });
 
-            console.log(`${tableName} - Slot ${minute} (${slotKey}): ${currentValue} -> ${newValue}`);
+    await Promise.all(loadPromises);
+}
+
+// Helper function to get availability from cache
+function getAvailabilityFromCache(tableName: string, date: string, minute: string): number {
+    const cacheKey = getCacheKey(tableName, date);
+    const slotMap = availabilityCache.get(cacheKey);
+    return slotMap?.get(minute) || 0;
+}
+
+// Helper function to update cache
+function updateCache(tableName: string, date: string, updates: Record<string, number>): void {
+    const cacheKey = getCacheKey(tableName, date);
+    let slotMap = availabilityCache.get(cacheKey);
+    
+    if (!slotMap) {
+        slotMap = new Map<string, number>();
+        availabilityCache.set(cacheKey, slotMap);
+    }
+
+    Object.entries(updates).forEach(([minute, value]) => {
+        slotMap.set(minute, value);
+    });
+}
+
+// Helper function to get booking data with caching
+async function getBookingData(bookingId: string) {
+    if (bookingCache.has(bookingId)) {
+        return bookingCache.get(bookingId);
+    }
+
+    const { data: booking, error: bookingError } = await supabase
+        .from('bookings')
+        .select(`
+            *,
+            booking_products (
+                quantity,
+                products (
+                    id,
+                    total_quantity
+                )
+            ),
+            booking_addons (
+                quantity,
+                addons (
+                    id,
+                    total_quantity,
+                    track_availability
+                )
+            ),
+            duration:durations (
+                duration_type,
+                duration_value
+            )
+        `)
+        .eq('id', bookingId)
+        .single();
+
+    if (bookingError || !booking) {
+        throw new Error('Booking not found');
+    }
+
+    bookingCache.set(bookingId, booking);
+    return booking;
+}
+
+async function updateAvailability(updates: AvailabilityUpdate[], isSubtract: boolean = false) {
+    // Group updates by table and date for batch processing
+    const groupedUpdates = new Map<string, Map<string, Record<string, number>>>();
+    
+    for (const update of updates) {
+        const { tableName, date, startMinutes, endMinutes, quantity, maxQuantity } = update;
+        
+        if (!groupedUpdates.has(tableName)) {
+            groupedUpdates.set(tableName, new Map());
+        }
+        
+        const dateMap = groupedUpdates.get(tableName)!;
+        if (!dateMap.has(date)) {
+            dateMap.set(date, {});
+        }
+        
+        const dateUpdates = dateMap.get(date)!;
+        
+        // Load availability data into cache
+        await loadAvailabilityIntoCache(tableName, [date]);
+        
+        // Generate updates for all time slots
+        for (let minute = startMinutes; minute <= endMinutes; minute += 15) {
+            const slotKey = minute.toString();
+            const currentValue = getAvailabilityFromCache(tableName, date, slotKey);
+            const newValue = isSubtract 
+                ? Math.max(0, currentValue - quantity)
+                : currentValue + quantity;
 
             if (newValue > maxQuantity) {
                 throw new Error(`Exceeds maximum quantity (${maxQuantity}) for ${tableName} on ${date}`);
             }
 
-            updates[slotKey] = newValue;
+            dateUpdates[slotKey] = newValue;
         }
-
-        // Update all slots at once
-        const { error: updateError } = await supabaseServer
-            .from(tableName)
-            .update(updates)
-            .eq('datum', date);
-
-        if (updateError) {
-            console.error(`Error updating ${tableName}:`, updateError);
-            throw updateError;
-        }
-
-        console.log(`Successfully updated ${tableName} for ${date}`);
     }
+
+    // Process all updates in parallel
+    const updatePromises: Promise<void>[] = [];
+    
+    for (const [tableName, dateMap] of groupedUpdates) {
+        for (const [date, updates] of dateMap) {
+            // Update cache
+            updateCache(tableName, date, updates);
+            
+            // Create update promise
+            updatePromises.push(
+                (async () => {
+                    // Ensure date exists and update in a single operation
+                    const { error: updateError } = await supabaseServer
+                        .from(tableName)
+                        .upsert({
+                            datum: date,
+                            ...updates
+                        }, {
+                            onConflict: 'datum'
+                        });
+
+                    if (updateError) {
+                        throw updateError;
+                    }
+                })()
+            );
+        }
+    }
+
+    // Wait for all updates to complete
+    await Promise.all(updatePromises);
 }
 
 export const POST: RequestHandler = async ({ request }) => {
     try {
         const { bookingId, newDate, newStartTime, newEndTime } = await request.json();
 
-        console.log('Processing rebooking request:', { bookingId, newDate, newStartTime, newEndTime });
-
-        // Fetch the original booking details
-        const { data: booking, error: bookingError } = await supabase
-            .from('bookings')
-            .select(`
-                *,
-                booking_products (
-                    quantity,
-                    products (
-                        id,
-                        total_quantity
-                    )
-                ),
-                booking_addons (
-                    quantity,
-                    addons (
-                        id,
-                        total_quantity,
-                        track_availability
-                    )
-                ),
-                duration:durations (
-                    duration_type,
-                    duration_value
-                )
-            `)
-            .eq('id', bookingId)
-            .single();
-
-        if (bookingError || !booking) {
-            return json({ error: 'Booking not found' }, { status: 404 });
-        }
+        // Get booking data from cache or database
+        const booking = await getBookingData(bookingId);
 
         // Convert times to minutes
         const oldStartMinutes = parseInt(booking.start_time.split(':')[0]) * 60 + parseInt(booking.start_time.split(':')[1]);
@@ -339,19 +419,6 @@ export const POST: RequestHandler = async ({ request }) => {
                 });
             }
         }
-
-        console.log('Preparing availability updates:');
-        console.log('Products:', booking.booking_products.map((p: BookingProduct) => ({
-            id: p.products.id,
-            quantity: p.quantity,
-            maxQuantity: p.products.total_quantity
-        })));
-        console.log('Addons:', booking.booking_addons.map((a: BookingAddon) => ({
-            id: a.addons.id,
-            quantity: a.quantity,
-            maxQuantity: a.addons.total_quantity,
-            trackAvailability: a.addons.track_availability
-        })));
 
         // First subtract from old dates
         await updateAvailability(

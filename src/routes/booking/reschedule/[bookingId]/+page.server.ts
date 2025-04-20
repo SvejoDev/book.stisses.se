@@ -1,17 +1,31 @@
 import { supabase } from "$lib/supabaseClient";
 import { error } from '@sveltejs/kit';
 
+interface OpenDate {
+    type: 'interval' | 'specific';
+    start_date: string;
+    end_date: string;
+    specific_date: string;
+}
+
+interface BlockedDate {
+    start_date: string;
+    end_date: string;
+}
+
 export async function load({ params }) {
     const { bookingId } = params;
     
+    // Validate booking ID format
     if (!bookingId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(bookingId)) {
+        console.error('Invalid booking ID format:', bookingId);
         throw error(400, "Invalid booking ID");
     }
 
     const today = new Date().toISOString().split('T')[0];
 
-    // First fetch the booking to get the experience ID
-    const { data: booking, error: bookingError } = await supabase
+    // First get the booking with its direct relations
+    const { data: bookingData, error: bookingError } = await supabase
         .from("bookings")
         .select(`
             *,
@@ -58,23 +72,41 @@ export async function load({ params }) {
         .eq("id", bookingId)
         .single();
 
-    if (bookingError || !booking) {
+    if (bookingError) {
+        console.error('Error fetching booking:', bookingError);
+        throw error(500, "Error fetching booking");
+    }
+
+    if (!bookingData) {
+        console.error('Booking not found for ID:', bookingId);
         throw error(404, "Booking not found");
     }
 
-    // Fetch open dates for this experience
-    const { data: openDates, error: openDatesError } = await supabase
-        .from("experience_open_dates")
-        .select("*")
-        .eq("experience_id", booking.experience_id);
+    // Then get the open and blocked dates for the experience
+    const { data: experienceDates, error: datesError } = await supabase
+        .from("experiences")
+        .select(`
+            open_dates:experience_open_dates (
+                type,
+                start_date,
+                end_date,
+                specific_date
+            ),
+            blocked_dates:experience_blocked_dates (
+                start_date,
+                end_date
+            )
+        `)
+        .eq("id", bookingData.experience_id)
+        .single();
 
-    if (openDatesError) {
-        console.error('Open dates error:', openDatesError);
-        throw error(500, "Failed to load open dates");
+    if (datesError) {
+        console.error('Error fetching experience dates:', datesError);
+        throw error(500, "Error fetching experience dates");
     }
 
     // Filter open dates to only include future dates
-    const filteredOpenDates = (openDates || []).filter(date => {
+    const filteredOpenDates = (experienceDates?.open_dates || []).filter((date: OpenDate) => {
         if (date.type === 'interval') {
             return date.end_date >= today;
         } else {
@@ -82,20 +114,14 @@ export async function load({ params }) {
         }
     });
 
-    // Fetch blocked dates for this experience
-    const { data: blockedDates, error: blockedDatesError } = await supabase
-        .from("experience_blocked_dates")
-        .select("*")
-        .eq("experience_id", booking.experience_id)
-        .gte('end_date', today);
-
-    if (blockedDatesError) {
-        console.error('Blocked dates error:', blockedDatesError);
-        throw error(500, "Failed to load blocked dates");
-    }
+    // Filter blocked dates to only include future dates
+    const filteredBlockedDates = (experienceDates?.blocked_dates || []).filter((date: BlockedDate) => {
+        return date.end_date >= today;
+    });
 
     return {
+        booking: bookingData,
         openDates: filteredOpenDates,
-        blockedDates: blockedDates || []
+        blockedDates: filteredBlockedDates
     };
 } 
