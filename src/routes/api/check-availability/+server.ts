@@ -180,19 +180,30 @@ async function checkItemAvailability(
 ): Promise<boolean> {
     const itemData = cache[itemId];
     if (!itemData) {
+        console.error(`Item ${itemId} data not found in cache`);
         throw new Error(`Item ${itemId} data not found in cache`);
     }
 
     const { maxQuantity, availability, type, trackAvailability } = itemData;
 
+    console.log(`Checking availability for ${type} ${itemId}:`, {
+        requestedQuantity,
+        maxQuantity,
+        date,
+        startMinute,
+        endMinute,
+        trackAvailability
+    });
+
     // If item doesn't track availability, it's always available
     if (!trackAvailability) {
+        console.log(`${type} ${itemId} doesn't track availability - always available`);
         return true;
     }
 
-    // Rest of your existing checkItemAvailability code
     const dateAvailability = availability[date];
     if (!dateAvailability) {
+        console.log(`No existing bookings for ${date} - fully available`);
         return true;
     }
 
@@ -200,14 +211,17 @@ async function checkItemAvailability(
     for (let minute = startMinute; minute < endMinute; minute += 15) {
         const minuteKey = minute.toString();
         const bookedQuantity = dateAvailability[minuteKey] === null ? 0 : Math.abs(dateAvailability[minuteKey] || 0);
+        const wouldBeBooked = bookedQuantity + requestedQuantity;
 
-        if (bookedQuantity + requestedQuantity > maxQuantity) {
-            if (isDebug) {
-            }
+        console.log(`${type} ${itemId} - Slot ${minute}: ${bookedQuantity} booked, would be ${wouldBeBooked} (max: ${maxQuantity})`);
+
+        if (wouldBeBooked > maxQuantity) {
+            console.log(`${type} ${itemId} - Slot ${minute} would exceed maximum quantity`);
             return false;
         }
     }
 
+    console.log(`${type} ${itemId} - All slots available`);
     return true;
 }
 
@@ -280,6 +294,14 @@ export const POST: RequestHandler = async ({ request }) => {
         const requestData: AvailabilityRequest = await request.json();
         const { date, durationType, durationValue, products, addons = [], experienceId } = requestData;
                 
+        console.log('Checking availability for:', {
+            date,
+            durationType,
+            durationValue,
+            products: products.map(p => ({ id: p.productId, quantity: p.quantity })),
+            addons: addons.map(a => ({ id: a.addonId, quantity: a.quantity }))
+        });
+
         // Get experience details including booking foresight
         const { data: experience, error: experienceError } = await supabase
             .from('experiences')

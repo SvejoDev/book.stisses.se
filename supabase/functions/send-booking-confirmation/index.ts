@@ -187,6 +187,24 @@ function generateEmailHtml(booking: any): string {
         `;
     }
 
+    const siteUrl = Deno.env.get('PUBLIC_SITE_URL') || 'http://localhost:5173'; // Fallback for local dev
+
+    const bookingGuaranteeHtml = booking.has_booking_guarantee ? `
+        <div class="section">
+            <h2>Ombokningsgaranti</h2>
+            <p>Du har köpt ombokningsgaranti för denna bokning. Om du behöver omboka din tid, klicka på länken nedan:</p>
+            <p style="text-align: center; margin-top: 16px;">
+                <a href="${siteUrl}/booking/reschedule/${booking.id}" 
+                   style="background-color: #4f46e5; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">
+                    Omboka din tid
+                </a>
+            </p>
+            <p style="font-size: 12px; color: #6b7280; margin-top: 8px;">
+                Länken är giltig fram till 24 timmar innan din bokade tid.
+            </p>
+        </div>
+    ` : '';
+
     const commentHtml = booking.comment ? `
         <div class="section comment-section">
             <h3>Meddelande från dig</h3>
@@ -437,6 +455,8 @@ function generateEmailHtml(booking: any): string {
                   </table>
                 </div>
               </div>
+
+              ${bookingGuaranteeHtml}
 
               ${commentHtml}
 
