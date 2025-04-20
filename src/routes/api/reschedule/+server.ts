@@ -1,9 +1,11 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { supabase } from '$lib/supabaseClient';
+import { supabaseServer } from '$lib/supabaseServerClient';
 import { PUBLIC_SUPABASE_URL } from '$env/static/public';
 import { SUPABASE_SERVICE_ROLE_KEY } from '$env/static/private';
 import type { BookingProduct, BookingAddon } from './[bookingId]/+server';
+import { addDays, parseISO, format } from 'date-fns';
 
 interface AvailabilityUpdate {
     tableName: string;
@@ -14,15 +16,30 @@ interface AvailabilityUpdate {
     maxQuantity: number;
 }
 
+// Helper function to generate dates between start and end date
+function generateDateRange(startDate: string, endDate: string): string[] {
+    const dates: string[] = [];
+    const start = parseISO(startDate);
+    const end = parseISO(endDate);
+    
+    let current = start;
+    while (current <= end) {
+        dates.push(format(current, 'yyyy-MM-dd'));
+        current = addDays(current, 1);
+    }
+    
+    return dates;
+}
+
 async function updateAvailability(updates: AvailabilityUpdate[], isSubtract: boolean = false) {
     for (const update of updates) {
-        const { tableName, date, startMinutes, endMinutes, quantity } = update;
+        const { tableName, date, startMinutes, endMinutes, quantity, maxQuantity } = update;
         
         console.log(`${isSubtract ? 'Subtracting from' : 'Adding to'} availability table: ${tableName}`);
         console.log(`Date: ${date}, Time: ${startMinutes}-${endMinutes}, Quantity: ${quantity}`);
 
         // Ensure the date exists in the availability table
-        const { data: existingDate } = await supabase
+        const { data: existingDate } = await supabaseServer
             .from(tableName)
             .select('datum')
             .eq('datum', date)
@@ -30,7 +47,7 @@ async function updateAvailability(updates: AvailabilityUpdate[], isSubtract: boo
 
         if (!existingDate) {
             console.log(`Creating new date entry for ${date} in ${tableName}`);
-            await supabase
+            await supabaseServer
                 .from(tableName)
                 .insert({ datum: date });
         }
@@ -40,7 +57,7 @@ async function updateAvailability(updates: AvailabilityUpdate[], isSubtract: boo
         for (let minute = startMinutes; minute <= endMinutes; minute += 15) {
             const slotKey = minute.toString();
             // Get current value for the slot
-            const { data: currentSlot } = await supabase
+            const { data: currentSlot } = await supabaseServer
                 .from(tableName)
                 .select(slotKey)
                 .eq('datum', date)
@@ -53,15 +70,15 @@ async function updateAvailability(updates: AvailabilityUpdate[], isSubtract: boo
 
             console.log(`${tableName} - Slot ${minute} (${slotKey}): ${currentValue} -> ${newValue}`);
 
-            if (newValue > update.maxQuantity) {
-                throw new Error(`Exceeds maximum quantity (${update.maxQuantity}) for ${tableName} on ${date}`);
+            if (newValue > maxQuantity) {
+                throw new Error(`Exceeds maximum quantity (${maxQuantity}) for ${tableName} on ${date}`);
             }
 
             updates[slotKey] = newValue;
         }
 
         // Update all slots at once
-        const { error: updateError } = await supabase
+        const { error: updateError } = await supabaseServer
             .from(tableName)
             .update(updates)
             .eq('datum', date);
@@ -119,6 +136,13 @@ export const POST: RequestHandler = async ({ request }) => {
         const newStartMinutes = parseInt(newStartTime.split(':')[0]) * 60 + parseInt(newStartTime.split(':')[1]);
         const newEndMinutes = parseInt(newEndTime.split(':')[0]) * 60 + parseInt(newEndTime.split(':')[1]);
 
+        // Check if it's an overnight booking
+        const isOvernight = booking.duration.duration_type === 'overnights';
+        const oldDates = generateDateRange(booking.start_date, booking.end_date);
+        const newEndDate = isOvernight 
+            ? format(addDays(parseISO(newDate), booking.duration.duration_value), 'yyyy-MM-dd')
+            : newDate;
+
         // Prepare availability updates for both old and new dates
         const availabilityUpdates: AvailabilityUpdate[] = [];
 
@@ -126,25 +150,96 @@ export const POST: RequestHandler = async ({ request }) => {
         for (const bookingProduct of booking.booking_products) {
             const tableName = `availability_product_${bookingProduct.products.id}`;
             
-            // Add update for old date (subtract)
-            availabilityUpdates.push({
-                tableName,
-                date: booking.start_date,
-                startMinutes: oldStartMinutes,
-                endMinutes: oldEndMinutes,
-                quantity: bookingProduct.quantity,
-                maxQuantity: bookingProduct.products.total_quantity
-            });
+            // Add updates for old dates (subtract)
+            if (isOvernight) {
+                // First day: from start time to midnight
+                availabilityUpdates.push({
+                    tableName,
+                    date: oldDates[0],
+                    startMinutes: oldStartMinutes,
+                    endMinutes: 24 * 60,
+                    quantity: bookingProduct.quantity,
+                    maxQuantity: bookingProduct.products.total_quantity
+                });
 
-            // Add update for new date (add)
-            availabilityUpdates.push({
-                tableName,
-                date: newDate,
-                startMinutes: newStartMinutes,
-                endMinutes: newEndMinutes,
-                quantity: bookingProduct.quantity,
-                maxQuantity: bookingProduct.products.total_quantity
-            });
+                // Middle days: full days
+                for (let i = 1; i < oldDates.length - 1; i++) {
+                    availabilityUpdates.push({
+                        tableName,
+                        date: oldDates[i],
+                        startMinutes: 0,
+                        endMinutes: 24 * 60,
+                        quantity: bookingProduct.quantity,
+                        maxQuantity: bookingProduct.products.total_quantity
+                    });
+                }
+
+                // Last day: from midnight to end time
+                availabilityUpdates.push({
+                    tableName,
+                    date: oldDates[oldDates.length - 1],
+                    startMinutes: 0,
+                    endMinutes: oldEndMinutes,
+                    quantity: bookingProduct.quantity,
+                    maxQuantity: bookingProduct.products.total_quantity
+                });
+            } else {
+                // Single day booking
+                availabilityUpdates.push({
+                    tableName,
+                    date: booking.start_date,
+                    startMinutes: oldStartMinutes,
+                    endMinutes: oldEndMinutes,
+                    quantity: bookingProduct.quantity,
+                    maxQuantity: bookingProduct.products.total_quantity
+                });
+            }
+
+            // Add updates for new dates (add)
+            if (isOvernight) {
+                // First day: from start time to midnight
+                availabilityUpdates.push({
+                    tableName,
+                    date: newDate,
+                    startMinutes: newStartMinutes,
+                    endMinutes: 24 * 60,
+                    quantity: bookingProduct.quantity,
+                    maxQuantity: bookingProduct.products.total_quantity
+                });
+
+                // Middle days: full days
+                const newDates = generateDateRange(newDate, newEndDate);
+                for (let i = 1; i < newDates.length - 1; i++) {
+                    availabilityUpdates.push({
+                        tableName,
+                        date: newDates[i],
+                        startMinutes: 0,
+                        endMinutes: 24 * 60,
+                        quantity: bookingProduct.quantity,
+                        maxQuantity: bookingProduct.products.total_quantity
+                    });
+                }
+
+                // Last day: from midnight to end time
+                availabilityUpdates.push({
+                    tableName,
+                    date: newEndDate,
+                    startMinutes: 0,
+                    endMinutes: newEndMinutes,
+                    quantity: bookingProduct.quantity,
+                    maxQuantity: bookingProduct.products.total_quantity
+                });
+            } else {
+                // Single day booking
+                availabilityUpdates.push({
+                    tableName,
+                    date: newDate,
+                    startMinutes: newStartMinutes,
+                    endMinutes: newEndMinutes,
+                    quantity: bookingProduct.quantity,
+                    maxQuantity: bookingProduct.products.total_quantity
+                });
+            }
         }
 
         // Add addon updates
@@ -153,25 +248,96 @@ export const POST: RequestHandler = async ({ request }) => {
 
             const tableName = `availability_addon_${bookingAddon.addons.id}`;
             
-            // Add update for old date (subtract)
-            availabilityUpdates.push({
-                tableName,
-                date: booking.start_date,
-                startMinutes: oldStartMinutes,
-                endMinutes: oldEndMinutes,
-                quantity: bookingAddon.quantity,
-                maxQuantity: bookingAddon.addons.total_quantity
-            });
+            // Add updates for old dates (subtract)
+            if (isOvernight) {
+                // First day: from start time to midnight
+                availabilityUpdates.push({
+                    tableName,
+                    date: oldDates[0],
+                    startMinutes: oldStartMinutes,
+                    endMinutes: 24 * 60,
+                    quantity: bookingAddon.quantity,
+                    maxQuantity: bookingAddon.addons.total_quantity
+                });
 
-            // Add update for new date (add)
-            availabilityUpdates.push({
-                tableName,
-                date: newDate,
-                startMinutes: newStartMinutes,
-                endMinutes: newEndMinutes,
-                quantity: bookingAddon.quantity,
-                maxQuantity: bookingAddon.addons.total_quantity
-            });
+                // Middle days: full days
+                for (let i = 1; i < oldDates.length - 1; i++) {
+                    availabilityUpdates.push({
+                        tableName,
+                        date: oldDates[i],
+                        startMinutes: 0,
+                        endMinutes: 24 * 60,
+                        quantity: bookingAddon.quantity,
+                        maxQuantity: bookingAddon.addons.total_quantity
+                    });
+                }
+
+                // Last day: from midnight to end time
+                availabilityUpdates.push({
+                    tableName,
+                    date: oldDates[oldDates.length - 1],
+                    startMinutes: 0,
+                    endMinutes: oldEndMinutes,
+                    quantity: bookingAddon.quantity,
+                    maxQuantity: bookingAddon.addons.total_quantity
+                });
+            } else {
+                // Single day booking
+                availabilityUpdates.push({
+                    tableName,
+                    date: booking.start_date,
+                    startMinutes: oldStartMinutes,
+                    endMinutes: oldEndMinutes,
+                    quantity: bookingAddon.quantity,
+                    maxQuantity: bookingAddon.addons.total_quantity
+                });
+            }
+
+            // Add updates for new dates (add)
+            if (isOvernight) {
+                // First day: from start time to midnight
+                availabilityUpdates.push({
+                    tableName,
+                    date: newDate,
+                    startMinutes: newStartMinutes,
+                    endMinutes: 24 * 60,
+                    quantity: bookingAddon.quantity,
+                    maxQuantity: bookingAddon.addons.total_quantity
+                });
+
+                // Middle days: full days
+                const newDates = generateDateRange(newDate, newEndDate);
+                for (let i = 1; i < newDates.length - 1; i++) {
+                    availabilityUpdates.push({
+                        tableName,
+                        date: newDates[i],
+                        startMinutes: 0,
+                        endMinutes: 24 * 60,
+                        quantity: bookingAddon.quantity,
+                        maxQuantity: bookingAddon.addons.total_quantity
+                    });
+                }
+
+                // Last day: from midnight to end time
+                availabilityUpdates.push({
+                    tableName,
+                    date: newEndDate,
+                    startMinutes: 0,
+                    endMinutes: newEndMinutes,
+                    quantity: bookingAddon.quantity,
+                    maxQuantity: bookingAddon.addons.total_quantity
+                });
+            } else {
+                // Single day booking
+                availabilityUpdates.push({
+                    tableName,
+                    date: newDate,
+                    startMinutes: newStartMinutes,
+                    endMinutes: newEndMinutes,
+                    quantity: bookingAddon.quantity,
+                    maxQuantity: bookingAddon.addons.total_quantity
+                });
+            }
         }
 
         console.log('Preparing availability updates:');
@@ -189,13 +355,13 @@ export const POST: RequestHandler = async ({ request }) => {
 
         // First subtract from old dates
         await updateAvailability(
-            availabilityUpdates.filter(u => u.date === booking.start_date),
+            availabilityUpdates.filter(u => oldDates.includes(u.date)),
             true // subtract
         );
 
         // Then add to new dates
         await updateAvailability(
-            availabilityUpdates.filter(u => u.date === newDate),
+            availabilityUpdates.filter(u => u.date >= newDate && u.date <= newEndDate),
             false // add
         );
 
@@ -205,7 +371,7 @@ export const POST: RequestHandler = async ({ request }) => {
             .update({
                 start_date: newDate,
                 start_time: newStartTime,
-                end_date: booking.duration.duration_type === 'hours' ? newDate : null, // Will be calculated for overnight bookings
+                end_date: newEndDate,
                 end_time: newEndTime
             })
             .eq('id', bookingId);
