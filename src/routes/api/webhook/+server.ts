@@ -86,7 +86,6 @@ async function checkQuantityLimit(
     }
   }
 
-  console.log('✅ Quantity check passed');
   return true;
 }
 
