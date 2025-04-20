@@ -161,7 +161,6 @@
 
 	// Add new effect to handle scrolling after products are loaded
 	let productsLoaded = $state(false);
-	let addonsLoaded = $state(false);
 
 	$effect(() => {
 		if (selectedDate && shouldShowProducts && productsLoaded) {
@@ -272,7 +271,6 @@
 	}
 
 	function handleAddonsLoaded() {
-		addonsLoaded = true;
 		if (addonsSection) {
 			scrollToElement(addonsSection);
 		}

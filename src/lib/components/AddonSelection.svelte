@@ -72,11 +72,8 @@
 			return total + addonTotal;
 		}, 0);
 
-		console.log('Addons cost:', total);
 		return total;
 	});
-
-	console.log('AddonSelection mounted with:', { startLocationId, experienceId, selectedProducts });
 
 	async function fetchAddons() {
 		try {
@@ -97,7 +94,6 @@
 					url.searchParams.append('productIds[]', product.productId.toString());
 				});
 
-			console.log('Fetching addons with URL:', url.toString());
 			const response = await fetch(url);
 
 			if (!response.ok) {
@@ -105,11 +101,6 @@
 			}
 
 			addons = await response.json();
-			console.log('Received addons data:', {
-				pricingType,
-				addons,
-				hasPrice: addons.map((a) => ({ id: a.id, name: a.name, price: a.price }))
-			});
 
 			// Add a small delay if there are no addons for better UX
 			if (addons.length === 0) {
@@ -203,11 +194,6 @@
 				})
 		];
 
-		console.log(
-			'update',
-			$state.snapshot(selectedQuantities),
-			'AddonSelection - Current quantities'
-		);
 		onAddonsSelected(selectedAddons);
 	});
 

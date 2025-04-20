@@ -61,11 +61,8 @@
 			return total;
 		}, 0);
 
-		console.log('Products cost:', total);
 		return total;
 	});
-
-	console.log('ProductSelection mounted with:', { startLocationId, experienceId });
 
 	async function fetchProducts() {
 		try {

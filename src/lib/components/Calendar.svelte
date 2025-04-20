@@ -48,11 +48,6 @@
 	$effect(() => {
 		// This will run whenever durationType or durationValue changes
 		if (selectedDate && isDateDisabled(selectedDate)) {
-			console.log('Resetting selected date due to duration change', {
-				oldDate: selectedDate,
-				durationType,
-				durationValue
-			});
 			selectedDate = null;
 			onDateSelect(null); // Notify parent that date was reset
 		}

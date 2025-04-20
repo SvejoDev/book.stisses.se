@@ -203,7 +203,6 @@ async function checkItemAvailability(
 
         if (bookedQuantity + requestedQuantity > maxQuantity) {
             if (isDebug) {
-                console.log(`  ${type} ${itemId} not available at ${minutesToTime(minute)} - Booked: ${bookedQuantity}, Max: ${maxQuantity}, Requested: ${requestedQuantity}`);
             }
             return false;
         }
@@ -280,9 +279,7 @@ export const POST: RequestHandler = async ({ request }) => {
     try {
         const requestData: AvailabilityRequest = await request.json();
         const { date, durationType, durationValue, products, addons = [], experienceId } = requestData;
-        
-        console.log('Received request with addons:', addons);
-        
+                
         // Get experience details including booking foresight
         const { data: experience, error: experienceError } = await supabase
             .from('experiences')
@@ -295,15 +292,7 @@ export const POST: RequestHandler = async ({ request }) => {
         const { openTime, closeTime } = await getOpeningHours(experienceId, date);
         const openMinutes = timeToMinutes(openTime);
         const closeMinutes = timeToMinutes(closeTime);
-        
-        console.log('\nProcessing availability request:', {
-            date,
-            durationType,
-            durationValue,
-            products,
-            addons,
-            bookingForesightHours: experience.booking_foresight_hours
-        });
+  
 
         // Handle booking foresight
         const now = new Date();
@@ -311,12 +300,7 @@ export const POST: RequestHandler = async ({ request }) => {
         const foresightMilliseconds = (experience.booking_foresight_hours || 0) * 60 * 60 * 1000;
         const foresightDate = new Date(now.getTime() + foresightMilliseconds);
 
-        console.log('\nDebug - Foresight Calculations:', {
-            currentTime: now.toISOString(),
-            requestedDate: requestedDate.toISOString(),
-            foresightHours: experience.booking_foresight_hours,
-            foresightEndTime: foresightDate.toISOString()
-        });
+     
 
         // If the requested date is within the foresight period, we need to block times before foresight
         let effectiveOpenMinutes = openMinutes;
@@ -331,14 +315,7 @@ export const POST: RequestHandler = async ({ request }) => {
             const minutesIntoNextDay = roundedCurrentMinutes + (experience.booking_foresight_hours * 60);
             const adjustedForesightMinutes = minutesIntoNextDay % (24 * 60); // Wrap around to next day
 
-            console.log('\nDebug - Time Calculations:', {
-                currentMinutes,
-                roundedCurrentMinutes,
-                minutesIntoNextDay,
-                adjustedForesightMinutes,
-                openMinutes,
-                isNextDay: requestedDate.getDate() !== now.getDate()
-            });
+        
             
             // If booking for next day, use the wrapped around minutes
             if (requestedDate.getDate() !== now.getDate()) {
@@ -347,7 +324,6 @@ export const POST: RequestHandler = async ({ request }) => {
                 effectiveOpenMinutes = Math.max(openMinutes, roundedCurrentMinutes + (experience.booking_foresight_hours * 60));
             }
 
-            console.log('Final effective open minutes:', effectiveOpenMinutes, 'which is', minutesToTime(effectiveOpenMinutes));
         }
 
         // Pre-load all required dates
@@ -451,9 +427,7 @@ export const POST: RequestHandler = async ({ request }) => {
             });
         }
 
-        console.log(`\nFound ${availableTimes.length} available time slots`);
         if (availableTimes.length > 0) {
-            console.log('Available times:', availableTimes);
         }
 
         return json({ availableTimes });

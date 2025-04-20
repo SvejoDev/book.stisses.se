@@ -16,7 +16,6 @@ export const load: PageServerLoad = async ({ url }) => {
   }
 
   try {
-    console.log('Fetching Stripe session for ID:', sessionId);
     // Fetch the Stripe session to get the booking_number
     const session = await stripe.checkout.sessions.retrieve(sessionId);
 
@@ -26,7 +25,6 @@ export const load: PageServerLoad = async ({ url }) => {
     }
 
     const bookingNumber = session.metadata.booking_number;
-    console.log('Found booking number from Stripe session:', bookingNumber);
 
     // Fetch booking details using the booking number
     // Selecting * includes total_price which was set by the webhook
@@ -88,7 +86,6 @@ export const load: PageServerLoad = async ({ url }) => {
       throw error(404, 'Bokningen kunde inte hittas.');
     }
 
-    console.log('Successfully fetched booking data:', booking.id);
 
     // The booking object now contains all necessary details including total_price
     return {

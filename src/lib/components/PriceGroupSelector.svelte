@@ -73,7 +73,6 @@
 			return sum + group.price * quantity;
 		}, 0);
 
-		console.log('Price Groups base cost (calculated excl. VAT):', baseTotal);
 		return baseTotal;
 	});
 

@@ -10,8 +10,8 @@
 		durationValue,
 		selectedProducts = [],
 		selectedAddons = [],
-		onLockStateChange = (locked: boolean) => {},
-		onStartTimeSelect = (time: { startTime: string; endTime: string }) => {},
+		onLockStateChange = () => {},
+		onStartTimeSelect = () => {},
 		showButton = true
 	} = $props<{
 		experienceId: number;
@@ -50,11 +50,6 @@
 	// Monitor addons state changes
 	$effect(() => {
 		if (selectedAddons?.length > 0) {
-			console.log(
-				'update',
-				$state.snapshot(selectedAddons),
-				'AvailableStartTimes - Current addons'
-			);
 		}
 	});
 
@@ -103,8 +98,6 @@
 				addons: $state.snapshot(selectedAddons) || [],
 				experienceId
 			};
-
-			console.log('AvailableStartTimes - Request data:', requestData);
 
 			const response = await fetch('/api/check-availability', {
 				method: 'POST',

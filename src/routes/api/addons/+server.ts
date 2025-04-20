@@ -103,9 +103,6 @@ export const GET: RequestHandler = async ({ url }) => {
                 productIds.includes(item.product_id)
             );
         }
-
-        console.log('Filtered data addons:', filteredData);
-
         // Transform the filtered data and remove duplicates
         const addonMap = new Map<number, Addon>();
 

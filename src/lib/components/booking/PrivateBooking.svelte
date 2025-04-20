@@ -302,10 +302,8 @@
 	let selectedStartTime = $state<SelectedStartTime | null>(null);
 
 	function handleStartTimeSelect(time: SelectedStartTime) {
-		console.log('handleStartTimeSelect called with:', time);
 		selectedStartTime = time;
 		showContactForm = true;
-		console.log('showContactForm set to:', showContactForm);
 		setTimeout(() => {
 			window.scrollTo({
 				top: document.documentElement.scrollHeight,
@@ -329,7 +327,6 @@
 
 	{#if selectedLocationId !== null || !hasStartLocations}
 		<section class="space-y-4" bind:this={priceGroupSection}>
-			{console.log('Price Groups passed to selector:', priceGroups)}
 			<PriceGroupSelector
 				bind:this={priceGroupRef}
 				{priceGroups}

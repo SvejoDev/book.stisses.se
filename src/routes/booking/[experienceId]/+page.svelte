@@ -7,15 +7,6 @@
 	let { data } = $props<{ data: PageData }>();
 
 	let privateBookingRef = $state<{ getTotalPrice: () => number } | null>(null);
-
-	// Log total price whenever it changes
-	$effect(() => {
-		if (data.experience.type === 'private' && privateBookingRef) {
-			console.log('=== TOTAL BOOKING COST ===');
-			console.log('Total cost:', privateBookingRef.getTotalPrice());
-			console.log('========================');
-		}
-	});
 </script>
 
 <svelte:head>
