@@ -43,6 +43,7 @@
 	let selectedDate = $state<Date | null>(null);
 	let hoveredDate = $state<Date | null>(null);
 	let hasFutureOpenDates = $state(false);
+	let hasAvailableDatesInCurrentMonth = $state(false);
 
 	// Add effect to reset selected date when duration changes
 	$effect(() => {
@@ -57,20 +58,41 @@
 	function initializeCalendar() {
 		// Always start with current month
 		currentMonth = new Date();
+		updateFutureOpenDates();
+		updateAvailableDatesInCurrentMonth();
+	}
 
-		// Check if there are any future open dates
+	let currentMonth = $state(new Date());
+
+	// Add effect to update states when month changes
+	$effect(() => {
+		updateFutureOpenDates();
+		updateAvailableDatesInCurrentMonth();
+	});
+
+	function updateAvailableDatesInCurrentMonth() {
+		hasAvailableDatesInCurrentMonth = getCalendarDays().some(
+			({ date, isCurrentMonth }) => isCurrentMonth && isDateOpen(date) && !isDateDisabled(date)
+		);
+	}
+
+	function updateFutureOpenDates() {
+		// Get the last day of current displayed month
+		const currentMonthEnd = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0);
+
+		// Check if there are any open dates after the current month
 		hasFutureOpenDates = openDates.some((date: OpenDate) => {
 			if (date.type === 'specific' && date.specific_date) {
-				return isAfter(parseISO(date.specific_date), currentMonth);
+				const specificDate = parseISO(date.specific_date);
+				return isAfter(specificDate, currentMonthEnd);
 			}
 			if (date.type === 'interval' && date.end_date) {
-				return isAfter(parseISO(date.end_date), currentMonth);
+				const endDate = parseISO(date.end_date);
+				return isAfter(endDate, currentMonthEnd);
 			}
 			return false;
 		});
 	}
-
-	let currentMonth = $state(new Date());
 
 	// Initialize when component mounts
 	initializeCalendar();
@@ -298,7 +320,7 @@
 		</button>
 	</div>
 
-	{#if hasFutureOpenDates && !getCalendarDays().some(({ date }) => isDateOpen(date) && !isDateDisabled(date))}
+	{#if hasFutureOpenDates && !hasAvailableDatesInCurrentMonth}
 		<div class="future-dates-notice">
 			<svg xmlns="http://www.w3.org/2000/svg" class="icon" viewBox="0 0 20 20" fill="currentColor">
 				<path
