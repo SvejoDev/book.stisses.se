@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, tick } from 'svelte';
 	import Calendar from '$lib/components/Calendar.svelte';
 	import AvailableStartTimes from '$lib/components/AvailableStartTimes.svelte';
 	import { goto } from '$app/navigation';
@@ -21,6 +21,8 @@
 	let isRescheduling = $state(false);
 	let reason = $state('');
 	let notification = $state<{ type: 'success' | 'error'; message: string } | null>(null);
+
+	let rescheduleSection = $state(null as HTMLElement | null);
 
 	$effect(() => {
 		if (bookingId) {
@@ -86,6 +88,10 @@
 	function handleDateSelect(date: Date) {
 		selectedDate = date;
 		selectedStartTime = null;
+
+		tick().then(() => {
+			rescheduleSection?.scrollIntoView({ behavior: 'smooth' });
+		});
 	}
 
 	function handleStartTimeSelect(time: { startTime: string; endTime: string }) {
@@ -133,7 +139,7 @@
 			</div>
 		</div>
 
-		<div class="space-y-8">
+		<div class="space-y-8" bind:this={rescheduleSection}>
 			<section>
 				<h2 class="mb-4 text-center text-2xl font-semibold">Välj nytt datum</h2>
 				<div class="flex justify-center">
