@@ -1,4 +1,4 @@
-import { supabase } from "$lib/supabaseClient";
+import { supabaseServer } from "$lib/supabaseServerClient";
 import { error } from '@sveltejs/kit';
 
 interface OpenDate {
@@ -25,7 +25,7 @@ export async function load({ params }) {
     const today = new Date().toISOString().split('T')[0];
 
     // First get the booking with its direct relations
-    const { data: bookingData, error: bookingError } = await supabase
+    const { data: bookingData, error: bookingError } = await supabaseServer
         .from("bookings")
         .select(`
             *,
@@ -83,7 +83,7 @@ export async function load({ params }) {
     }
 
     // Then get the open and blocked dates for the experience
-    const { data: experienceDates, error: datesError } = await supabase
+    const { data: experienceDates, error: datesError } = await supabaseServer
         .from("experiences")
         .select(`
             open_dates:experience_open_dates (

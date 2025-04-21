@@ -43,31 +43,40 @@ function getCacheKey(tableName: string, date: string): string {
 }
 
 // Helper function to load availability data into cache
-async function loadAvailabilityIntoCache(tableName: string, dates: string[]): Promise<void> {
-    const loadPromises = dates.map(async date => {
+async function loadAvailabilityIntoCache(tableName: string, dates: string[]) {
+    const { data, error } = await supabaseServer
+        .from(tableName)
+        .select('*')
+        .in('datum', dates);
+
+    if (error) throw error;
+
+    // Initialize cache for all dates, even if they don't exist in the database
+    for (const date of dates) {
         const cacheKey = getCacheKey(tableName, date);
         if (!availabilityCache.has(cacheKey)) {
-            const { data } = await supabaseServer
-                .from(tableName)
-                .select('*')
-                .eq('datum', date)
-                .single();
-
-            if (data) {
-                const slotMap = new Map<string, number>();
-                Object.entries(data).forEach(([key, value]) => {
-                    if (key !== 'datum') {
-                        slotMap.set(key, value as number);
-                    }
-                });
-                availabilityCache.set(cacheKey, slotMap);
-            } else {
-                availabilityCache.set(cacheKey, new Map<string, number>());
+            // Initialize with all time slots set to 0
+            const initialSlots = new Map<string, number>();
+            for (let i = 0; i <= 1440; i += 15) {
+                initialSlots.set(i.toString(), 0);
             }
+            availabilityCache.set(cacheKey, initialSlots);
         }
-    });
+    }
 
-    await Promise.all(loadPromises);
+    // Update cache with existing data
+    if (data) {
+        for (const row of data) {
+            const cacheKey = getCacheKey(tableName, row.datum);
+            const slotMap = new Map<string, number>();
+            Object.entries(row).forEach(([key, value]) => {
+                if (key !== 'datum') {
+                    slotMap.set(key, value as number);
+                }
+            });
+            availabilityCache.set(cacheKey, slotMap);
+        }
+    }
 }
 
 // Helper function to get availability from cache
@@ -88,7 +97,7 @@ function updateCache(tableName: string, date: string, updates: Record<string, nu
     }
 
     Object.entries(updates).forEach(([minute, value]) => {
-        slotMap.set(minute, value);
+        slotMap!.set(minute, value);
     });
 }
 
@@ -137,6 +146,18 @@ async function updateAvailability(updates: AvailabilityUpdate[], isSubtract: boo
     // Group updates by table and date for batch processing
     const groupedUpdates = new Map<string, Map<string, Record<string, number>>>();
     
+    // Clear cache for all affected dates to ensure fresh data
+    for (const update of updates) {
+        const cacheKey = getCacheKey(update.tableName, update.date);
+        availabilityCache.delete(cacheKey);
+    }
+    
+    // First load all dates into cache
+    const uniqueDates = new Set(updates.map(u => u.date));
+    for (const update of updates) {
+        await loadAvailabilityIntoCache(update.tableName, Array.from(uniqueDates));
+    }
+    
     for (const update of updates) {
         const { tableName, date, startMinutes, endMinutes, quantity, maxQuantity } = update;
         
@@ -146,25 +167,24 @@ async function updateAvailability(updates: AvailabilityUpdate[], isSubtract: boo
         
         const dateMap = groupedUpdates.get(tableName)!;
         if (!dateMap.has(date)) {
-            dateMap.set(date, {});
+            // Initialize with current values from cache
+            const currentSlots = new Map<string, number>();
+            for (let i = 0; i <= 1440; i += 15) {
+                const slotKey = i.toString();
+                currentSlots.set(slotKey, getAvailabilityFromCache(tableName, date, slotKey));
+            }
+            dateMap.set(date, Object.fromEntries(currentSlots));
         }
         
         const dateUpdates = dateMap.get(date)!;
-        
-        // Load availability data into cache
-        await loadAvailabilityIntoCache(tableName, [date]);
         
         // Generate updates for all time slots
         for (let minute = startMinutes; minute <= endMinutes; minute += 15) {
             const slotKey = minute.toString();
             const currentValue = getAvailabilityFromCache(tableName, date, slotKey);
             const newValue = isSubtract 
-                ? Math.max(0, currentValue - quantity)
-                : currentValue + quantity;
-
-            if (newValue > maxQuantity) {
-                throw new Error(`Exceeds maximum quantity (${maxQuantity}) for ${tableName} on ${date}`);
-            }
+                ? Math.max(0, currentValue - quantity) // Only subtract the exact quantity
+                : Math.min(maxQuantity, currentValue + quantity); // Don't exceed max quantity
 
             dateUpdates[slotKey] = newValue;
         }
@@ -205,7 +225,10 @@ async function updateAvailability(updates: AvailabilityUpdate[], isSubtract: boo
 
 export const POST: RequestHandler = async ({ request }) => {
     try {
-        const { bookingId, newDate, newStartTime, newEndTime } = await request.json();
+        const { bookingId, newDate, newStartTime, newEndTime, reason } = await request.json();
+
+        // Clear booking cache to fetch the latest booking state
+        bookingCache.delete(bookingId);
 
         // Get booking data from cache or database
         const booking = await getBookingData(bookingId);
@@ -222,6 +245,26 @@ export const POST: RequestHandler = async ({ request }) => {
         const newEndDate = isOvernight 
             ? format(addDays(parseISO(newDate), booking.duration.duration_value), 'yyyy-MM-dd')
             : newDate;
+
+        // Clear cache for all affected dates
+        const allDates = [...oldDates, newDate];
+        if (isOvernight) {
+            allDates.push(newEndDate);
+        }
+        for (const date of allDates) {
+            for (const bookingProduct of booking.booking_products) {
+                const tableName = `availability_product_${bookingProduct.products.id}`;
+                const cacheKey = getCacheKey(tableName, date);
+                availabilityCache.delete(cacheKey);
+            }
+            for (const bookingAddon of booking.booking_addons) {
+                if (bookingAddon.addons.track_availability) {
+                    const tableName = `availability_addon_${bookingAddon.addons.id}`;
+                    const cacheKey = getCacheKey(tableName, date);
+                    availabilityCache.delete(cacheKey);
+                }
+            }
+        }
 
         // Prepare availability updates for both old and new dates
         const availabilityUpdates: AvailabilityUpdate[] = [];
@@ -432,8 +475,34 @@ export const POST: RequestHandler = async ({ request }) => {
             false // add
         );
 
+        // Create history record before updating the booking
+        const { error: historyError } = await supabaseServer
+            .from('booking_history')
+            .insert({
+                booking_id: bookingId,
+                action_type: 'reschedule',
+                old_data: {
+                    start_date: booking.start_date,
+                    end_date: booking.end_date,
+                    start_time: booking.start_time,
+                    end_time: booking.end_time
+                },
+                new_data: {
+                    start_date: newDate,
+                    end_date: newEndDate,
+                    start_time: newStartTime,
+                    end_time: newEndTime
+                },
+                reason: reason || 'Customer requested reschedule'
+            });
+
+        if (historyError) {
+            console.error('Error creating booking history:', historyError);
+            throw new Error('Failed to log booking history');
+        }
+
         // Update the booking with new dates
-        const { error: updateError } = await supabase
+        const { error: updateError } = await supabaseServer
             .from('bookings')
             .update({
                 start_date: newDate,
@@ -444,6 +513,7 @@ export const POST: RequestHandler = async ({ request }) => {
             .eq('id', bookingId);
 
         if (updateError) {
+            console.error('Error updating booking:', updateError);
             throw new Error('Failed to update booking');
         }
 

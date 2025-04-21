@@ -19,6 +19,8 @@
 	let selectedStartTime = $state<{ startTime: string; endTime: string } | null>(null);
 	let isLoading = $state(false);
 	let isRescheduling = $state(false);
+	let reason = $state('');
+	let notification = $state<{ type: 'success' | 'error'; message: string } | null>(null);
 
 	$effect(() => {
 		if (bookingId) {
@@ -60,21 +62,22 @@
 					bookingId,
 					newDate: selectedDate.toISOString().split('T')[0],
 					newStartTime: selectedStartTime.startTime,
-					newEndTime: selectedStartTime.endTime
+					newEndTime: selectedStartTime.endTime,
+					reason: reason
 				})
 			});
 
-			const data = await response.json();
-
 			if (!response.ok) {
-				error = data.error;
-				return;
+				const error = await response.json();
+				throw new Error(error.error || 'Failed to reschedule booking');
 			}
 
-			// Redirect to success page
-			goto('/booking/reschedule/success');
+			// Show success message and navigate smoothly
+			showSuccess('Booking successfully rescheduled!');
+			await goto('/booking/reschedule/success', { replaceState: true });
 		} catch (e) {
-			error = 'Failed to reschedule booking';
+			const error = e as Error;
+			showError(error.message);
 		} finally {
 			isRescheduling = false;
 		}
@@ -87,6 +90,14 @@
 
 	function handleStartTimeSelect(time: { startTime: string; endTime: string }) {
 		selectedStartTime = time;
+	}
+
+	function showSuccess(message: string) {
+		notification = { type: 'success', message };
+	}
+
+	function showError(message: string) {
+		notification = { type: 'error', message };
 	}
 </script>
 
@@ -154,6 +165,17 @@
 			{/if}
 
 			{#if selectedStartTime}
+				<div class="form-group">
+					<label for="reason">Anledning till ombokning (valfritt)</label>
+					<textarea
+						id="reason"
+						bind:value={reason}
+						placeholder="Vänligen ange en anledning till ombokningen (valfritt)"
+						rows="3"
+						class="w-full rounded-lg border border-gray-300 p-2"
+					></textarea>
+				</div>
+
 				<div class="flex justify-center">
 					<button
 						class="rounded-lg bg-primary px-8 py-3 text-white hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
@@ -164,6 +186,16 @@
 					</button>
 				</div>
 			{/if}
+		</div>
+	{/if}
+
+	{#if notification}
+		<div
+			class="fixed bottom-4 right-4 rounded-lg p-4 {notification.type === 'success'
+				? 'bg-green-100 text-green-700'
+				: 'bg-red-100 text-red-700'}"
+		>
+			{notification.message}
 		</div>
 	{/if}
 </div>
