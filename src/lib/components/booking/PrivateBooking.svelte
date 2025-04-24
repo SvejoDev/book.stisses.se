@@ -1,10 +1,5 @@
 <script lang="ts">
-	import {
-		formatPrice,
-		getBothPrices,
-		calculateVatAmount,
-		getDisplayPrice
-	} from '$lib/utils/price';
+	import { formatPrice, getDisplayPrice } from '$lib/utils/price';
 	import StartLocations from '$lib/components/StartLocations.svelte';
 	import BookingDurations from '$lib/components/BookingDurations.svelte';
 	import Calendar from '$lib/components/Calendar.svelte';
@@ -121,25 +116,36 @@
 		getPayingCustomers: () => number;
 		getNonPayingCustomers: () => number;
 	} | null>(null);
-	let totalPrice = $derived(() => {
-		// Calculate product prices if applicable
-		const productTotal = selectedProducts.reduce((sum, product) => {
+	let productTotal = $derived(() => {
+		return selectedProducts.reduce((sum, product) => {
 			return sum + (product.price || 0) * product.quantity;
 		}, 0);
-
-		// Calculate addon prices
-		const addonTotal = selectedAddons.reduce((sum, addon) => {
+	});
+	let addonTotal = $derived(() => {
+		return selectedAddons.reduce((sum, addon) => {
 			return sum + (addon.price || 0) * addon.quantity;
 		}, 0);
+	});
+	let priceGroupTotal = $derived(() => {
+		return priceGroupRef?.totalAmount() ?? 0;
+	});
+	let durationTotal = $derived(() => {
+		return extraPrice * (priceGroupRef?.getPayingCustomers() ?? 0);
+	});
+	let totalPrice = $derived(() => {
+		const baseTotal = productTotal() + addonTotal() + priceGroupTotal() + durationTotal();
 
-		// Get the price group selector total
-		const priceGroupTotal = priceGroupRef?.totalAmount() ?? 0;
-
-		// Get the duration extra price
-		const durationTotal = extraPrice * (priceGroupRef?.getPayingCustomers() ?? 0);
-
-		// Calculate base total
-		const baseTotal = productTotal + addonTotal + priceGroupTotal + durationTotal;
+		console.log('Total Price Update:', {
+			currentBookingIndex,
+			productTotal,
+			addonTotal,
+			priceGroupTotal,
+			durationTotal,
+			baseTotal,
+			selectedProducts,
+			selectedAddons,
+			priceGroupQuantities
+		});
 
 		return baseTotal;
 	});
@@ -334,7 +340,8 @@
 	function handleStartTimeSelect(time: SelectedStartTime) {
 		selectedStartTime = time;
 		showMultipleBookingOption = true;
-		// Update the current booking in allBookings with the correct total price
+
+		// Update the current booking in allBookings with all current state including price
 		allBookings[currentBookingIndex] = {
 			selectedLocationId,
 			selectedDuration,
@@ -345,13 +352,28 @@
 			selectedAddons,
 			priceGroupQuantities,
 			selectedStartTime: time,
-			totalPrice: totalPrice() // Add the current total price to the booking
+			totalPrice: totalPrice() // Make sure we capture the current total price
 		};
 	}
 
 	function addAnotherBooking() {
+		// Store the current booking's total price before resetting
+		allBookings[currentBookingIndex] = {
+			selectedLocationId,
+			selectedDuration,
+			durationType,
+			durationValue,
+			selectedDate,
+			selectedProducts,
+			selectedAddons,
+			priceGroupQuantities,
+			selectedStartTime,
+			totalPrice: totalPrice() // Make sure we store the current total price
+		};
+
 		totalBookings++;
 		currentBookingIndex++;
+
 		// Reset all state for new booking
 		selectedLocationId = null;
 		selectedDuration = '';
@@ -392,7 +414,10 @@
 
 	// Update the total price calculation in the contact form section
 	let totalPriceForAllBookings = $derived(() => {
-		return allBookings.reduce((sum, booking) => sum + (booking.totalPrice || 0), 0);
+		return allBookings.reduce((sum, booking) => {
+			// Ensure we're using the stored total price for each booking
+			return sum + (booking.totalPrice || 0);
+		}, 0);
 	});
 
 	let displayTotalForAllBookings = $derived(() => {

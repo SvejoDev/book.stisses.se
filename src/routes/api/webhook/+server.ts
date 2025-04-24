@@ -359,36 +359,41 @@ export const POST: RequestHandler = async ({ request }) => {
     const session = event.data.object as Stripe.Checkout.Session;
     
     try {
-      const metadata = session.metadata as any;
-      const bookings = JSON.parse(metadata.bookings);
-      
-      if (session.amount_total === null || session.amount_total === undefined) {
-        throw new Error('Stripe session is missing final amount information.');
-      }
-      const totalPriceIncludingVat = session.amount_total / 100;
+      // Get the full booking data from pending_bookings
+      const { data: pendingBooking, error: pendingError } = await supabase
+        .from('pending_bookings')
+        .select('*')
+        .eq('session_id', session.id)
+        .single();
 
+      if (pendingError || !pendingBooking) {
+        throw new Error('Could not find pending booking');
+      }
+
+      const bookings = pendingBooking.booking_data;
+      
       // Create bookings in parallel
       const bookingPromises = bookings.map(async (booking: any) => {
         const { data: bookingData, error: bookingError } = await supabase
           .from('bookings')
           .insert([
             {
-              booking_number: metadata.booking_number,
-              first_name: metadata.first_name,
-              last_name: metadata.last_name,
-              email: metadata.email,
-              phone: metadata.phone,
-              comment: metadata.comment,
-              experience_id: booking.experience_id,
-              experience_type: booking.experience_type,
-              start_location_id: booking.start_location_id,
-              duration_id: booking.duration_id,
-              start_date: booking.start_date,
-              start_time: booking.start_time,
-              end_date: booking.end_date,
-              end_time: booking.end_time,
-              has_booking_guarantee: booking.has_booking_guarantee === 'true',
-              total_price: Math.round(totalPriceIncludingVat / bookings.length),
+              booking_number: pendingBooking.booking_number,
+              first_name: booking.firstName,
+              last_name: booking.lastName,
+              email: booking.email,
+              phone: booking.phone,
+              comment: booking.comment,
+              experience_id: booking.experienceId,
+              experience_type: booking.experienceType,
+              start_location_id: booking.startLocationId,
+              duration_id: booking.durationId,
+              start_date: booking.startDate,
+              start_time: booking.startTime,
+              end_date: booking.startDate, // or calculate based on duration
+              end_time: booking.endTime,
+              has_booking_guarantee: booking.hasBookingGuarantee,
+              total_price: booking.totalPrice,
               is_paid: true,
               stripe_payment_id: session.payment_intent as string,
               availability_confirmed: true
@@ -401,17 +406,10 @@ export const POST: RequestHandler = async ({ request }) => {
           throw bookingError;
         }
 
-        return bookingData;
-      });
-
-      const createdBookings = await Promise.all(bookingPromises);
-
-      // Process each booking's related data
-      for (const [index, booking] of createdBookings.entries()) {
-        const bookingData = bookings[index];
-        const priceGroups = JSON.parse(bookingData.price_groups);
-        const products = JSON.parse(bookingData.products);
-        const addons = JSON.parse(bookingData.addons);
+        // Process price groups, products, and addons as before
+        const priceGroups = booking.priceGroups;
+        const products = booking.products;
+        const addons = booking.addons;
 
         const [priceGroupsResult, productsResult, addonsResult] = await Promise.all([
           (async () => {
@@ -432,13 +430,13 @@ export const POST: RequestHandler = async ({ request }) => {
             return supabase.from('booking_price_groups').insert(
               Array.isArray(priceGroups) 
                 ? priceGroups.map((pg: any) => ({
-                    booking_id: booking.id,
+                    booking_id: bookingData.id,
                     price_group_id: pg.id,
                     quantity: pg.quantity,
                     price_at_time: priceMap.get(pg.id) || 0
                   }))
                 : Object.entries(priceGroups).map(([id, quantity]) => ({
-                    booking_id: booking.id,
+                    booking_id: bookingData.id,
                     price_group_id: parseInt(id),
                     quantity,
                     price_at_time: priceMap.get(parseInt(id)) || 0
@@ -448,7 +446,7 @@ export const POST: RequestHandler = async ({ request }) => {
 
           supabase.from('booking_products').insert(
             products.map((p: any) => ({
-              booking_id: booking.id,
+              booking_id: bookingData.id,
               product_id: p.productId,
               quantity: p.quantity,
               price_at_time: p.price
@@ -457,7 +455,7 @@ export const POST: RequestHandler = async ({ request }) => {
 
           supabase.from('booking_addons').insert(
             addons.map((a: any) => ({
-              booking_id: booking.id,
+              booking_id: bookingData.id,
               addon_id: a.addonId,
               quantity: a.quantity,
               price_at_time: a.price
@@ -485,28 +483,38 @@ export const POST: RequestHandler = async ({ request }) => {
           quantity: a.quantity
         }));
 
-        await updateAvailabilityForBooking(booking, formattedProducts, formattedAddons);
-      }
+        await updateAvailabilityForBooking(bookingData, formattedProducts, formattedAddons);
+        
+        return bookingData;
+      });
 
+      const createdBookings = await Promise.all(bookingPromises);
+
+      // Clean up the pending booking
+      await supabase
+        .from('pending_bookings')
+        .delete()
+        .eq('session_id', session.id);
+
+      // Send email confirmation as before
       try {
         const emailEndpoint = `${PUBLIC_SUPABASE_URL}/functions/v1/send-booking-confirmation`;
-        
-        const response = await fetch(emailEndpoint, {
+        await fetch(emailEndpoint, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`
           },
           body: JSON.stringify({
-            bookingId: createdBookings[0].id // Send confirmation for the first booking
+            bookingId: createdBookings[0].id
           })
         });
-
-        await response.text();
       } catch (error) {
-        // Email sending failed, but we don't want to fail the whole webhook
+        console.error('Error sending confirmation email:', error);
       }
+
     } catch (error) {
+      console.error('Error processing webhook:', error);
       return json({ error: 'Internal server error' }, { status: 500 });
     }
   }

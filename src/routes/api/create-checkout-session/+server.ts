@@ -64,45 +64,26 @@ export const POST: RequestHandler = async ({ request }) => {
     // Generate a single booking number for all bookings
     const bookingNumber = `BK-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     
-    // Fetch experience details
-    const { data: experience, error: experienceError } = await supabase
-      .from('experiences')
-      .select('name')
-      .eq('id', bookings[0].experienceId)
-      .single();
+    // Calculate total price for all bookings (always including VAT)
+    const totalPrice = bookings.reduce((sum: number, booking: any) => sum + booking.totalPrice, 0);
 
-    if (experienceError) throw experienceError;
+    // Create a simplified metadata object to stay within Stripe's 500 character limit
+    const metadataBookings = bookings.map((booking: any) => ({
+      id: booking.experienceId,
+      type: booking.experienceType,
+      date: booking.startDate,
+      time: `${booking.startTime}-${booking.endTime}`
+    }));
 
-    // Create metadata object with all booking information
     const bookingMetadata = {
       booking_number: bookingNumber,
       first_name: bookings[0].firstName,
       last_name: bookings[0].lastName,
       email: bookings[0].email,
       phone: bookings[0].phone,
-      comment: bookings[0].comment,
-      total_price: bookings.reduce((sum: number, booking: any) => sum + booking.totalPrice, 0).toString(),
-      bookings: JSON.stringify(bookings.map((booking: any) => ({
-        experience_id: booking.experienceId,
-        experience_type: booking.experienceType,
-        start_location_id: booking.startLocationId,
-        duration_id: booking.durationId,
-        start_date: booking.startDate,
-        end_date: booking.startDate, // Same as start date for now
-        start_time: booking.startTime,
-        end_time: booking.endTime,
-        has_booking_guarantee: booking.hasBookingGuarantee ? 'true' : 'false',
-        price_groups: JSON.stringify(booking.priceGroups),
-        products: JSON.stringify(booking.products || []),
-        addons: JSON.stringify(booking.addons || [])
-      })))
+      total_bookings: bookings.length.toString(),
+      booking_summary: JSON.stringify(metadataBookings)
     };
-
-    // Calculate the final price for payment (always including VAT regardless of experience type)
-    const finalPrice = getPaymentPrice(
-      bookings.reduce((sum: number, booking: any) => sum + booking.totalPrice, 0),
-      bookings[0].experienceType
-    );
 
     // Create Stripe checkout session
     const session = await stripe.checkout.sessions.create({
@@ -112,11 +93,10 @@ export const POST: RequestHandler = async ({ request }) => {
           price_data: {
             currency: 'sek',
             product_data: {
-              name: experience.name,
-              description: `${bookings.length} bokning${bookings.length > 1 ? 'ar' : ''}`,
-              images: [bookings[0].products?.[0]?.image_url]
+              name: `Bokning ${bookingNumber}`,
+              description: `${bookings.length} bokning${bookings.length > 1 ? 'ar' : ''}`
             },
-            unit_amount: Math.round(finalPrice * 100) // Round to whole cents
+            unit_amount: Math.round(totalPrice * 100) // Convert to öre
           },
           quantity: 1
         }
@@ -127,6 +107,22 @@ export const POST: RequestHandler = async ({ request }) => {
       customer_email: bookings[0].email,
       metadata: bookingMetadata
     });
+
+    // Store the full booking data in your database here
+    // This way you don't need to rely on Stripe's metadata for all the details
+    const { data: storedBookings, error: storageError } = await supabase
+      .from('pending_bookings')
+      .insert([
+        {
+          booking_number: bookingNumber,
+          session_id: session.id,
+          booking_data: bookings
+        }
+      ]);
+
+    if (storageError) {
+      throw storageError;
+    }
 
     return json({ url: session.url });
   } catch (error) {

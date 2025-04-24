@@ -8,7 +8,7 @@
 	import { superForm, type SuperValidated } from 'sveltekit-superforms/client';
 	import { zodClient } from 'sveltekit-superforms/adapters';
 	import { z } from 'zod';
-	import { formatPrice } from '$lib/utils/price';
+	import { formatPrice, getDisplayPrice, getPaymentPrice } from '$lib/utils/price';
 
 	interface SelectedProduct {
 		productId: number;
@@ -26,6 +26,19 @@
 		startTime: string;
 		endTime: string;
 	}
+
+	type Booking = {
+		selectedLocationId: number | null;
+		selectedDuration: string;
+		durationType: 'hours' | 'overnights';
+		durationValue: number;
+		selectedDate: Date | null;
+		selectedProducts: SelectedProduct[];
+		selectedAddons: SelectedAddon[];
+		priceGroupQuantities: Record<number, number>;
+		selectedStartTime: SelectedStartTime | null;
+		totalPrice: number;
+	};
 
 	// Define the form schema
 	export const formSchema = z.object({
@@ -46,18 +59,7 @@
 			form: SuperValidated<FormSchema>;
 		};
 		totalPrice: number;
-		bookings: Array<{
-			selectedLocationId: number | null;
-			selectedDuration: string;
-			durationType: 'hours' | 'overnights';
-			durationValue: number;
-			selectedDate: Date | null;
-			selectedProducts: SelectedProduct[];
-			selectedAddons: SelectedAddon[];
-			priceGroupQuantities: Record<number, number>;
-			selectedStartTime: SelectedStartTime | null;
-			totalPrice: number;
-		}>;
+		bookings: Array<Booking>;
 		experienceId: number;
 		experienceType: string;
 	}>();
@@ -77,51 +79,28 @@
 		onSubmit: async ({ formData }) => {
 			try {
 				const formValues = Object.fromEntries(formData);
-				const bookingData = bookings.map(
-					(booking: {
-						selectedLocationId: number | null;
-						selectedDuration: string;
-						durationType: 'hours' | 'overnights';
-						durationValue: number;
-						selectedDate: Date | null;
-						selectedProducts: SelectedProduct[];
-						selectedAddons: SelectedAddon[];
-						priceGroupQuantities: Record<number, number>;
-						selectedStartTime: SelectedStartTime | null;
-						totalPrice: number;
-					}) => {
-						const hasBookingGuarantee =
-							booking.selectedAddons?.some(
-								(addon: any) => addon.addonId === 4 && addon.quantity > 0
-							) ?? false;
-
-						// Ensure priceGroups is an array
-						const priceGroupsData = Array.isArray(booking.priceGroupQuantities)
-							? booking.priceGroupQuantities
-							: Object.entries(booking.priceGroupQuantities || {}).map(([id, quantity]) => ({
-									id: parseInt(id),
-									quantity
-								}));
-
-						return {
-							firstName: formValues.firstName,
-							lastName: formValues.lastName,
-							email: formValues.email,
-							phone: formValues.phone,
-							comment: formValues.comment,
-							experienceId,
-							experienceType,
-							startLocationId: booking.selectedLocationId,
-							durationId: booking.selectedDuration,
-							startDate: booking.selectedDate,
-							startTime: booking.selectedStartTime?.startTime,
-							endTime: booking.selectedStartTime?.endTime,
-							priceGroups: priceGroupsData,
-							hasBookingGuarantee,
-							totalPrice: booking.totalPrice
-						};
-					}
-				);
+				const bookingData = bookings.map((booking: Booking) => ({
+					firstName: formValues.firstName,
+					lastName: formValues.lastName,
+					email: formValues.email,
+					phone: formValues.phone,
+					comment: formValues.comment,
+					experienceId,
+					experienceType,
+					startLocationId: booking.selectedLocationId,
+					durationId: booking.selectedDuration,
+					startDate: booking.selectedDate?.toISOString().split('T')[0],
+					products: booking.selectedProducts,
+					addons: booking.selectedAddons,
+					priceGroups: Object.entries(booking.priceGroupQuantities).map(([id, quantity]) => ({
+						id: parseInt(id),
+						quantity
+					})),
+					startTime: booking.selectedStartTime?.startTime,
+					endTime: booking.selectedStartTime?.endTime,
+					hasBookingGuarantee: booking.selectedAddons?.some((addon) => addon.addonId === 4),
+					totalPrice: booking.totalPrice
+				}));
 
 				const response = await fetch('/api/create-checkout-session', {
 					method: 'POST',
@@ -132,6 +111,10 @@
 						bookings: bookingData
 					})
 				});
+
+				if (!response.ok) {
+					throw new Error(`HTTP error! status: ${response.status}`);
+				}
 
 				const { url, error } = await response.json();
 				if (error) throw new Error(error);
@@ -151,6 +134,20 @@
 			!$errors.phone &&
 			$formData.acceptTerms
 	);
+
+	let totalBookingsPrice = $derived(() => {
+		return bookings.reduce((sum: number, b: { totalPrice: number }) => sum + b.totalPrice, 0);
+	});
+
+	let displayTotalPrice = $derived(() => {
+		const baseTotal = totalBookingsPrice();
+		const totalIncVat = getPaymentPrice(baseTotal, experienceType);
+
+		if (experienceType === 'private') {
+			return formatPrice(totalIncVat);
+		}
+		return `${formatPrice(baseTotal)} exkl. moms (${formatPrice(totalIncVat)} inkl. moms)`;
+	});
 </script>
 
 <div class="mx-auto max-w-2xl space-y-8">
@@ -182,12 +179,23 @@
 					</ul>
 				{/if}
 				<div class="border-t pt-2">
-					<p class="font-medium">Pris för denna bokning: {formatPrice(booking.totalPrice)}</p>
+					<p class="font-medium">
+						Pris för denna bokning:
+						{#if experienceType === 'private'}
+							{formatPrice(getPaymentPrice(booking.totalPrice, experienceType))}
+						{:else}
+							{formatPrice(booking.totalPrice)} exkl. moms ({formatPrice(
+								getPaymentPrice(booking.totalPrice, experienceType)
+							)} inkl. moms)
+						{/if}
+					</p>
 				</div>
 			</div>
 		{/each}
 		<div class="rounded-lg border bg-muted p-4">
-			<p class="text-xl font-semibold">Pris total för alla bokningar: {formatPrice(totalPrice)}</p>
+			<p class="text-xl font-semibold">
+				Pris total för alla bokningar: {displayTotalPrice()}
+			</p>
 		</div>
 	</div>
 

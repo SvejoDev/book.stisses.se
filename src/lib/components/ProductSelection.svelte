@@ -53,15 +53,13 @@
 	let totalProductPrice = $derived(() => {
 		if (pricingType === 'per_person') return 0;
 
-		const total = Object.entries(selectedQuantities).reduce((total, [productId, quantity]) => {
+		return Object.entries(selectedQuantities).reduce((total, [productId, quantity]) => {
 			const product = products.find((p) => p.id === parseInt(productId));
 			if (product?.price) {
 				return total + getDisplayPrice(product.price * quantity, experienceType);
 			}
 			return total;
 		}, 0);
-
-		return total;
 	});
 
 	async function fetchProducts() {
@@ -145,19 +143,15 @@
 		}
 	}
 
-	// Notify parent of quantity changes
+	// Ensure quantity changes trigger updates
 	$effect(() => {
 		const selectedProducts = Object.entries(selectedQuantities)
 			.filter(([_, quantity]) => quantity > 0)
-			.map(([productId, quantity]) => {
-				const product = products.find((p) => p.id === parseInt(productId));
-
-				return {
-					productId: parseInt(productId),
-					quantity,
-					price: product?.price
-				};
-			});
+			.map(([productId, quantity]) => ({
+				productId: parseInt(productId),
+				quantity,
+				price: products.find((p) => p.id === parseInt(productId))?.price
+			}));
 
 		onProductsSelected(selectedProducts);
 	});

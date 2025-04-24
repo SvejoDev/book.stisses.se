@@ -58,7 +58,7 @@
 	let hasAttemptedFetch = $state(false);
 
 	let totalAddonPrice = $derived(() => {
-		const total = addons.reduce((total, addon) => {
+		return addons.reduce((total, addon) => {
 			if (!addon.price) return total;
 
 			let addonTotal = 0;
@@ -71,8 +71,6 @@
 
 			return total + addonTotal;
 		}, 0);
-
-		return total;
 	});
 
 	async function fetchAddons() {
@@ -170,28 +168,20 @@
 	// Notify parent of quantity changes
 	$effect(() => {
 		const selectedAddons = [
-			// Per-unit addons
 			...Object.entries(selectedQuantities)
 				.filter(([_, quantity]) => quantity > 0)
-				.map(([addonId, quantity]) => {
-					const addon = addons.find((a) => a.id === parseInt(addonId));
-					return {
-						addonId: parseInt(addonId),
-						quantity,
-						price: addon?.price
-					};
-				}),
-			// Per-person addons
+				.map(([addonId, quantity]) => ({
+					addonId: parseInt(addonId),
+					quantity,
+					price: addons.find((a) => a.id === parseInt(addonId))?.price
+				})),
 			...Object.entries(selectedPerPersonAddons)
 				.filter(([_, selected]) => selected)
-				.map(([addonId]) => {
-					const addon = addons.find((a) => a.id === parseInt(addonId));
-					return {
-						addonId: parseInt(addonId),
-						quantity: payingCustomers,
-						price: addon?.price
-					};
-				})
+				.map(([addonId]) => ({
+					addonId: parseInt(addonId),
+					quantity: payingCustomers,
+					price: addons.find((a) => a.id === parseInt(addonId))?.price
+				}))
 		];
 
 		onAddonsSelected(selectedAddons);

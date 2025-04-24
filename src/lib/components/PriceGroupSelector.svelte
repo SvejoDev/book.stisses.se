@@ -64,16 +64,11 @@
 	let calculatedBaseTotalExclVat = $derived(() => {
 		if (pricingType === 'per_product') return 0;
 
-		// Calculate base price from price groups using group.price (excl. VAT)
-		const baseTotal = Object.entries(quantities).reduce((sum, [groupId, quantity]) => {
+		return Object.entries(quantities).reduce((sum, [groupId, quantity]) => {
 			const group = priceGroups.find((g: PriceGroup) => g.id === parseInt(groupId));
 			if (!group || !group.is_payable) return sum;
-
-			// Use group.price which is always excl. VAT for the calculation
 			return sum + group.price * quantity;
 		}, 0);
-
-		return baseTotal;
 	});
 
 	$effect(() => {
@@ -81,6 +76,10 @@
 			quantities = {};
 			onQuantityChange({});
 		}
+	});
+
+	$effect(() => {
+		onQuantityChange(quantities);
 	});
 
 	function increment(groupId: number) {
