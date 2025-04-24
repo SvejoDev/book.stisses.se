@@ -497,28 +497,33 @@ export const POST: RequestHandler = async ({ request }) => {
 
       const createdBookings = await Promise.all(bookingPromises);
 
+      // Send email confirmations for each booking in parallel
+      const emailPromises = createdBookings.map(async (booking) => {
+        try {
+          const emailEndpoint = `${PUBLIC_SUPABASE_URL}/functions/v1/send-booking-confirmation`;
+          await fetch(emailEndpoint, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`
+            },
+            body: JSON.stringify({
+              bookingId: booking.id
+            })
+          });
+        } catch (error) {
+          console.error(`Error sending confirmation email for booking ${booking.id}:`, error);
+        }
+      });
+
+      // Wait for all emails to be sent
+      await Promise.all(emailPromises);
+
       // Clean up the pending booking
       await supabase
         .from('pending_bookings')
         .delete()
         .eq('session_id', session.id);
-
-      // Send email confirmation as before
-      try {
-        const emailEndpoint = `${PUBLIC_SUPABASE_URL}/functions/v1/send-booking-confirmation`;
-        await fetch(emailEndpoint, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`
-          },
-          body: JSON.stringify({
-            bookingId: createdBookings[0].id
-          })
-        });
-      } catch (error) {
-        console.error('Error sending confirmation email:', error);
-      }
 
     } catch (error) {
       console.error('Error processing webhook:', error);
