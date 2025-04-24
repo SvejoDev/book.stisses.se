@@ -65,7 +65,10 @@ export const POST: RequestHandler = async ({ request }) => {
     const bookingNumber = `BK-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     
     // Calculate total price for all bookings (always including VAT)
-    const totalPrice = bookings.reduce((sum: number, booking: any) => sum + booking.totalPrice, 0);
+    const totalPrice = bookings.reduce((sum: number, booking: any) => {
+      // Use getPaymentPrice to ensure VAT is included for private experiences
+      return sum + getPaymentPrice(booking.totalPrice, booking.experienceType);
+    }, 0);
 
     // Create a simplified metadata object to stay within Stripe's 500 character limit
     const metadataBookings = bookings.map((booking: any) => ({

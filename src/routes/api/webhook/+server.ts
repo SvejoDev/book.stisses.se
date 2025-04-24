@@ -7,6 +7,7 @@ import { PUBLIC_SUPABASE_URL } from '$env/static/public';
 import { SUPABASE_SERVICE_ROLE_KEY } from '$env/static/private';
 import { addDays, format, parseISO } from 'date-fns';
 import { getPaymentPrice } from '$lib/utils/price';
+import { v4 as uuidv4 } from 'uuid';
 
 // Create a Supabase client with the service role key for the webhook
 const supabase = createClient(
@@ -372,13 +373,18 @@ export const POST: RequestHandler = async ({ request }) => {
 
       const bookings = pendingBooking.booking_data;
       
+      // Generate a unique booking number using timestamp and UUID
+      const timestamp = Date.now();
+      const uniqueId = uuidv4().split('-')[0]; // Take first part of UUID
+      const bookingNumber = `BK-${timestamp}-${uniqueId}`;
+      
       // Create bookings in parallel
       const bookingPromises = bookings.map(async (booking: any) => {
         const { data: bookingData, error: bookingError } = await supabase
           .from('bookings')
           .insert([
             {
-              booking_number: pendingBooking.booking_number,
+              booking_number: bookingNumber, // Use the new booking number
               first_name: booking.firstName,
               last_name: booking.lastName,
               email: booking.email,
@@ -390,7 +396,7 @@ export const POST: RequestHandler = async ({ request }) => {
               duration_id: booking.durationId,
               start_date: booking.startDate,
               start_time: booking.startTime,
-              end_date: booking.startDate, // or calculate based on duration
+              end_date: booking.startDate,
               end_time: booking.endTime,
               has_booking_guarantee: booking.hasBookingGuarantee,
               total_price: booking.totalPrice,
