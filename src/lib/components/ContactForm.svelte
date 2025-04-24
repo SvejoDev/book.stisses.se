@@ -8,6 +8,24 @@
 	import { superForm, type SuperValidated } from 'sveltekit-superforms/client';
 	import { zodClient } from 'sveltekit-superforms/adapters';
 	import { z } from 'zod';
+	import { formatPrice } from '$lib/utils/price';
+
+	interface SelectedProduct {
+		productId: number;
+		quantity: number;
+		price?: number;
+	}
+
+	interface SelectedAddon {
+		addonId: number;
+		quantity: number;
+		price?: number;
+	}
+
+	interface SelectedStartTime {
+		startTime: string;
+		endTime: string;
+	}
 
 	// Define the form schema
 	export const formSchema = z.object({
@@ -23,12 +41,25 @@
 
 	type FormSchema = z.infer<typeof formSchema>;
 
-	let { data, totalPrice, bookingData } = $props<{
+	let { data, totalPrice, bookings, experienceId, experienceType } = $props<{
 		data?: {
 			form: SuperValidated<FormSchema>;
 		};
 		totalPrice: number;
-		bookingData: any;
+		bookings: Array<{
+			selectedLocationId: number | null;
+			selectedDuration: string;
+			durationType: 'hours' | 'overnights';
+			durationValue: number;
+			selectedDate: Date | null;
+			selectedProducts: SelectedProduct[];
+			selectedAddons: SelectedAddon[];
+			priceGroupQuantities: Record<number, number>;
+			selectedStartTime: SelectedStartTime | null;
+			totalPrice: number;
+		}>;
+		experienceId: number;
+		experienceType: string;
 	}>();
 
 	const defaultData = {
@@ -46,17 +77,51 @@
 		onSubmit: async ({ formData }) => {
 			try {
 				const formValues = Object.fromEntries(formData);
-				const hasBookingGuarantee =
-					bookingData.addons?.some((addon: any) => addon.addonId === 4 && addon.quantity > 0) ??
-					false;
+				const bookingData = bookings.map(
+					(booking: {
+						selectedLocationId: number | null;
+						selectedDuration: string;
+						durationType: 'hours' | 'overnights';
+						durationValue: number;
+						selectedDate: Date | null;
+						selectedProducts: SelectedProduct[];
+						selectedAddons: SelectedAddon[];
+						priceGroupQuantities: Record<number, number>;
+						selectedStartTime: SelectedStartTime | null;
+						totalPrice: number;
+					}) => {
+						const hasBookingGuarantee =
+							booking.selectedAddons?.some(
+								(addon: any) => addon.addonId === 4 && addon.quantity > 0
+							) ?? false;
 
-				// Ensure priceGroups is an array
-				const priceGroupsData = Array.isArray(bookingData.priceGroups)
-					? bookingData.priceGroups
-					: Object.entries(bookingData.priceGroups || {}).map(([id, quantity]) => ({
-							id: parseInt(id),
-							quantity
-						}));
+						// Ensure priceGroups is an array
+						const priceGroupsData = Array.isArray(booking.priceGroupQuantities)
+							? booking.priceGroupQuantities
+							: Object.entries(booking.priceGroupQuantities || {}).map(([id, quantity]) => ({
+									id: parseInt(id),
+									quantity
+								}));
+
+						return {
+							firstName: formValues.firstName,
+							lastName: formValues.lastName,
+							email: formValues.email,
+							phone: formValues.phone,
+							comment: formValues.comment,
+							experienceId,
+							experienceType,
+							startLocationId: booking.selectedLocationId,
+							durationId: booking.selectedDuration,
+							startDate: booking.selectedDate,
+							startTime: booking.selectedStartTime?.startTime,
+							endTime: booking.selectedStartTime?.endTime,
+							priceGroups: priceGroupsData,
+							hasBookingGuarantee,
+							totalPrice: booking.totalPrice
+						};
+					}
+				);
 
 				const response = await fetch('/api/create-checkout-session', {
 					method: 'POST',
@@ -64,15 +129,7 @@
 						'Content-Type': 'application/json'
 					},
 					body: JSON.stringify({
-						firstName: formValues.firstName,
-						lastName: formValues.lastName,
-						email: formValues.email,
-						phone: formValues.phone,
-						comment: formValues.comment,
-						...bookingData,
-						priceGroups: priceGroupsData,
-						hasBookingGuarantee,
-						totalPrice
+						bookings: bookingData
 					})
 				});
 
@@ -97,6 +154,43 @@
 </script>
 
 <div class="mx-auto max-w-2xl space-y-8">
+	<div class="space-y-4">
+		<h2 class="text-center text-2xl font-semibold">Din bokning</h2>
+		{#each bookings as booking, i}
+			<div class="space-y-2 rounded-lg border p-4">
+				<h3 class="font-medium">Bokning {i + 1}</h3>
+				{#if booking.selectedDate}
+					<p>Datum: {new Date(booking.selectedDate).toLocaleDateString('sv-SE')}</p>
+				{/if}
+				{#if booking.selectedStartTime}
+					<p>Tid: {booking.selectedStartTime.startTime} - {booking.selectedStartTime.endTime}</p>
+				{/if}
+				{#if booking.selectedProducts.length > 0}
+					<p>Utrustning:</p>
+					<ul class="list-disc pl-4">
+						{#each booking.selectedProducts as product}
+							<li>{product.quantity}x Produkt {product.productId}</li>
+						{/each}
+					</ul>
+				{/if}
+				{#if booking.selectedAddons.length > 0}
+					<p>Tillägg:</p>
+					<ul class="list-disc pl-4">
+						{#each booking.selectedAddons as addon}
+							<li>{addon.quantity}x Tillägg {addon.addonId}</li>
+						{/each}
+					</ul>
+				{/if}
+				<div class="border-t pt-2">
+					<p class="font-medium">Pris för denna bokning: {formatPrice(booking.totalPrice)}</p>
+				</div>
+			</div>
+		{/each}
+		<div class="rounded-lg border bg-muted p-4">
+			<p class="text-xl font-semibold">Pris total för alla bokningar: {formatPrice(totalPrice)}</p>
+		</div>
+	</div>
+
 	<div class="space-y-2 text-center">
 		<h2 class="text-2xl font-semibold">Kontaktuppgifter</h2>
 		<p class="text-muted-foreground">Fyll i dina kontaktuppgifter för bokningen</p>

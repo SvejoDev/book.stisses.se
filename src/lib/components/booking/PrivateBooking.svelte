@@ -300,9 +300,87 @@
 	let showContactForm = $state(false);
 
 	let selectedStartTime = $state<SelectedStartTime | null>(null);
+	let showMultipleBookingOption = $state(false);
+	let currentBookingIndex = $state(0);
+	let totalBookings = $state(1);
+	let allBookings = $state<
+		Array<{
+			selectedLocationId: number | null;
+			selectedDuration: string;
+			durationType: 'hours' | 'overnights';
+			durationValue: number;
+			selectedDate: Date | null;
+			selectedProducts: SelectedProduct[];
+			selectedAddons: SelectedAddon[];
+			priceGroupQuantities: Record<number, number>;
+			selectedStartTime: SelectedStartTime | null;
+			totalPrice: number;
+		}>
+	>([
+		{
+			selectedLocationId: null,
+			selectedDuration: '',
+			durationType: 'hours',
+			durationValue: 0,
+			selectedDate: null,
+			selectedProducts: [],
+			selectedAddons: [],
+			priceGroupQuantities: {},
+			selectedStartTime: null,
+			totalPrice: 0
+		}
+	]);
 
 	function handleStartTimeSelect(time: SelectedStartTime) {
 		selectedStartTime = time;
+		showMultipleBookingOption = true;
+		// Update the current booking in allBookings with the correct total price
+		allBookings[currentBookingIndex] = {
+			selectedLocationId,
+			selectedDuration,
+			durationType,
+			durationValue,
+			selectedDate,
+			selectedProducts,
+			selectedAddons,
+			priceGroupQuantities,
+			selectedStartTime: time,
+			totalPrice: totalPrice() // Add the current total price to the booking
+		};
+	}
+
+	function addAnotherBooking() {
+		totalBookings++;
+		currentBookingIndex++;
+		// Reset all state for new booking
+		selectedLocationId = null;
+		selectedDuration = '';
+		durationType = 'hours';
+		durationValue = 0;
+		selectedDate = null;
+		selectedProducts = [];
+		selectedAddons = [];
+		priceGroupQuantities = {};
+		selectedStartTime = null;
+		showMultipleBookingOption = false;
+		showDurations = false;
+
+		// Add new empty booking to allBookings
+		allBookings.push({
+			selectedLocationId: null,
+			selectedDuration: '',
+			durationType: 'hours',
+			durationValue: 0,
+			selectedDate: null,
+			selectedProducts: [],
+			selectedAddons: [],
+			priceGroupQuantities: {},
+			selectedStartTime: null,
+			totalPrice: 0
+		});
+	}
+
+	function proceedToContactForm() {
 		showContactForm = true;
 		setTimeout(() => {
 			window.scrollTo({
@@ -311,6 +389,15 @@
 			});
 		}, 100);
 	}
+
+	// Update the total price calculation in the contact form section
+	let totalPriceForAllBookings = $derived(() => {
+		return allBookings.reduce((sum, booking) => sum + (booking.totalPrice || 0), 0);
+	});
+
+	let displayTotalForAllBookings = $derived(() => {
+		return getDisplayPrice(totalPriceForAllBookings(), experience.type);
+	});
 </script>
 
 <div class="space-y-16">
@@ -406,8 +493,15 @@
 					/>
 
 					{#if pricingType !== 'per_person' && totalPrice() > 0}
-						<div class="text-center text-xl font-semibold">
-							Totalt att betala: {formatPrice(displayTotal())}
+						<div class="space-y-2 text-center">
+							<p class="text-xl font-semibold">
+								Pris för denna bokning: {formatPrice(displayTotal())}
+							</p>
+							{#if allBookings.length > 1}
+								<p class="text-xl font-semibold">
+									Pris total för alla bokningar: {formatPrice(totalPriceForAllBookings())}
+								</p>
+							{/if}
 						</div>
 					{/if}
 
@@ -431,23 +525,24 @@
 		{/if}
 	{/if}
 
-	{#if showContactForm && selectedStartTime}
+	{#if showMultipleBookingOption}
+		<div class="mt-8 flex justify-center gap-4">
+			<button class="rounded-md bg-primary px-4 py-2 text-white" onclick={proceedToContactForm}>
+				Fortsätt till kontaktuppgifter
+			</button>
+			<button class="rounded-md bg-secondary px-4 py-2 text-white" onclick={addAnotherBooking}>
+				Gör en bokning till
+			</button>
+		</div>
+	{/if}
+
+	{#if showContactForm && allBookings.some((booking) => booking.selectedStartTime)}
 		<section class="space-y-4">
 			<ContactForm
 				totalPrice={totalPrice()}
-				bookingData={{
-					experienceId: parseInt(experience.id),
-					experienceType: experience.type,
-					startLocationId: selectedLocationId,
-					durationId: selectedDuration,
-					startDate: selectedDate,
-					startTime: selectedStartTime.startTime,
-					endDate: selectedDate,
-					endTime: selectedStartTime.endTime,
-					priceGroups: priceGroupQuantities,
-					products: selectedProducts,
-					addons: selectedAddons
-				}}
+				bookings={allBookings}
+				experienceId={parseInt(experience.id)}
+				experienceType={experience.type}
 			/>
 		</section>
 	{/if}

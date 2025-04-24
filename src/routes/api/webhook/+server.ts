@@ -360,120 +360,133 @@ export const POST: RequestHandler = async ({ request }) => {
     
     try {
       const metadata = session.metadata as any;
-      const priceGroups = JSON.parse(metadata.price_groups);
-      const products = JSON.parse(metadata.products);
-      const addons = JSON.parse(metadata.addons);
+      const bookings = JSON.parse(metadata.bookings);
       
       if (session.amount_total === null || session.amount_total === undefined) {
         throw new Error('Stripe session is missing final amount information.');
       }
       const totalPriceIncludingVat = session.amount_total / 100;
 
-      const { data: booking, error: bookingError } = await supabase
-        .from('bookings')
-        .insert([
-          {
-            booking_number: metadata.booking_number,
-            first_name: metadata.first_name,
-            last_name: metadata.last_name,
-            email: metadata.email,
-            phone: metadata.phone,
-            comment: metadata.comment,
-            experience_id: metadata.experience_id,
-            experience_type: metadata.experience_type,
-            start_location_id: metadata.start_location_id,
-            duration_id: metadata.duration_id,
-            start_date: metadata.start_date,
-            start_time: metadata.start_time,
-            end_date: metadata.end_date,
-            end_time: metadata.end_time,
-            has_booking_guarantee: metadata.has_booking_guarantee === 'true',
-            total_price: Math.round(totalPriceIncludingVat),
-            is_paid: true,
-            stripe_payment_id: session.payment_intent as string,
-            availability_confirmed: true
-          }
-        ])
-        .select()
-        .single();
+      // Create bookings in parallel
+      const bookingPromises = bookings.map(async (booking: any) => {
+        const { data: bookingData, error: bookingError } = await supabase
+          .from('bookings')
+          .insert([
+            {
+              booking_number: metadata.booking_number,
+              first_name: metadata.first_name,
+              last_name: metadata.last_name,
+              email: metadata.email,
+              phone: metadata.phone,
+              comment: metadata.comment,
+              experience_id: booking.experience_id,
+              experience_type: booking.experience_type,
+              start_location_id: booking.start_location_id,
+              duration_id: booking.duration_id,
+              start_date: booking.start_date,
+              start_time: booking.start_time,
+              end_date: booking.end_date,
+              end_time: booking.end_time,
+              has_booking_guarantee: booking.has_booking_guarantee === 'true',
+              total_price: Math.round(totalPriceIncludingVat / bookings.length),
+              is_paid: true,
+              stripe_payment_id: session.payment_intent as string,
+              availability_confirmed: true
+            }
+          ])
+          .select()
+          .single();
 
-      if (bookingError) {
-        return json({ error: 'Failed to create booking' }, { status: 500 });
-      }
+        if (bookingError) {
+          throw bookingError;
+        }
 
-      const [priceGroupsResult, productsResult, addonsResult] = await Promise.all([
-        (async () => {
-          const { data: priceGroupData, error: priceGroupError } = await supabase
-            .from('price_groups')
-            .select('id, price')
-            .in('id', Array.isArray(priceGroups) 
-              ? priceGroups.map(pg => pg.id)
-              : Object.keys(priceGroups).map(id => parseInt(id))
+        return bookingData;
+      });
+
+      const createdBookings = await Promise.all(bookingPromises);
+
+      // Process each booking's related data
+      for (const [index, booking] of createdBookings.entries()) {
+        const bookingData = bookings[index];
+        const priceGroups = JSON.parse(bookingData.price_groups);
+        const products = JSON.parse(bookingData.products);
+        const addons = JSON.parse(bookingData.addons);
+
+        const [priceGroupsResult, productsResult, addonsResult] = await Promise.all([
+          (async () => {
+            const { data: priceGroupData, error: priceGroupError } = await supabase
+              .from('price_groups')
+              .select('id, price')
+              .in('id', Array.isArray(priceGroups) 
+                ? priceGroups.map((pg: any) => pg.id)
+                : Object.keys(priceGroups).map(id => parseInt(id))
+              );
+
+            if (priceGroupError) {
+              throw priceGroupError;
+            }
+
+            const priceMap = new Map(priceGroupData.map(pg => [pg.id, pg.price]));
+
+            return supabase.from('booking_price_groups').insert(
+              Array.isArray(priceGroups) 
+                ? priceGroups.map((pg: any) => ({
+                    booking_id: booking.id,
+                    price_group_id: pg.id,
+                    quantity: pg.quantity,
+                    price_at_time: priceMap.get(pg.id) || 0
+                  }))
+                : Object.entries(priceGroups).map(([id, quantity]) => ({
+                    booking_id: booking.id,
+                    price_group_id: parseInt(id),
+                    quantity,
+                    price_at_time: priceMap.get(parseInt(id)) || 0
+                  }))
             );
+          })(),
 
-          if (priceGroupError) {
-            throw priceGroupError;
-          }
+          supabase.from('booking_products').insert(
+            products.map((p: any) => ({
+              booking_id: booking.id,
+              product_id: p.productId,
+              quantity: p.quantity,
+              price_at_time: p.price
+            }))
+          ),
 
-          const priceMap = new Map(priceGroupData.map(pg => [pg.id, pg.price]));
+          supabase.from('booking_addons').insert(
+            addons.map((a: any) => ({
+              booking_id: booking.id,
+              addon_id: a.addonId,
+              quantity: a.quantity,
+              price_at_time: a.price
+            }))
+          )
+        ]);
 
-          return supabase.from('booking_price_groups').insert(
-            Array.isArray(priceGroups) 
-              ? priceGroups.map((pg: any) => ({
-                  booking_id: booking.id,
-                  price_group_id: pg.id,
-                  quantity: pg.quantity,
-                  price_at_time: priceMap.get(pg.id) || 0
-                }))
-              : Object.entries(priceGroups).map(([id, quantity]) => ({
-                  booking_id: booking.id,
-                  price_group_id: parseInt(id),
-                  quantity,
-                  price_at_time: priceMap.get(parseInt(id)) || 0
-                }))
-          );
-        })(),
+        if (priceGroupsResult.error) {
+          throw priceGroupsResult.error;
+        }
+        if (productsResult.error) {
+          throw productsResult.error;
+        }
+        if (addonsResult.error) {
+          throw addonsResult.error;
+        }
 
-        supabase.from('booking_products').insert(
-          products.map((p: any) => ({
-            booking_id: booking.id,
-            product_id: p.productId,
-            quantity: p.quantity,
-            price_at_time: p.price
-          }))
-        ),
+        const formattedProducts = products.map((p: any) => ({
+          id: p.productId,
+          quantity: p.quantity
+        }));
 
-        supabase.from('booking_addons').insert(
-          addons.map((a: any) => ({
-            booking_id: booking.id,
-            addon_id: a.addonId,
-            quantity: a.quantity,
-            price_at_time: a.price
-          }))
-        )
-      ]);
+        const formattedAddons = addons.map((a: any) => ({
+          id: a.addonId,
+          quantity: a.quantity
+        }));
 
-      if (priceGroupsResult.error) {
-        throw priceGroupsResult.error;
+        await updateAvailabilityForBooking(booking, formattedProducts, formattedAddons);
       }
-      if (productsResult.error) {
-        throw productsResult.error;
-      }
-      if (addonsResult.error) {
-        throw addonsResult.error;
-      }
-
-      const formattedProducts = products.map((p: any) => ({
-        id: p.productId,
-        quantity: p.quantity
-      }));
-
-      const formattedAddons = addons.map((a: any) => ({
-        id: a.addonId,
-        quantity: a.quantity
-      }));
-
-      await updateAvailabilityForBooking(booking as Booking, formattedProducts, formattedAddons);
 
       try {
         const emailEndpoint = `${PUBLIC_SUPABASE_URL}/functions/v1/send-booking-confirmation`;
@@ -485,7 +498,7 @@ export const POST: RequestHandler = async ({ request }) => {
             'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`
           },
           body: JSON.stringify({
-            bookingId: booking.id
+            bookingId: createdBookings[0].id // Send confirmation for the first booking
           })
         });
 

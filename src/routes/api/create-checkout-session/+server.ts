@@ -59,84 +59,16 @@ async function checkAvailability(
 
 export const POST: RequestHandler = async ({ request }) => {
   try {
-    const {
-      firstName,
-      lastName,
-      email,
-      phone,
-      comment,
-      experienceId,
-      experienceType,
-      startLocationId,
-      durationId,
-      startDate,
-      startTime,
-      endTime,
-      priceGroups,
-      products,
-      addons,
-      totalPrice,
-      hasBookingGuarantee
-    } = await request.json();
-
-    // Get duration details to calculate proper end date
-    const { data: durationData, error: durationError } = await supabase
-      .from('durations')
-      .select('duration_type, duration_value')
-      .eq('id', durationId)
-      .single();
-
-    if (durationError) throw durationError;
-
-    // Calculate the proper end date based on duration
-    const calculatedEndDate = calculateEndDate(
-      startDate,
-      durationData.duration_type,
-      durationData.duration_value
-    );
-
-    // Convert times to minutes
-    const startMinutes = timeToMinutes(startTime);
-    const endMinutes = timeToMinutes(endTime);
-
-    // Check availability for all products
-    for (const product of products) {
-      const isAvailable = await checkAvailability(
-        product.productId,
-        startDate,
-        startMinutes,
-        endMinutes,
-        product.quantity
-      );
-
-      if (!isAvailable) {
-        return json({ error: 'Selected products are no longer available for the chosen time' }, { status: 400 });
-      }
-
-      // If overnight, check next day too
-      if (durationData.duration_type === 'overnights') {
-        const nextDayAvailable = await checkAvailability(
-          product.productId,
-          calculatedEndDate,
-          0,
-          endMinutes,
-          product.quantity
-        );
-
-        if (!nextDayAvailable) {
-          return json({ error: 'Selected products are no longer available for the chosen time' }, { status: 400 });
-        }
-      }
-    }
-
-    // Generate booking number
+    const { bookings } = await request.json();
+    
+    // Generate a single booking number for all bookings
     const bookingNumber = `BK-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-
+    
     // Fetch experience details
     const { data: experience, error: experienceError } = await supabase
       .from('experiences')
       .select('name')
-      .eq('id', experienceId)
+      .eq('id', bookings[0].experienceId)
       .single();
 
     if (experienceError) throw experienceError;
@@ -144,28 +76,33 @@ export const POST: RequestHandler = async ({ request }) => {
     // Create metadata object with all booking information
     const bookingMetadata = {
       booking_number: bookingNumber,
-      first_name: firstName,
-      last_name: lastName,
-      email,
-      phone,
-      comment,
-      experience_id: experienceId,
-      experience_type: experienceType,
-      start_location_id: startLocationId,
-      duration_id: durationId,
-      start_date: startDate,
-      end_date: calculatedEndDate,
-      start_time: startTime,
-      end_time: endTime,
-      has_booking_guarantee: hasBookingGuarantee ? 'true' : 'false',
-      total_price: totalPrice.toString(),
-      price_groups: JSON.stringify(priceGroups),
-      products: JSON.stringify(products),
-      addons: JSON.stringify(addons)
+      first_name: bookings[0].firstName,
+      last_name: bookings[0].lastName,
+      email: bookings[0].email,
+      phone: bookings[0].phone,
+      comment: bookings[0].comment,
+      total_price: bookings.reduce((sum: number, booking: any) => sum + booking.totalPrice, 0).toString(),
+      bookings: JSON.stringify(bookings.map((booking: any) => ({
+        experience_id: booking.experienceId,
+        experience_type: booking.experienceType,
+        start_location_id: booking.startLocationId,
+        duration_id: booking.durationId,
+        start_date: booking.startDate,
+        end_date: booking.startDate, // Same as start date for now
+        start_time: booking.startTime,
+        end_time: booking.endTime,
+        has_booking_guarantee: booking.hasBookingGuarantee ? 'true' : 'false',
+        price_groups: JSON.stringify(booking.priceGroups),
+        products: JSON.stringify(booking.products || []),
+        addons: JSON.stringify(booking.addons || [])
+      })))
     };
 
     // Calculate the final price for payment (always including VAT regardless of experience type)
-    const finalPrice = getPaymentPrice(parseFloat(totalPrice), experienceType);
+    const finalPrice = getPaymentPrice(
+      bookings.reduce((sum: number, booking: any) => sum + booking.totalPrice, 0),
+      bookings[0].experienceType
+    );
 
     // Create Stripe checkout session
     const session = await stripe.checkout.sessions.create({
@@ -176,8 +113,8 @@ export const POST: RequestHandler = async ({ request }) => {
             currency: 'sek',
             product_data: {
               name: experience.name,
-              description: `${getDurationText(durationData.duration_type, durationData.duration_value)} - ${formatBookingPeriod(startDate, calculatedEndDate, startTime, endTime, durationData.duration_type === 'overnights')}`,
-              images: [products[0]?.image_url]
+              description: `${bookings.length} bokning${bookings.length > 1 ? 'ar' : ''}`,
+              images: [bookings[0].products?.[0]?.image_url]
             },
             unit_amount: Math.round(finalPrice * 100) // Round to whole cents
           },
@@ -187,7 +124,7 @@ export const POST: RequestHandler = async ({ request }) => {
       mode: 'payment',
       success_url: `${request.headers.get('origin')}/booking/success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${request.headers.get('origin')}/booking/cancel`,
-      customer_email: email,
+      customer_email: bookings[0].email,
       metadata: bookingMetadata
     });
 
