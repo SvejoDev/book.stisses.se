@@ -8,7 +8,8 @@
 
 	// --- Props ---
 	let { data } = $props<{ data: PageData }>();
-	let booking = $derived(data.booking);
+	let bookings = $derived(data.bookings);
+	let totalBookings = $derived(data.totalBookings);
 
 	// --- Price Calculation Helpers ---
 	function calculatePriceExcludingVat(totalIncludingVat: number): number {
@@ -20,36 +21,24 @@
 		return totalIncludingVat - priceExcludingVat;
 	}
 
-	function calculateVatAmountFromIncluded(totalIncludingVat: number): number {
-		const priceExcludingVat = calculatePriceExcludingVat(totalIncludingVat);
-		return totalIncludingVat - priceExcludingVat;
-	}
-
 	function formatPrice(amount: number): string {
 		return new Intl.NumberFormat('sv-SE', {
 			style: 'currency',
 			currency: 'SEK',
-			minimumFractionDigits: 0, // Show whole numbers for SEK
+			minimumFractionDigits: 0,
 			maximumFractionDigits: 0
 		}).format(amount);
 	}
 
 	// --- Derived Values for Display ---
-	let totalPriceIncludingVat = $derived(() => booking.total_price || 0);
+	let totalPriceIncludingVat = $derived(() =>
+		bookings.reduce(
+			(sum: number, booking: { total_price: number }) => sum + (booking.total_price || 0),
+			0
+		)
+	);
 	let totalPriceExcludingVat = $derived(() => calculatePriceExcludingVat(totalPriceIncludingVat()));
-	let totalVatAmount = $derived(() => calculateVatAmountFromIncluded(totalPriceIncludingVat()));
-
-	let payingCustomersCount = $derived(
-		() =>
-			booking.booking_price_groups?.reduce(
-				(sum: number, group: { quantity: number }) => sum + group.quantity,
-				0
-			) || 0
-	);
-
-	let durationCostExclVat = $derived(
-		() => (booking.duration?.extra_price || 0) * payingCustomersCount()
-	);
+	let totalVatAmount = $derived(() => calculateVatAmount(totalPriceIncludingVat()));
 
 	// --- Formatting Helpers ---
 	function formatDateTime(date: string, time: string): string {
@@ -58,7 +47,7 @@
 			return format(dateTime, 'EEEE d MMMM yyyy, HH:mm', { locale: sv });
 		} catch (e) {
 			console.error('Error formatting date/time:', date, time, e);
-			return `${date} ${time}`; // Fallback
+			return `${date} ${time}`;
 		}
 	}
 
@@ -77,7 +66,7 @@
 </script>
 
 <svelte:head>
-	<title>Bokningsbekräftelse - {booking.booking_number}</title>
+	<title>Bokningsbekräftelse - {bookings[0].booking_number}</title>
 	<meta name="robots" content="noindex, nofollow" />
 </svelte:head>
 
@@ -90,175 +79,170 @@
 				Bokningsbekräftelse
 			</h1>
 			<p class="mt-2 text-base text-gray-500 sm:text-lg">
-				Tack för din bokning, {booking.first_name}!
+				Tack för din bokning, {bookings[0].first_name}!
 			</p>
 			<p class="mt-1 text-sm text-gray-500">
-				Bokningsnummer: <strong>{booking.booking_number}</strong>
+				Bokningsnummer: <strong>{bookings[0].booking_number}</strong>
+				{#if totalBookings > 1}
+					<span class="ml-2">(och {totalBookings - 1} till)</span>
+				{/if}
 			</p>
 		</header>
 
-		<div class="grid gap-6">
-			<!-- Experience Details -->
-			<section>
-				<h2 class="mb-3 text-lg font-semibold text-gray-800">Aktivitet</h2>
-				<div class="grid gap-4 sm:grid-cols-2">
-					<div>
-						<h3 class="text-sm font-medium text-gray-500">Namn</h3>
-						<p class="text-base text-gray-900">{booking.experience?.name || 'Okänd aktivitet'}</p>
-					</div>
-					<div>
-						<h3 class="text-sm font-medium text-gray-500">Startplats</h3>
-						<p class="text-base text-gray-900">
-							{booking.start_location?.name || 'Okänd startplats'}
-						</p>
-					</div>
-					<div>
-						<h3 class="text-sm font-medium text-gray-500">Längd</h3>
-						<p class="text-base text-gray-900">
-							{getDurationText(booking.duration?.duration_type, booking.duration?.duration_value)}
-						</p>
-					</div>
-				</div>
-			</section>
-
-			<!-- Date and Time -->
-			<section>
-				<h3 class="mb-2 text-lg font-semibold text-gray-800">Datum & Tid</h3>
-				<p class="text-base text-gray-900">
-					Start: {formatDateTime(booking.start_date, booking.start_time)}
-				</p>
-				<p class="text-base text-gray-900">
-					Slut: {formatDateTime(booking.end_date, booking.end_time)}
-				</p>
-			</section>
-
-			<!-- Contact Information -->
-			<section>
-				<h3 class="mb-2 text-lg font-semibold text-gray-800">Kontaktuppgifter</h3>
-				<div class="grid gap-1">
-					<p class="text-base text-gray-900">{booking.first_name} {booking.last_name}</p>
-					<p class="text-base text-gray-900">{booking.email}</p>
-					<p class="text-base text-gray-900">{booking.phone}</p>
-				</div>
-			</section>
-
-			<!-- Booking Items Breakdown -->
-			<section class="space-y-4 border-t border-gray-200 pt-6">
-				<h3 class="text-lg font-semibold text-gray-800">Bokningsdetaljer</h3>
-
-				<!-- Price Groups -->
-				{#if booking.booking_price_groups?.length}
-					<div class="flow-root">
-						<h4 class="mb-1 text-sm font-medium text-gray-500">Antal personer</h4>
-						<ul class="-my-2 divide-y divide-gray-200">
-							{#each booking.booking_price_groups as group (group.price_groups.id)}
-								<li class="flex py-2">
-									<span class="flex-1 text-base text-gray-900"
-										>{group.price_groups.display_name}</span
-									>
-									<span class="text-base text-gray-700">
-										{group.quantity} × {formatPrice(group.price_at_time || 0)} exkl. moms
-									</span>
-								</li>
-							{/each}
-						</ul>
-					</div>
+		{#each bookings as booking, i}
+			<div class="space-y-6 {i > 0 ? 'border-t border-gray-200 pt-6' : ''}">
+				{#if totalBookings > 1}
+					<h2 class="text-xl font-semibold text-gray-800">Bokning {i + 1} av {totalBookings}</h2>
 				{/if}
 
-				<!-- Products -->
-				{#if booking.booking_products?.length}
-					<div class="flow-root">
-						<h4 class="mb-1 text-sm font-medium text-gray-500">Utrustning</h4>
-						<ul class="-my-2 divide-y divide-gray-200">
-							{#each booking.booking_products as product (product.products.id)}
-								<li class="flex py-2">
-									<span class="flex-1 text-base text-gray-900">{product.products.name}</span>
-									<span class="text-base text-gray-700">
-										{product.quantity} × {formatPrice(product.price_at_time || 0)} exkl. moms
-									</span>
-								</li>
-							{/each}
-						</ul>
+				<!-- Experience Details -->
+				<section>
+					<h3 class="mb-3 text-lg font-semibold text-gray-800">Aktivitet</h3>
+					<div class="grid gap-4 sm:grid-cols-2">
+						<div>
+							<h4 class="text-sm font-medium text-gray-500">Namn</h4>
+							<p class="text-base text-gray-900">{booking.experience?.name || 'Okänd aktivitet'}</p>
+						</div>
+						<div>
+							<h4 class="text-sm font-medium text-gray-500">Startplats</h4>
+							<p class="text-base text-gray-900">
+								{booking.start_location?.name || 'Okänd startplats'}
+							</p>
+						</div>
+						<div>
+							<h4 class="text-sm font-medium text-gray-500">Längd</h4>
+							<p class="text-base text-gray-900">
+								{getDurationText(booking.duration?.duration_type, booking.duration?.duration_value)}
+							</p>
+						</div>
 					</div>
-				{/if}
-
-				<!-- Addons -->
-				{#if booking.booking_addons?.length}
-					<div class="flow-root">
-						<h4 class="mb-1 text-sm font-medium text-gray-500">Tillägg</h4>
-						<ul class="-my-2 divide-y divide-gray-200">
-							{#each booking.booking_addons as addon (addon.addons.id)}
-								<li class="flex py-2">
-									<span class="flex-1 text-base text-gray-900">{addon.addons.name}</span>
-									<span class="text-base text-gray-700">
-										{addon.quantity} × {formatPrice(addon.price_at_time || 0)} exkl. moms
-									</span>
-								</li>
-							{/each}
-						</ul>
-					</div>
-				{/if}
-
-				<!-- Duration Cost (if applicable) -->
-				{#if durationCostExclVat() > 0}
-					<div class="flow-root">
-						<h4 class="mb-1 text-sm font-medium text-gray-500">Tidslängd Kostnad</h4>
-						<ul class="-my-2 divide-y divide-gray-200">
-							<li class="flex py-2">
-								<span class="flex-1 text-base text-gray-900"
-									>Avgift för vald tidslängd ({getDurationText(
-										booking.duration?.duration_type,
-										booking.duration?.duration_value
-									)})</span
-								>
-								<span class="text-base text-gray-700">
-									{payingCustomersCount()} pers × {formatPrice(booking.duration?.extra_price || 0)} =
-									{formatPrice(durationCostExclVat())} exkl. moms
-								</span>
-							</li>
-						</ul>
-					</div>
-				{/if}
-			</section>
-
-			<!-- Totals -->
-			<section class="mt-6 rounded-lg bg-gray-50 p-6">
-				<h3 class="sr-only">Prisöversikt</h3>
-				<div class="space-y-3">
-					<div class="flex justify-between text-base text-gray-700">
-						<span>Totalt (exkl. moms)</span>
-						<span>{formatPrice(totalPriceExcludingVat())}</span>
-					</div>
-					<div class="flex justify-between text-base text-gray-700">
-						<span>Moms ({VAT_RATE * 100}%)</span>
-						<span>{formatPrice(totalVatAmount())}</span>
-					</div>
-					<div
-						class="flex justify-between border-t border-gray-300 pt-3 text-base font-semibold text-gray-900"
-					>
-						<span>Totalt pris (inkl. moms)</span>
-						<span>{formatPrice(totalPriceIncludingVat())}</span>
-					</div>
-					<div class="flex justify-between text-base font-semibold text-green-700">
-						<span>Betalat</span>
-						<span>{formatPrice(totalPriceIncludingVat())}</span>
-					</div>
-				</div>
-			</section>
-
-			<!-- Comment -->
-			{#if booking.comment}
-				<section class="border-t border-gray-200 pt-6">
-					<h3 class="mb-2 text-lg font-semibold text-gray-800">Meddelande från dig</h3>
-					<p class="whitespace-pre-wrap text-base text-gray-700">{booking.comment}</p>
 				</section>
-			{/if}
-		</div>
+
+				<!-- Date and Time -->
+				<section>
+					<h3 class="mb-2 text-lg font-semibold text-gray-800">Datum & Tid</h3>
+					<p class="text-base text-gray-900">
+						Start: {formatDateTime(booking.start_date, booking.start_time)}
+					</p>
+					<p class="text-base text-gray-900">
+						Slut: {formatDateTime(booking.end_date, booking.end_time)}
+					</p>
+				</section>
+
+				<!-- Booking Items Breakdown -->
+				<section class="space-y-4">
+					<h3 class="text-lg font-semibold text-gray-800">Bokningsdetaljer</h3>
+
+					<!-- Price Groups -->
+					{#if booking.booking_price_groups?.length}
+						<div class="flow-root">
+							<h4 class="mb-1 text-sm font-medium text-gray-500">Antal personer</h4>
+							<ul class="-my-2 divide-y divide-gray-200">
+								{#each booking.booking_price_groups as group (group.price_groups.id)}
+									<li class="flex py-2">
+										<span class="flex-1 text-base text-gray-900"
+											>{group.price_groups.display_name}</span
+										>
+										<span class="text-base text-gray-700">
+											{group.quantity} × {formatPrice(group.price_at_time || 0)} exkl. moms
+										</span>
+									</li>
+								{/each}
+							</ul>
+						</div>
+					{/if}
+
+					<!-- Products -->
+					{#if booking.booking_products?.length}
+						<div class="flow-root">
+							<h4 class="mb-1 text-sm font-medium text-gray-500">Utrustning</h4>
+							<ul class="-my-2 divide-y divide-gray-200">
+								{#each booking.booking_products as product (product.products.id)}
+									<li class="flex py-2">
+										<span class="flex-1 text-base text-gray-900">{product.products.name}</span>
+										<span class="text-base text-gray-700">
+											{product.quantity} × {formatPrice(product.price_at_time || 0)} exkl. moms
+										</span>
+									</li>
+								{/each}
+							</ul>
+						</div>
+					{/if}
+
+					<!-- Addons -->
+					{#if booking.booking_addons?.length}
+						<div class="flow-root">
+							<h4 class="mb-1 text-sm font-medium text-gray-500">Tillägg</h4>
+							<ul class="-my-2 divide-y divide-gray-200">
+								{#each booking.booking_addons as addon (addon.addons.id)}
+									<li class="flex py-2">
+										<span class="flex-1 text-base text-gray-900">{addon.addons.name}</span>
+										<span class="text-base text-gray-700">
+											{addon.quantity} × {formatPrice(addon.price_at_time || 0)} exkl. moms
+										</span>
+									</li>
+								{/each}
+							</ul>
+						</div>
+					{/if}
+
+					<!-- Individual Booking Total -->
+					<div class="rounded-lg border bg-muted p-4">
+						<p class="text-xl font-semibold">
+							Pris för denna bokning: {formatPrice(booking.total_price)}
+						</p>
+					</div>
+				</section>
+			</div>
+		{/each}
+
+		<!-- Overall Totals -->
+		<section class="mt-6 rounded-lg bg-gray-50 p-6">
+			<h3 class="sr-only">Prisöversikt</h3>
+			<div class="space-y-3">
+				<div class="flex justify-between text-base text-gray-700">
+					<span>Totalt (exkl. moms)</span>
+					<span>{formatPrice(totalPriceExcludingVat())}</span>
+				</div>
+				<div class="flex justify-between text-base text-gray-700">
+					<span>Moms ({VAT_RATE * 100}%)</span>
+					<span>{formatPrice(totalVatAmount())}</span>
+				</div>
+				<div
+					class="flex justify-between border-t border-gray-300 pt-3 text-base font-semibold text-gray-900"
+				>
+					<span>Totalt pris (inkl. moms)</span>
+					<span>{formatPrice(totalPriceIncludingVat())}</span>
+				</div>
+				<div class="flex justify-between text-base font-semibold text-green-700">
+					<span>Betalat</span>
+					<span>{formatPrice(totalPriceIncludingVat())}</span>
+				</div>
+			</div>
+		</section>
+
+		<!-- Contact Information -->
+		<section>
+			<h3 class="mb-2 text-lg font-semibold text-gray-800">Kontaktuppgifter</h3>
+			<div class="grid gap-1">
+				<p class="text-base text-gray-900">{bookings[0].first_name} {bookings[0].last_name}</p>
+				<p class="text-base text-gray-900">{bookings[0].email}</p>
+				<p class="text-base text-gray-900">{bookings[0].phone}</p>
+			</div>
+		</section>
+
+		<!-- Comment -->
+		{#if bookings[0].comment}
+			<section class="border-t border-gray-200 pt-6">
+				<h3 class="mb-2 text-lg font-semibold text-gray-800">Meddelande från dig</h3>
+				<p class="whitespace-pre-wrap text-base text-gray-700">{bookings[0].comment}</p>
+			</section>
+		{/if}
 
 		<!-- Footer -->
 		<footer class="mt-8 border-t border-gray-200 pt-6 text-center text-sm text-gray-500">
 			<p>
-				Spara denna bekräftelse. Vi har även skickat en kopia till din e-post ({booking.email}).
+				Spara denna bekräftelse. Vi har även skickat en kopia till din e-post ({bookings[0].email}).
 			</p>
 			<p class="mt-2">
 				Vid frågor, kontakta oss på <a

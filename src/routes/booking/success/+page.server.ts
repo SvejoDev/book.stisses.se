@@ -12,7 +12,7 @@ export const load: PageServerLoad = async ({ url }) => {
 
   if (!sessionId) {
     console.error('No session ID provided in URL');
-    throw error(400, 'Bokningssession saknas.'); // User-friendly error
+    throw error(400, 'Bokningssession saknas.');
   }
 
   try {
@@ -24,11 +24,8 @@ export const load: PageServerLoad = async ({ url }) => {
       throw error(400, 'Ogiltig bokningssession.');
     }
 
-    const bookingNumber = session.metadata.booking_number;
-
-    // Fetch booking details using the booking number
-    // Selecting * includes total_price which was set by the webhook
-    const { data: booking, error: bookingError } = await supabase
+    // Fetch all bookings associated with this session
+    const { data: bookings, error: bookingError } = await supabase
       .from('bookings')
       .select(`
         *,
@@ -73,32 +70,29 @@ export const load: PageServerLoad = async ({ url }) => {
           )
         )
       `)
-      .eq('booking_number', bookingNumber)
-      .single();
+      .eq('stripe_payment_id', session.payment_intent)
+      .order('created_at', { ascending: true });
 
     if (bookingError) {
-      console.error(`Error fetching booking details for booking_number ${bookingNumber}:`, bookingError);
+      console.error('Error fetching bookings:', bookingError);
       throw error(500, 'Kunde inte ladda bokningsinformationen.');
     }
 
-    if (!booking) {
-      console.error(`Booking not found for booking_number ${bookingNumber}`);
-      throw error(404, 'Bokningen kunde inte hittas.');
+    if (!bookings || bookings.length === 0) {
+      console.error('No bookings found for session:', sessionId);
+      throw error(404, 'Bokningarna kunde inte hittas.');
     }
 
-
-    // The booking object now contains all necessary details including total_price
     return {
-      booking
+      bookings,
+      totalBookings: bookings.length
     };
 
   } catch (e: any) {
-    // Catch Stripe errors or other issues
     console.error('Error loading success page:', e);
     if (e instanceof error) {
-      throw e; // Re-throw SvelteKit errors
+      throw e;
     }
-    // Provide a generic error for other types of exceptions
     throw error(500, 'Ett fel uppstod vid hämtning av bokningsbekräftelsen.');
   }
 };
