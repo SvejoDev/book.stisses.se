@@ -9,6 +9,8 @@
 	import { zodClient } from 'sveltekit-superforms/adapters';
 	import { z } from 'zod';
 	import { formatPrice, getDisplayPrice, getPaymentPrice } from '$lib/utils/price';
+	import { format } from 'date-fns';
+	import { sv } from 'date-fns/locale';
 
 	interface SelectedProduct {
 		productId: number;
@@ -54,7 +56,7 @@
 
 	type FormSchema = z.infer<typeof formSchema>;
 
-	let { data, totalPrice, bookings, experienceId, experienceType } = $props<{
+	let { data, totalPrice, bookings, experienceId, experienceType, products, addons } = $props<{
 		data?: {
 			form: SuperValidated<FormSchema>;
 		};
@@ -62,6 +64,8 @@
 		bookings: Array<Booking>;
 		experienceId: number;
 		experienceType: string;
+		products: SelectedProduct[];
+		addons: SelectedAddon[];
 	}>();
 
 	const defaultData = {
@@ -148,6 +152,87 @@
 		}
 		return `${formatPrice(baseTotal)} exkl. moms (${formatPrice(totalIncVat)} inkl. moms)`;
 	});
+
+	// Add new derived values for product and addon names
+	let productNames = $state<Record<number, string>>({});
+	let addonNames = $state<Record<number, string>>({});
+
+	// Fetch product and addon names when component mounts
+	$effect(() => {
+		if (products.length > 0) {
+			const productIds = products.map((p: SelectedProduct) => p.productId).join(',');
+			fetch(`/api/products/${productIds}`)
+				.then((res) => res.json())
+				.then((data) => {
+					if (data.products) {
+						productNames = data.products.reduce(
+							(acc: Record<number, string>, product: { id: number; name: string }) => {
+								acc[product.id] = product.name;
+								return acc;
+							},
+							{}
+						);
+					}
+				})
+				.catch(console.error);
+		}
+
+		if (addons.length > 0) {
+			const addonIds = addons.map((a: SelectedAddon) => a.addonId).join(',');
+			fetch(`/api/addons/${addonIds}`)
+				.then((res) => res.json())
+				.then((data) => {
+					if (data.addons) {
+						addonNames = data.addons.reduce(
+							(acc: Record<number, string>, addon: { id: number; name: string }) => {
+								acc[addon.id] = addon.name;
+								return acc;
+							},
+							{}
+						);
+					}
+				})
+				.catch(console.error);
+		}
+	});
+
+	// Add helper functions for formatting
+	function formatDateTime(date: Date | null, time: string | null): string {
+		if (!date || !time) return 'Ej angiven';
+		try {
+			const dateTime = new Date(`${date.toISOString().split('T')[0]}T${time}`);
+			return format(dateTime, 'EEEE d MMMM yyyy, HH:mm', { locale: sv });
+		} catch (e) {
+			console.error('Error formatting date/time:', date, time, e);
+			return `${date.toLocaleDateString('sv-SE')} ${time}`;
+		}
+	}
+
+	function calculateEndDate(
+		startDate: Date | null,
+		durationType: string,
+		durationValue: number
+	): Date | null {
+		if (!startDate) return null;
+		const endDate = new Date(startDate);
+		if (durationType === 'overnights') {
+			endDate.setDate(endDate.getDate() + durationValue);
+		}
+		return endDate;
+	}
+
+	function getDurationText(
+		type: string | null | undefined,
+		value: number | null | undefined
+	): string {
+		if (!type || value === null || value === undefined) return 'Okänd längd';
+		if (type === 'hours') {
+			return value === 1 ? '1 timme' : `${value} timmar`;
+		} else if (type === 'overnights') {
+			return value === 1 ? '1 övernattning' : `${value} övernattningar`;
+		}
+		return 'Okänd längd';
+	}
 </script>
 
 <div class="mx-auto max-w-2xl space-y-8">
@@ -156,28 +241,60 @@
 		{#each bookings as booking, i}
 			<div class="space-y-2 rounded-lg border p-4">
 				<h3 class="font-medium">Bokning {i + 1}</h3>
-				{#if booking.selectedDate}
-					<p>Datum: {new Date(booking.selectedDate).toLocaleDateString('sv-SE')}</p>
-				{/if}
-				{#if booking.selectedStartTime}
-					<p>Tid: {booking.selectedStartTime.startTime} - {booking.selectedStartTime.endTime}</p>
-				{/if}
+
+				<!-- Date and Time Section -->
+				<div class="space-y-1">
+					{#if booking.selectedDate}
+						<p class="font-medium">Datum & Tid:</p>
+						<div class="pl-4">
+							<p>
+								Start: {formatDateTime(booking.selectedDate, booking.selectedStartTime?.startTime)}
+							</p>
+							<p>
+								Slut: {formatDateTime(
+									calculateEndDate(
+										booking.selectedDate,
+										booking.durationType,
+										booking.durationValue
+									),
+									booking.selectedStartTime?.endTime
+								)}
+							</p>
+						</div>
+					{/if}
+				</div>
+
+				<!-- Duration Section -->
+				<div class="space-y-1">
+					<p class="font-medium">Längd:</p>
+					<p class="pl-4">{getDurationText(booking.durationType, booking.durationValue)}</p>
+				</div>
+
+				<!-- Products Section -->
 				{#if booking.selectedProducts.length > 0}
-					<p>Utrustning:</p>
-					<ul class="list-disc pl-4">
-						{#each booking.selectedProducts as product}
-							<li>{product.quantity}x Produkt {product.productId}</li>
-						{/each}
-					</ul>
+					<div class="space-y-1">
+						<p class="font-medium">Utrustning:</p>
+						<ul class="list-disc pl-4">
+							{#each booking.selectedProducts as product}
+								<li>{product.quantity}x {productNames[product.productId]}</li>
+							{/each}
+						</ul>
+					</div>
 				{/if}
+
+				<!-- Addons Section -->
 				{#if booking.selectedAddons.length > 0}
-					<p>Tillägg:</p>
-					<ul class="list-disc pl-4">
-						{#each booking.selectedAddons as addon}
-							<li>{addon.quantity}x Tillägg {addon.addonId}</li>
-						{/each}
-					</ul>
+					<div class="space-y-1">
+						<p class="font-medium">Tillägg:</p>
+						<ul class="list-disc pl-4">
+							{#each booking.selectedAddons as addon}
+								<li>{addon.quantity}x {addonNames[addon.addonId]}</li>
+							{/each}
+						</ul>
+					</div>
 				{/if}
+
+				<!-- Price Section -->
 				<div class="border-t pt-2">
 					<p class="font-medium">
 						Pris för denna bokning:

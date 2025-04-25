@@ -586,6 +586,8 @@
 				bookings={allBookings}
 				experienceId={parseInt(experience.id)}
 				experienceType={experience.type}
+				products={selectedProducts}
+				addons={selectedAddons}
 			/>
 		</section>
 	{/if}
