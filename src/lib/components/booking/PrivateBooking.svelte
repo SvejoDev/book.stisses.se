@@ -337,6 +337,8 @@
 		}
 	]);
 
+	let bookingOptionsSection = $state<HTMLElement | null>(null);
+
 	function handleStartTimeSelect(time: SelectedStartTime) {
 		selectedStartTime = time;
 		showMultipleBookingOption = true;
@@ -354,6 +356,16 @@
 			selectedStartTime: time,
 			totalPrice: totalPrice() // Make sure we capture the current total price
 		};
+
+		// Add a small delay to ensure the buttons are rendered before scrolling
+		setTimeout(() => {
+			if (bookingOptionsSection) {
+				const elementRect = bookingOptionsSection.getBoundingClientRect();
+				const absoluteElementTop = elementRect.top + window.pageYOffset;
+				const scrollPosition = absoluteElementTop - window.innerHeight / 3;
+				window.scrollTo({ top: scrollPosition, behavior: 'smooth' });
+			}
+		}, 100);
 	}
 
 	function addAnotherBooking() {
@@ -551,11 +563,17 @@
 	{/if}
 
 	{#if showMultipleBookingOption}
-		<div class="mt-8 flex justify-center gap-4">
-			<button class="rounded-md bg-primary px-4 py-2 text-white" onclick={proceedToContactForm}>
+		<div class="mt-8 flex flex-col items-center gap-4" bind:this={bookingOptionsSection}>
+			<button
+				class="rounded-lg bg-primary px-6 py-3 text-lg font-semibold text-white shadow-md transition-colors hover:bg-primary/90"
+				onclick={proceedToContactForm}
+			>
 				Fortsätt till kontaktuppgifter
 			</button>
-			<button class="rounded-md bg-secondary px-4 py-2 text-white" onclick={addAnotherBooking}>
+			<button
+				class="rounded-lg border-2 border-primary px-4 py-2 text-primary transition-colors hover:bg-primary/10"
+				onclick={addAnotherBooking}
+			>
 				Gör en bokning till
 			</button>
 		</div>
