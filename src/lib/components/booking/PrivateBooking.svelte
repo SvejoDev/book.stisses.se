@@ -97,6 +97,7 @@
 	let durationType = $state<'hours' | 'overnights'>('hours');
 	let durationValue = $state(0);
 	let selectedDate = $state<Date | null>(null);
+	let resetStartLocations = $state(false);
 	// @ts-ignore - Used in template binding
 	let durationsSection = $state<HTMLElement | null>(null);
 	let calendarSection = $state<HTMLElement | null>(null);
@@ -398,6 +399,8 @@
 		selectedStartTime = null;
 		showMultipleBookingOption = false;
 		showDurations = false;
+		resetStartLocations = true;
+		isBookingLocked = false; // Reset the locked state
 
 		// Add new empty booking to allBookings
 		allBookings.push({
@@ -412,6 +415,14 @@
 			selectedStartTime: null,
 			totalPrice: 0
 		});
+
+		// Scroll to top of the page
+		window.scrollTo({ top: 0, behavior: 'smooth' });
+
+		// Reset the reset signal after a short delay
+		setTimeout(() => {
+			resetStartLocations = false;
+		}, 100);
 	}
 
 	function proceedToContactForm() {
@@ -442,10 +453,23 @@
 		<h1 class="text-4xl font-bold tracking-tight">{experience.name}</h1>
 	</header>
 
+	{#if totalBookings > 1}
+		<div
+			class="fixed left-4 top-4 z-10 rounded-lg bg-primary/10 px-3 py-2 text-sm font-medium text-primary shadow-sm"
+		>
+			Du har {totalBookings - 1} bokning{totalBookings - 1 === 1 ? '' : 'ar'} i din kundvagn
+		</div>
+	{/if}
+
 	{#if hasStartLocations}
 		<section class="space-y-4">
 			<h2 class="text-center text-2xl font-semibold">{getStartLocationHeading()}</h2>
-			<StartLocations {startLocations} onSelect={handleLocationSelect} isLocked={isBookingLocked} />
+			<StartLocations
+				{startLocations}
+				onSelect={handleLocationSelect}
+				isLocked={isBookingLocked}
+				reset={resetStartLocations}
+			/>
 		</section>
 	{/if}
 

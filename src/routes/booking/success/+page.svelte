@@ -82,7 +82,7 @@
 				Tack för din bokning, {bookings[0].first_name}!
 			</p>
 			<p class="mt-1 text-sm text-gray-500">
-				Bokningsnummer: <strong>{bookings[0].booking_number}</strong>
+				mmer: <strong>{bookings[0].booking_number}</strong>
 				{#if totalBookings > 1}
 					<span class="ml-2">(och {totalBookings - 1} till)</span>
 				{/if}

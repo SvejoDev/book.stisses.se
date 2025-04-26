@@ -12,14 +12,23 @@
 	let {
 		startLocations,
 		onSelect,
-		isLocked = $bindable(false)
+		isLocked = $bindable(false),
+		reset = $bindable(false)
 	} = $props<{
 		startLocations: StartLocation[];
 		onSelect: (locationId: string) => void;
 		isLocked?: boolean;
+		reset?: boolean;
 	}>();
 	let value = $state('');
 	let isSingleLocation = $derived(startLocations.length === 1);
+
+	// Reset value when reset prop changes
+	$effect(() => {
+		if (reset) {
+			value = '';
+		}
+	});
 
 	// Preload images
 	$effect(() => {
@@ -31,7 +40,7 @@
 
 	$effect(() => {
 		// Auto-select if there's only one start location
-		if (isSingleLocation && !value) {
+		if (startLocations.length === 1 && !value) {
 			handleSelect(startLocations[0].id.toString());
 		}
 	});
@@ -45,6 +54,11 @@
 	function handleSelect(locationId: string) {
 		if (isLocked) return;
 		value = locationId;
+
+		// Add a small delay before calling onSelect to allow the page to settle
+		setTimeout(() => {
+			onSelect(locationId);
+		}, 300);
 	}
 </script>
 
