@@ -156,8 +156,9 @@
 	// Add new derived values for product and addon names
 	let productNames = $state<Record<number, string>>({});
 	let addonNames = $state<Record<number, string>>({});
+	let startLocationNames = $state<Record<number, string>>({});
 
-	// Fetch product and addon names when component mounts
+	// Fetch product, addon, and start location names when component mounts
 	$effect(() => {
 		if (products.length > 0) {
 			const productIds = products.map((p: SelectedProduct) => p.productId).join(',');
@@ -194,6 +195,24 @@
 				})
 				.catch(console.error);
 		}
+
+		// Fetch start location names for all bookings
+		const uniqueStartLocationIds = new Set<number>(
+			bookings
+				.map((booking: Booking) => booking.selectedLocationId)
+				.filter((id: number | null): id is number => id !== null)
+		);
+
+		uniqueStartLocationIds.forEach((id: number) => {
+			fetch(`/api/start-locations/${id}`)
+				.then((res) => res.json())
+				.then((data: { startLocation: { id: number; name: string } }) => {
+					if (data.startLocation) {
+						startLocationNames[id] = data.startLocation.name;
+					}
+				})
+				.catch(console.error);
+		});
 	});
 
 	// Add helper functions for formatting
@@ -241,6 +260,14 @@
 		{#each bookings as booking, i}
 			<div class="space-y-2 rounded-lg border p-4">
 				<h3 class="font-medium">Bokning {i + 1}</h3>
+
+				<!-- Start Location Section -->
+				{#if booking.selectedLocationId}
+					<div class="space-y-1">
+						<p class="font-medium">Startplats:</p>
+						<p class="pl-4">{startLocationNames[booking.selectedLocationId]}</p>
+					</div>
+				{/if}
 
 				<!-- Date and Time Section -->
 				<div class="space-y-1">
