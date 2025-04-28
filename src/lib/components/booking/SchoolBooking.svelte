@@ -76,6 +76,19 @@
 		endTime: string;
 	}
 
+	type Booking = {
+		selectedLocationId: number | null;
+		selectedDuration: string;
+		durationType: 'hours' | 'overnights';
+		durationValue: number;
+		selectedDate: Date | null;
+		selectedProducts: SelectedProduct[];
+		selectedAddons: SelectedAddon[];
+		priceGroupQuantities: Record<number, number>;
+		selectedStartTime: SelectedStartTime | null;
+		totalPrice: number;
+	};
+
 	let {
 		experience,
 		startLocations,
@@ -284,9 +297,107 @@
 	let showAvailableTimesButton = $state(false);
 	let showContactForm = $state(false);
 	let selectedStartTime = $state<SelectedStartTime | null>(null);
+	let showMultipleBookingOption = $state(false);
+	let currentBookingIndex = $state(0);
+	let totalBookings = $state(1);
+	let allBookings: Booking[] = [
+		{
+			selectedLocationId: null,
+			selectedDuration: '',
+			durationType: 'hours',
+			durationValue: 0,
+			selectedDate: null,
+			selectedProducts: [],
+			selectedAddons: [],
+			priceGroupQuantities: {},
+			selectedStartTime: null,
+			totalPrice: 0
+		}
+	];
+
+	let bookingOptionsSection = $state<HTMLElement | null>(null);
 
 	function handleStartTimeSelect(time: SelectedStartTime) {
 		selectedStartTime = time;
+		showMultipleBookingOption = true;
+
+		// Update the current booking in allBookings with all current state including price
+		allBookings[currentBookingIndex] = {
+			selectedLocationId,
+			selectedDuration,
+			durationType,
+			durationValue,
+			selectedDate,
+			selectedProducts,
+			selectedAddons,
+			priceGroupQuantities,
+			selectedStartTime: time,
+			totalPrice: totalPrice() // Make sure we capture the current total price
+		};
+
+		// Add a small delay to ensure the buttons are rendered before scrolling
+		setTimeout(() => {
+			if (bookingOptionsSection) {
+				const elementRect = bookingOptionsSection.getBoundingClientRect();
+				const absoluteElementTop = elementRect.top + window.pageYOffset;
+				const scrollPosition = absoluteElementTop - window.innerHeight / 3;
+				window.scrollTo({ top: scrollPosition, behavior: 'smooth' });
+			}
+		}, 100);
+	}
+
+	function addAnotherBooking() {
+		// Store the current booking's total price before resetting
+		allBookings[currentBookingIndex] = {
+			selectedLocationId,
+			selectedDuration,
+			durationType,
+			durationValue,
+			selectedDate,
+			selectedProducts,
+			selectedAddons,
+			priceGroupQuantities,
+			selectedStartTime,
+			totalPrice: totalPrice() // Make sure we store the current total price
+		};
+
+		totalBookings++;
+		currentBookingIndex++;
+
+		// Reset all state for new booking
+		selectedLocationId = null;
+		selectedDuration = '';
+		durationType = 'hours';
+		durationValue = 0;
+		selectedDate = null;
+		selectedProducts = [];
+		selectedAddons = [];
+		priceGroupQuantities = {};
+		selectedStartTime = null;
+		showMultipleBookingOption = false;
+		showDurations = false;
+		isBookingLocked = false;
+		showAvailableTimesButton = false;
+
+		// Add new empty booking to allBookings
+		allBookings.push({
+			selectedLocationId: null,
+			selectedDuration: '',
+			durationType: 'hours',
+			durationValue: 0,
+			selectedDate: null,
+			selectedProducts: [],
+			selectedAddons: [],
+			priceGroupQuantities: {},
+			selectedStartTime: null,
+			totalPrice: 0
+		});
+
+		// Scroll to top of the page
+		window.scrollTo({ top: 0, behavior: 'smooth' });
+	}
+
+	function proceedToContactForm() {
 		showContactForm = true;
 		setTimeout(() => {
 			window.scrollTo({
@@ -295,6 +406,18 @@
 			});
 		}, 100);
 	}
+
+	// Update the total price calculation in the contact form section
+	let totalPriceForAllBookings = $derived(() => {
+		return allBookings.reduce((sum, booking) => {
+			// Ensure we're using the stored total price for each booking
+			return sum + (booking.totalPrice || 0);
+		}, 0);
+	});
+
+	let displayTotalForAllBookings = $derived(() => {
+		return getDisplayPrice(totalPriceForAllBookings(), experience.type);
+	});
 </script>
 
 <div class="space-y-16">
@@ -420,6 +543,23 @@
 		{/if}
 	{/if}
 
+	{#if showMultipleBookingOption}
+		<div class="mt-8 flex flex-col items-center gap-4" bind:this={bookingOptionsSection}>
+			<button
+				class="rounded-lg bg-primary px-6 py-3 text-lg font-semibold text-white shadow-md transition-colors hover:bg-primary/90"
+				onclick={proceedToContactForm}
+			>
+				Fortsätt till kontaktuppgifter
+			</button>
+			<button
+				class="rounded-lg border-2 border-primary px-4 py-2 text-primary transition-colors hover:bg-primary/10"
+				onclick={addAnotherBooking}
+			>
+				Gör en bokning till
+			</button>
+		</div>
+	{/if}
+
 	{#if true}
 		<div class="hidden">
 			Debug: showContactForm={showContactForm}, selectedStartTime={JSON.stringify(
@@ -428,23 +568,15 @@
 		</div>
 	{/if}
 
-	{#if showContactForm && selectedStartTime}
+	{#if showContactForm && allBookings.some((booking) => booking.selectedStartTime)}
 		<section class="space-y-4">
 			<ContactForm
-				totalPrice={totalPrice()}
-				bookingData={{
-					experienceId: parseInt(experience.id),
-					experienceType: experience.type,
-					startLocationId: selectedLocationId,
-					durationId: selectedDuration,
-					startDate: selectedDate,
-					startTime: selectedStartTime.startTime,
-					endDate: selectedDate,
-					endTime: selectedStartTime.endTime,
-					priceGroups: priceGroupQuantities,
-					products: selectedProducts,
-					addons: selectedAddons
-				}}
+				totalPrice={totalPriceForAllBookings()}
+				bookings={allBookings}
+				experienceId={parseInt(experience.id)}
+				experienceType={experience.type}
+				products={selectedProducts}
+				addons={selectedAddons}
 			/>
 		</section>
 	{/if}
