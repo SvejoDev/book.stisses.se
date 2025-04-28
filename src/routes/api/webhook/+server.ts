@@ -341,6 +341,67 @@ async function updateAvailabilityForBooking(
   }
 }
 
+// Helper function to delay execution
+const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+// Send email confirmations for each booking with rate limiting
+const sendEmailsWithRateLimit = async (bookings: any[]) => {
+  const failedBookings: any[] = [];
+  const RATE_LIMIT_DELAY = 1000; // 1 second delay between emails
+  const MAX_RETRIES = 3;
+
+  for (const booking of bookings) {
+    let retryCount = 0;
+    let success = false;
+
+    while (retryCount < MAX_RETRIES && !success) {
+      try {
+        const emailEndpoint = `${PUBLIC_SUPABASE_URL}/functions/v1/send-booking-confirmation`;
+        const response = await fetch(emailEndpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`
+          },
+          body: JSON.stringify({
+            bookingId: booking.id
+          })
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          if (errorData.name === 'rate_limit_exceeded' && retryCount < MAX_RETRIES - 1) {
+            // If rate limited, wait longer before retrying
+            await delay(RATE_LIMIT_DELAY * (retryCount + 2));
+            retryCount++;
+            continue;
+          }
+          throw new Error(`Failed to send email: ${errorData.message}`);
+        }
+
+        success = true;
+        // Add delay between successful emails to respect rate limit
+        await delay(RATE_LIMIT_DELAY);
+      } catch (error) {
+        console.error(`Error sending confirmation email for booking ${booking.id} (attempt ${retryCount + 1}):`, error);
+        retryCount++;
+        
+        if (retryCount === MAX_RETRIES) {
+          failedBookings.push({
+            booking,
+            error: error instanceof Error ? error.message : 'Unknown error'
+          });
+        } else {
+          // Exponential backoff for retries
+          await delay(RATE_LIMIT_DELAY * Math.pow(2, retryCount));
+        }
+      }
+    }
+  }
+
+  return failedBookings;
+};
+
 export const POST: RequestHandler = async ({ request }) => {
   const body = await request.text();
   const signature = request.headers.get('stripe-signature');
@@ -497,27 +558,14 @@ export const POST: RequestHandler = async ({ request }) => {
 
       const createdBookings = await Promise.all(bookingPromises);
 
-      // Send email confirmations for each booking in parallel
-      const emailPromises = createdBookings.map(async (booking) => {
-        try {
-          const emailEndpoint = `${PUBLIC_SUPABASE_URL}/functions/v1/send-booking-confirmation`;
-          await fetch(emailEndpoint, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`
-            },
-            body: JSON.stringify({
-              bookingId: booking.id
-            })
-          });
-        } catch (error) {
-          console.error(`Error sending confirmation email for booking ${booking.id}:`, error);
-        }
-      });
+      // Replace the email sending code with:
+      const failedBookings = await sendEmailsWithRateLimit(createdBookings);
 
-      // Wait for all emails to be sent
-      await Promise.all(emailPromises);
+      // Log any failed bookings for follow-up
+      if (failedBookings.length > 0) {
+        console.error('Failed to send confirmation emails for the following bookings:', failedBookings);
+       
+      }
 
       // Clean up the pending booking
       await supabase
