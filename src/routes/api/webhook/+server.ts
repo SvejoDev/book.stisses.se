@@ -461,7 +461,7 @@ export const POST: RequestHandler = async ({ request }) => {
               end_date: booking.startDate,
               end_time: booking.endTime,
               has_booking_guarantee: booking.hasBookingGuarantee,
-              total_price: booking.totalPrice,
+              total_price: getPaymentPrice(booking.totalPrice, booking.experienceType),
               is_paid: true,
               stripe_payment_id: session.payment_intent as string,
               availability_confirmed: true
