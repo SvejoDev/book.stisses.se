@@ -401,6 +401,7 @@
 		showDurations = false;
 		resetStartLocations = true;
 		isBookingLocked = false; // Reset the locked state
+		showAvailableTimesButton = false; // Reset the showAvailableTimesButton state
 
 		// Add new empty booking to allBookings
 		allBookings.push({
