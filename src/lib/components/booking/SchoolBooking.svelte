@@ -110,6 +110,7 @@
 	let durationType = $state<'hours' | 'overnights'>('hours');
 	let durationValue = $state(0);
 	let selectedDate = $state<Date | null>(null);
+	let resetStartLocations = $state(false);
 	let durationsSection = $state<HTMLElement | null>(null);
 	let calendarSection = $state<HTMLElement | null>(null);
 	let productsSection = $state<HTMLElement | null>(null);
@@ -376,6 +377,7 @@
 		selectedStartTime = null;
 		showMultipleBookingOption = false;
 		showDurations = false;
+		resetStartLocations = true;
 		isBookingLocked = false;
 		showAvailableTimesButton = false;
 
@@ -395,6 +397,11 @@
 
 		// Scroll to top of the page
 		window.scrollTo({ top: 0, behavior: 'smooth' });
+
+		// Reset the reset signal after a short delay
+		setTimeout(() => {
+			resetStartLocations = false;
+		}, 100);
 	}
 
 	function proceedToContactForm() {
@@ -428,7 +435,12 @@
 	{#if hasStartLocations}
 		<section class="space-y-4">
 			<h2 class="text-center text-2xl font-semibold">{getStartLocationHeading()}</h2>
-			<StartLocations {startLocations} onSelect={handleLocationSelect} isLocked={isBookingLocked} />
+			<StartLocations
+				{startLocations}
+				onSelect={handleLocationSelect}
+				isLocked={isBookingLocked}
+				reset={resetStartLocations}
+			/>
 		</section>
 	{/if}
 
