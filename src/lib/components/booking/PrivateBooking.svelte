@@ -223,6 +223,7 @@
 			selectedAddons = [];
 			showDurations = false; // Reset showDurations
 			isBookingLocked = false;
+			showContactForm = false; // Reset contact form visibility
 
 			// Add a small delay to ensure components are rendered
 			setTimeout(() => {
@@ -402,6 +403,7 @@
 		resetStartLocations = true;
 		isBookingLocked = false; // Reset the locked state
 		showAvailableTimesButton = false; // Reset the showAvailableTimesButton state
+		showContactForm = false; // Reset contact form visibility
 
 		// Add new empty booking to allBookings
 		allBookings.push({
