@@ -119,6 +119,8 @@ export async function load({ params }) {
         return date.end_date >= today;
     });
 
+    console.log('Subtracting from dates:', filteredOpenDates, filteredBlockedDates, 'for booking:', bookingData.id, bookingData.start_date, bookingData.end_date);
+
     return {
         booking: bookingData,
         openDates: filteredOpenDates,

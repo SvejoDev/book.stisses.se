@@ -143,6 +143,10 @@ async function getBookingData(bookingId: string) {
 }
 
 async function updateAvailability(updates: AvailabilityUpdate[], isSubtract: boolean = false) {
+    console.log('updateAvailability called', { isSubtract, updatesCount: updates.length });
+    console.log('Unique dates for updates:', Array.from(new Set(updates.map(u => u.date))));
+    console.log('Table names for updates:', Array.from(new Set(updates.map(u => u.tableName))));
+    
     // Group updates by table and date for batch processing
     const groupedUpdates = new Map<string, Map<string, Record<string, number>>>();
     
@@ -226,12 +230,15 @@ async function updateAvailability(updates: AvailabilityUpdate[], isSubtract: boo
 export const POST: RequestHandler = async ({ request }) => {
     try {
         const { bookingId, newDate, newStartTime, newEndTime, reason } = await request.json();
+        console.log('Reschedule POST called with params:', { bookingId, newDate, newStartTime, newEndTime, reason });
 
         // Clear booking cache to fetch the latest booking state
         bookingCache.delete(bookingId);
+        console.log('Booking cache cleared for bookingId:', bookingId);
 
         // Get booking data from cache or database
         const booking = await getBookingData(bookingId);
+        console.log('Fetched booking data:', { durationType: booking.duration.duration_type, durationValue: booking.duration.duration_value, startDate: booking.start_date, endDate: booking.end_date });
 
         // Convert times to minutes
         const oldStartMinutes = parseInt(booking.start_time.split(':')[0]) * 60 + parseInt(booking.start_time.split(':')[1]);
@@ -241,10 +248,21 @@ export const POST: RequestHandler = async ({ request }) => {
 
         // Check if it's an overnight booking
         const isOvernight = booking.duration.duration_type === 'overnights';
-        const oldDates = generateDateRange(booking.start_date, booking.end_date);
+        console.log('isOvernight:', isOvernight);
+
+        // Always compute oldEndDate for overnight bookings
+        let oldEndDate: string;
+        if (isOvernight) {
+            oldEndDate = format(addDays(parseISO(booking.start_date), booking.duration.duration_value), 'yyyy-MM-dd');
+        } else {
+            oldEndDate = booking.end_date;
+        }
+        const oldDates = generateDateRange(booking.start_date, oldEndDate);
+        console.log('Old dates for subtraction:', oldDates);
         const newEndDate = isOvernight 
             ? format(addDays(parseISO(newDate), booking.duration.duration_value), 'yyyy-MM-dd')
             : newDate;
+        console.log('New end date for addition:', newEndDate);
 
         // Clear cache for all affected dates
         const allDates = [...oldDates, newDate];
@@ -266,17 +284,16 @@ export const POST: RequestHandler = async ({ request }) => {
             }
         }
 
-        // Prepare availability updates for both old and new dates
-        const availabilityUpdates: AvailabilityUpdate[] = [];
+        const subtractionUpdates: AvailabilityUpdate[] = [];
+        const additionUpdates: AvailabilityUpdate[] = [];
 
-        // Add product updates
+        // Products
         for (const bookingProduct of booking.booking_products) {
             const tableName = `availability_product_${bookingProduct.products.id}`;
-            
-            // Add updates for old dates (subtract)
+            // Subtract for old dates
             if (isOvernight) {
                 // First day: from start time to midnight
-                availabilityUpdates.push({
+                subtractionUpdates.push({
                     tableName,
                     date: oldDates[0],
                     startMinutes: oldStartMinutes,
@@ -284,10 +301,9 @@ export const POST: RequestHandler = async ({ request }) => {
                     quantity: bookingProduct.quantity,
                     maxQuantity: bookingProduct.products.total_quantity
                 });
-
                 // Middle days: full days
                 for (let i = 1; i < oldDates.length - 1; i++) {
-                    availabilityUpdates.push({
+                    subtractionUpdates.push({
                         tableName,
                         date: oldDates[i],
                         startMinutes: 0,
@@ -296,9 +312,8 @@ export const POST: RequestHandler = async ({ request }) => {
                         maxQuantity: bookingProduct.products.total_quantity
                     });
                 }
-
                 // Last day: from midnight to end time
-                availabilityUpdates.push({
+                subtractionUpdates.push({
                     tableName,
                     date: oldDates[oldDates.length - 1],
                     startMinutes: 0,
@@ -307,8 +322,7 @@ export const POST: RequestHandler = async ({ request }) => {
                     maxQuantity: bookingProduct.products.total_quantity
                 });
             } else {
-                // Single day booking
-                availabilityUpdates.push({
+                subtractionUpdates.push({
                     tableName,
                     date: booking.start_date,
                     startMinutes: oldStartMinutes,
@@ -317,11 +331,10 @@ export const POST: RequestHandler = async ({ request }) => {
                     maxQuantity: bookingProduct.products.total_quantity
                 });
             }
-
-            // Add updates for new dates (add)
+            // Add for new dates
             if (isOvernight) {
-                // First day: from start time to midnight
-                availabilityUpdates.push({
+                const newDates = generateDateRange(newDate, newEndDate);
+                additionUpdates.push({
                     tableName,
                     date: newDate,
                     startMinutes: newStartMinutes,
@@ -329,11 +342,8 @@ export const POST: RequestHandler = async ({ request }) => {
                     quantity: bookingProduct.quantity,
                     maxQuantity: bookingProduct.products.total_quantity
                 });
-
-                // Middle days: full days
-                const newDates = generateDateRange(newDate, newEndDate);
                 for (let i = 1; i < newDates.length - 1; i++) {
-                    availabilityUpdates.push({
+                    additionUpdates.push({
                         tableName,
                         date: newDates[i],
                         startMinutes: 0,
@@ -342,9 +352,7 @@ export const POST: RequestHandler = async ({ request }) => {
                         maxQuantity: bookingProduct.products.total_quantity
                     });
                 }
-
-                // Last day: from midnight to end time
-                availabilityUpdates.push({
+                additionUpdates.push({
                     tableName,
                     date: newEndDate,
                     startMinutes: 0,
@@ -353,8 +361,7 @@ export const POST: RequestHandler = async ({ request }) => {
                     maxQuantity: bookingProduct.products.total_quantity
                 });
             } else {
-                // Single day booking
-                availabilityUpdates.push({
+                additionUpdates.push({
                     tableName,
                     date: newDate,
                     startMinutes: newStartMinutes,
@@ -365,16 +372,16 @@ export const POST: RequestHandler = async ({ request }) => {
             }
         }
 
-        // Add addon updates
+        // Repeat the same for addons (only if track_availability)
         for (const bookingAddon of booking.booking_addons) {
             if (!bookingAddon.addons.track_availability) continue;
 
             const tableName = `availability_addon_${bookingAddon.addons.id}`;
             
-            // Add updates for old dates (subtract)
+            // Subtract for old dates
             if (isOvernight) {
                 // First day: from start time to midnight
-                availabilityUpdates.push({
+                subtractionUpdates.push({
                     tableName,
                     date: oldDates[0],
                     startMinutes: oldStartMinutes,
@@ -382,10 +389,9 @@ export const POST: RequestHandler = async ({ request }) => {
                     quantity: bookingAddon.quantity,
                     maxQuantity: bookingAddon.addons.total_quantity
                 });
-
                 // Middle days: full days
                 for (let i = 1; i < oldDates.length - 1; i++) {
-                    availabilityUpdates.push({
+                    subtractionUpdates.push({
                         tableName,
                         date: oldDates[i],
                         startMinutes: 0,
@@ -394,9 +400,8 @@ export const POST: RequestHandler = async ({ request }) => {
                         maxQuantity: bookingAddon.addons.total_quantity
                     });
                 }
-
                 // Last day: from midnight to end time
-                availabilityUpdates.push({
+                subtractionUpdates.push({
                     tableName,
                     date: oldDates[oldDates.length - 1],
                     startMinutes: 0,
@@ -405,8 +410,7 @@ export const POST: RequestHandler = async ({ request }) => {
                     maxQuantity: bookingAddon.addons.total_quantity
                 });
             } else {
-                // Single day booking
-                availabilityUpdates.push({
+                subtractionUpdates.push({
                     tableName,
                     date: booking.start_date,
                     startMinutes: oldStartMinutes,
@@ -415,11 +419,10 @@ export const POST: RequestHandler = async ({ request }) => {
                     maxQuantity: bookingAddon.addons.total_quantity
                 });
             }
-
-            // Add updates for new dates (add)
+            // Add for new dates
             if (isOvernight) {
-                // First day: from start time to midnight
-                availabilityUpdates.push({
+                const newDates = generateDateRange(newDate, newEndDate);
+                additionUpdates.push({
                     tableName,
                     date: newDate,
                     startMinutes: newStartMinutes,
@@ -427,11 +430,8 @@ export const POST: RequestHandler = async ({ request }) => {
                     quantity: bookingAddon.quantity,
                     maxQuantity: bookingAddon.addons.total_quantity
                 });
-
-                // Middle days: full days
-                const newDates = generateDateRange(newDate, newEndDate);
                 for (let i = 1; i < newDates.length - 1; i++) {
-                    availabilityUpdates.push({
+                    additionUpdates.push({
                         tableName,
                         date: newDates[i],
                         startMinutes: 0,
@@ -440,9 +440,7 @@ export const POST: RequestHandler = async ({ request }) => {
                         maxQuantity: bookingAddon.addons.total_quantity
                     });
                 }
-
-                // Last day: from midnight to end time
-                availabilityUpdates.push({
+                additionUpdates.push({
                     tableName,
                     date: newEndDate,
                     startMinutes: 0,
@@ -451,8 +449,7 @@ export const POST: RequestHandler = async ({ request }) => {
                     maxQuantity: bookingAddon.addons.total_quantity
                 });
             } else {
-                // Single day booking
-                availabilityUpdates.push({
+                additionUpdates.push({
                     tableName,
                     date: newDate,
                     startMinutes: newStartMinutes,
@@ -463,17 +460,9 @@ export const POST: RequestHandler = async ({ request }) => {
             }
         }
 
-        // First subtract from old dates
-        await updateAvailability(
-            availabilityUpdates.filter(u => oldDates.includes(u.date)),
-            true // subtract
-        );
-
-        // Then add to new dates
-        await updateAvailability(
-            availabilityUpdates.filter(u => u.date >= newDate && u.date <= newEndDate),
-            false // add
-        );
+        // Now update
+        await updateAvailability(subtractionUpdates, true);
+        await updateAvailability(additionUpdates, false);
 
         // Create history record before updating the booking
         const { error: historyError } = await supabaseServer
