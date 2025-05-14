@@ -1,0 +1,42 @@
+
+Here are some high-level observations and recommendations after exploring your repo. I’ve grouped them by category—feel free to pick and choose what makes sense for you.
+
+1. DRY up your three “Booking” components  
+   • Right now `CompanyBooking.svelte`, `PrivateBooking.svelte` and `SchoolBooking.svelte` are almost identical, with only a handful of minor prop or formatting differences.  
+   • Extract all of the shared logic (state, effects, scrolling, price-calculation, step flow) into a single `Booking.svelte` generic component that takes an `experienceType` prop.  
+   • In that component you can e.g. branch on `experienceType === 'private'` for VAT display, or via small slots/snippets for the few UI differences. This will dramatically reduce maintenance burden.  
+
+2. Centralize and share your TypeScript types  
+   • You have inline interface definitions for `Experience`, `Duration`, `OpenDate`, `BlockedDate`, etc. in multiple components. Instead, define them once under `src/lib/types/booking.ts` (or similar) and import.  
+   • Your `BlockedDate` type in Svelte doesn’t include the `close_time` field that your Calendar logic refers to—update your type to fully match the API.  
+   • Move all shared Zod schemas into `src/lib/schemas` (you already have `contact-form.ts`) and reuse them on client+server.  
+
+3. Sharpen your API handlers’ types  
+   • In your `/routes/api/*/+server.ts` handlers, use `RequestHandler<TypeOfBody>` so that `request.json()` is statically typed rather than `any`.  
+   • In your webhook handler, install `@types/uuid` so the `uuid` import is typed, and prefer `import { v4 as uuidv4 } from 'uuid'` over the deprecated `substr` approach.  
+
+4. Reduce double-invocation of `onStartTimeSelect`  
+   In `AvailableStartTimes.svelte` you both:  
+     • call `onStartTimeSelect(selectedTime)` inside the `$effect` tracking `selectedTime`, and  
+     • call it again immediately in `handleTimeSelect`.  
+   You really only need one—pick the most straightforward and remove the other to avoid surprising duplicate calls.  
+
+5. Convert your Supabase clients to TypeScript  
+   • Rename `supabaseClient.js` / `supabaseServerClient.js` to `.ts`, import your shared types (e.g. Reactivate the typed helpers from `@supabase/supabase-js`).  
+   • That will give you autocompletion on `.from('table')` and column names.  
+
+6. Break up very large files  
+   • Your Deno Edge Function at `supabase/functions/send-booking-confirmation/index.ts` is 600+ lines. Consider splitting out helpers (`generateEmailHtml()`, availability-update logic, Resend wiring) into smaller modules.  
+   • Likewise your `/routes/api/webhook/+server.ts` is huge—move the availability-update loops into their own utility so the main handler stays concise.  
+
+7. Linting, formatting, CI  
+   • Add ESLint (with the Svelte plugin) to catch unused vars, missing dependencies in `$effect`, etc.  
+   • Consider a lightweight testing harness (e.g. Vitest) for your JS utilities in `src/lib/utils/price.ts`, so your price calculations can be validated automatically.  
+
+8. Minor polish & best practices  
+   • Replace any remaining `.substr` calls with `.slice` or use `crypto.randomUUID()` for unique IDs.  
+   • Use `readonly` properties on derived state where mutation isn’t needed.  
+   • In your Zod schemas, prefer `satisfies` only once—don’t duplicate inline object literals.  
+   • Ensure every `<script lang="ts">` has exactly the imports it uses; remove commented-out or unused imports.  
+
+Once you collapse the three Booking variants into a single generic component and centralize your types, you’ll have a much leaner, more maintainable codebase—and you’ll reduce the chance of bugs when the booking flow changes. Let me know if you’d like concrete examples of any of these refactorings!
