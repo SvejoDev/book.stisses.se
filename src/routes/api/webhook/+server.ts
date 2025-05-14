@@ -7,7 +7,6 @@ import { PUBLIC_SUPABASE_URL } from '$env/static/public';
 import { SUPABASE_SERVICE_ROLE_KEY } from '$env/static/private';
 import { addDays, format, parseISO } from 'date-fns';
 import { getPaymentPrice } from '$lib/utils/price';
-import { v4 as uuidv4 } from 'uuid';
 import crypto from 'crypto';
 
 // Create a Supabase client with the service role key for the webhook
