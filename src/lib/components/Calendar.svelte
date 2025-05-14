@@ -2,25 +2,7 @@
 	import { format, addDays, isWithinInterval, parseISO, isAfter } from 'date-fns';
 	import { sv } from 'date-fns/locale';
 	import { cn } from '$lib/utils';
-
-	interface BlockedDate {
-		id: number;
-		experience_id: number;
-		start_date: string;
-		end_date: string;
-		reason: string | null;
-		created_at: string;
-	}
-
-	interface OpenDate {
-		id: number;
-		experience_id: number;
-		type: 'interval' | 'specific';
-		start_date: string | null;
-		end_date: string | null;
-		specific_date: string | null;
-		created_at: string;
-	}
+	import type { BlockedDate, OpenDate } from '$lib/types/booking';
 
 	let {
 		durationType,

@@ -9,6 +9,7 @@
 	} from '$lib/components/ui/card';
 	import { cn } from '$lib/utils';
 	import { getBothPrices, getDisplayPrice, formatPrice } from '$lib/utils/price';
+	import type { SelectedProduct } from '$lib/types/booking';
 
 	interface Product {
 		id: number;
@@ -23,9 +24,7 @@
 		startLocationId = $bindable(''),
 		experienceId = $bindable(''),
 		isLocked = $bindable(false),
-		onProductsSelected = (
-			products: Array<{ productId: number; quantity: number; price?: number }>
-		) => {},
+		onProductsSelected = (products: SelectedProduct[]) => {},
 		onProductsLoaded = () => {},
 		pricingType = $bindable<'per_person' | 'per_product' | 'hybrid'>('per_person'),
 		experienceType = $bindable<string>('private'),
@@ -34,9 +33,7 @@
 		startLocationId: string;
 		experienceId: string;
 		isLocked?: boolean;
-		onProductsSelected?: (
-			products: Array<{ productId: number; quantity: number; price?: number }>
-		) => void;
+		onProductsSelected?: (products: SelectedProduct[]) => void;
 		onProductsLoaded?: () => void;
 		pricingType?: 'per_person' | 'per_product' | 'hybrid';
 		experienceType: string;
@@ -153,7 +150,7 @@
 				price: products.find((p) => p.id === parseInt(productId))?.price
 			}));
 
-		onProductsSelected(selectedProducts);
+		onProductsSelected(selectedProducts as SelectedProduct[]);
 	});
 </script>
 

@@ -9,6 +9,7 @@
 	} from '$lib/components/ui/card';
 	import { cn } from '$lib/utils';
 	import { formatPrice, getDisplayPrice } from '$lib/utils/price';
+	import type { SelectedAddon } from '$lib/types/booking';
 
 	interface Addon {
 		id: number;
@@ -25,7 +26,7 @@
 		experienceId = $bindable(''),
 		selectedProducts = [],
 		isLocked = $bindable(false),
-		onAddonsSelected = (addons: Array<{ addonId: number; quantity: number; price?: number }>) => {},
+		onAddonsSelected = (addons: SelectedAddon[]) => {},
 		onAddonsLoaded = () => {},
 		pricingType = $bindable<'per_person' | 'per_product' | 'hybrid'>('per_person'),
 		payingCustomers = $bindable(0),
@@ -37,9 +38,7 @@
 		experienceId: string;
 		selectedProducts: Array<{ productId: number; quantity: number }>;
 		isLocked?: boolean;
-		onAddonsSelected?: (
-			addons: Array<{ addonId: number; quantity: number; price?: number }>
-		) => void;
+		onAddonsSelected?: (addons: SelectedAddon[]) => void;
 		onAddonsLoaded?: () => void;
 		pricingType?: 'per_person' | 'per_product' | 'hybrid';
 		payingCustomers?: number;
@@ -184,7 +183,7 @@
 				}))
 		];
 
-		onAddonsSelected(selectedAddons);
+		onAddonsSelected(selectedAddons as SelectedAddon[]);
 	});
 
 	function handleFetchAddons() {

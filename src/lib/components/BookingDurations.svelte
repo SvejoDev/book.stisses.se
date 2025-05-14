@@ -2,14 +2,7 @@
 	import * as Select from '$lib/components/ui/select';
 	import { cn } from '$lib/utils';
 	import { getDisplayPrice, formatPrice } from '$lib/utils/price';
-
-	interface Duration {
-		id: number;
-		start_location_id: number;
-		duration_type: string;
-		duration_value: number;
-		extra_price: number;
-	}
+	import type { Duration } from '$lib/types/booking';
 
 	let {
 		startLocationId,

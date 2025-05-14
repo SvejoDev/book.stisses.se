@@ -1,16 +1,7 @@
 <script lang="ts">
 	import { cn } from '$lib/utils';
 	import { getBothPrices, formatPrice, getDisplayPrice } from '$lib/utils/price';
-
-	interface PriceGroup {
-		id: number;
-		experience_id: number;
-		start_location_id: number | null;
-		internal_name: string;
-		display_name: string;
-		price: number;
-		is_payable: boolean;
-	}
+	import type { PriceGroup } from '$lib/types/booking';
 
 	let {
 		priceGroups = [],

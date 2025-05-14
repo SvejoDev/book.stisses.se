@@ -1,13 +1,7 @@
 <script lang="ts">
 	import * as Card from '$lib/components/ui/card';
 	import { cn } from '$lib/utils';
-
-	interface StartLocation {
-		id: number;
-		experience_id: number;
-		name: string;
-		imageUrl: string;
-	}
+	import type { StartLocation } from '$lib/types/booking';
 
 	let {
 		startLocations,
@@ -33,8 +27,10 @@
 	// Preload images
 	$effect(() => {
 		startLocations.forEach((location: StartLocation) => {
-			const img = new Image();
-			img.src = location.imageUrl;
+			if (location.imageUrl) {
+				const img = new Image();
+				img.src = location.imageUrl;
+			}
 		});
 	});
 

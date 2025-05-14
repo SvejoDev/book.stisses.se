@@ -8,75 +8,17 @@
 	import PriceGroupSelector from '$lib/components/PriceGroupSelector.svelte';
 	import ContactForm from '$lib/components/ContactForm.svelte';
 	import { getDisplayPrice, formatPrice } from '$lib/utils/price';
-
-	// Shared interfaces
-	interface Experience {
-		id: string;
-		type: 'company' | 'private' | 'school';
-		name: string;
-		booking_foresight_hours: number;
-	}
-
-	interface StartLocation {
-		id: number;
-		experience_id: number;
-		name: string;
-		price_per_person?: number;
-	}
-
-	interface Duration {
-		id: number;
-		start_location_id: number;
-		duration_type: string;
-		duration_value: number;
-		extra_price: number;
-	}
-
-	interface OpenDate {
-		id: number;
-		experience_id: number;
-		type: 'interval' | 'specific';
-		start_date: string | null;
-		end_date: string | null;
-		specific_date: string | null;
-		created_at: string;
-	}
-
-	interface BlockedDate {
-		id: number;
-		experience_id: number;
-		start_date: string;
-		end_date: string;
-		reason: string | null;
-		created_at: string;
-	}
-
-	interface PriceGroup {
-		id: number;
-		experience_id: number;
-		start_location_id: number | null;
-		internal_name: string;
-		display_name: string;
-		price: number;
-		is_payable?: boolean;
-	}
-
-	interface SelectedProduct {
-		productId: number;
-		quantity: number;
-		price?: number;
-	}
-
-	interface SelectedAddon {
-		addonId: number;
-		quantity: number;
-		price?: number;
-	}
-
-	interface SelectedStartTime {
-		startTime: string;
-		endTime: string;
-	}
+	import type {
+		Experience,
+		StartLocation,
+		Duration,
+		OpenDate,
+		BlockedDate,
+		PriceGroup,
+		SelectedProduct,
+		SelectedAddon,
+		SelectedStartTime
+	} from '$lib/types/booking';
 
 	// Props
 	let {

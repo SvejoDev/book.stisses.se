@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { AvailableTime } from '$lib/types';
+	import type { SelectedStartTime } from '$lib/types/booking';
 	import { cn } from '$lib/utils';
 	import { addHours, addDays, format } from 'date-fns';
 
