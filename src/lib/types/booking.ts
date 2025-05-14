@@ -10,7 +10,7 @@ export interface StartLocation {
   id: number;
   experience_id: number;
   name: string;
-  imageUrl: string;
+  imageUrl?: string | null;
   price_per_person?: number;
 }
 
@@ -24,29 +24,29 @@ export interface Duration {
 
 export interface OpenDate {
   id: number;
-  experience_id: number;
+  experience_id?: number | null;
   type: 'interval' | 'specific';
-  start_date: string | null;
-  end_date: string | null;
-  specific_date: string | null;
-  created_at: string;
+  start_date?: string | null;
+  end_date?: string | null;
+  specific_date?: string | null;
+  created_at?: string | null;
   open_time: string;
   close_time: string;
 }
 
 export interface BlockedDate {
   id: number;
-  experience_id: number;
+  experience_id?: number | null;
   start_date: string;
   end_date: string;
   reason?: string | null;
-  created_at: string;
+  created_at?: string | null;
 }
 
 export interface PriceGroup {
   id: number;
-  experience_id: number;
-  start_location_id: number | null;
+  experience_id?: number | null;
+  start_location_id?: number | null;
   internal_name: string;
   display_name: string;
   price: number;
@@ -68,4 +68,23 @@ export interface SelectedAddon {
 export interface SelectedStartTime {
   startTime: string;
   endTime: string;
+}
+
+export interface Product {
+  id: number;
+  name: string;
+  description?: string | null;
+  total_quantity: number;
+  imageUrl?: string | null;
+}
+
+export interface Addon {
+  id: number;
+  name: string;
+  description?: string | null;
+  total_quantity?: number | null;
+  imageUrl?: string | null;
+  created_at: string;
+  track_availability?: boolean | null;
+  pricing_type?: string | null;
 } 
