@@ -3,8 +3,6 @@
 	import type { PageData } from './$types';
 
 	let { data } = $props<{ data: PageData }>();
-
-	let bookingRef = $state<{ getTotalPrice: () => number } | null>(null);
 </script>
 
 <svelte:head>
@@ -13,7 +11,6 @@
 
 <div class="container mx-auto max-w-7xl px-4 py-8">
 	<Booking
-		bind:this={bookingRef}
 		experience={data.experience}
 		startLocations={data.startLocations}
 		openDates={data.openDates}
