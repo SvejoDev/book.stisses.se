@@ -89,4 +89,30 @@ export interface Addon {
   track_availability?: boolean | null;
   pricing_type?: string | null;
   price?: number | null;
+}
+
+// Used for POST /api/create-checkout-session and webhook
+export interface BookingPayload {
+  firstName: string;
+  lastName: string;
+  email: string;
+  phone: string;
+  comment?: string;
+  experienceId: number;
+  experienceType: 'private' | 'company' | 'school';
+  startLocationId: number;
+  durationId: number;
+  startDate: string;
+  startTime: string;
+  endDate: string;
+  endTime: string;
+  hasBookingGuarantee?: boolean;
+  totalPrice: number;
+  priceGroups: Array<{ id: number; quantity: number }> | Record<string, number>;
+  products: SelectedProduct[];
+  addons: SelectedAddon[];
+}
+
+export interface BookingRequest {
+  bookings: BookingPayload[];
 } 

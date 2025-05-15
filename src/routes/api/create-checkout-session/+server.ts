@@ -6,6 +6,7 @@ import { supabase } from '$lib/supabaseClient';
 import { addDays, format, parseISO } from 'date-fns';
 import { sv } from 'date-fns/locale';
 import { getBothPrices, getPaymentPrice } from '$lib/utils/price';
+import type { BookingRequest, BookingPayload } from '$lib/types/booking';
 
 const stripe = new Stripe(SECRET_STRIPE_KEY);
 
@@ -57,21 +58,21 @@ async function checkAvailability(
   return true;
 }
 
-export const POST: RequestHandler = async ({ request }) => {
+export const POST: RequestHandler = async (args: { request: Request }) => {
   try {
-    const { bookings } = await request.json();
+    const { bookings }: BookingRequest = await args.request.json();
     
     // Generate a single booking number for all bookings
     const bookingNumber = `BK-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     
     // Calculate total price for all bookings (always including VAT)
-    const totalPrice = bookings.reduce((sum: number, booking: any) => {
+    const totalPrice = bookings.reduce((sum: number, booking: BookingPayload) => {
       // Use getPaymentPrice to ensure VAT is included for private experiences
       return sum + getPaymentPrice(booking.totalPrice, booking.experienceType);
     }, 0);
 
     // Create a simplified metadata object to stay within Stripe's 500 character limit
-    const metadataBookings = bookings.map((booking: any) => ({
+    const metadataBookings = bookings.map((booking: BookingPayload) => ({
       id: booking.experienceId,
       type: booking.experienceType,
       date: booking.startDate,
@@ -105,8 +106,8 @@ export const POST: RequestHandler = async ({ request }) => {
         }
       ],
       mode: 'payment',
-      success_url: `${request.headers.get('origin')}/booking/success?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${request.headers.get('origin')}/booking/cancel`,
+      success_url: `${args.request.headers.get('origin')}/booking/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${args.request.headers.get('origin')}/booking/cancel`,
       customer_email: bookings[0].email,
       metadata: bookingMetadata
     });

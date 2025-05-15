@@ -12,9 +12,11 @@ Here are some high-level observations and recommendations after exploring your r
    • Your `BlockedDate` type in Svelte doesn't include the `close_time` field that your Calendar logic refers to—update your type to fully match the API.  
    • Move all shared Zod schemas into `src/lib/schemas` (you already have `contact-form.ts`) and reuse them on client+server.  
 
-3. Sharpen your API handlers' types  
+3. Sharpen your API handlers' types  ✅ **DONE**
    • In your `/routes/api/*/+server.ts` handlers, use `RequestHandler<TypeOfBody>` so that `request.json()` is statically typed rather than `any`.  
    • In your webhook handler, install `@types/uuid` so the `uuid` import is typed, and prefer `import { v4 as uuidv4 } from 'uuid'` over the deprecated `substr` approach.  
+   
+   **DONE: Booking POST body types are now shared and statically typed in API handlers.**
 
 4. Reduce double-invocation of `onStartTimeSelect`  
    In `AvailableStartTimes.svelte` you both:  
