@@ -90,7 +90,8 @@
 	$effect(() => {
 		if (addons.length > 0 && !initialLoadDone) {
 			initialLoadDone = true;
-			const unloadedImages = addons.filter((addon) => !addon.imageUrl);
+			// Only load images that actually have a URL
+			const unloadedImages = addons.filter((addon) => addon.imageUrl);
 
 			if (unloadedImages.length === 0) {
 				allImagesLoaded = true;
@@ -102,11 +103,15 @@
 				unloadedImages.map(
 					(addon) =>
 						new Promise<void>((resolve) => {
+							// addons without imageUrl resolve immediately
+							if (!addon.imageUrl) {
+								resolve();
+								return;
+							}
 							const img = new Image();
 							img.onload = () => resolve();
-							if (addon.imageUrl) {
-								img.src = addon.imageUrl;
-							}
+							img.onerror = () => resolve(); // avoid hanging on broken URLs
+							img.src = addon.imageUrl;
 						})
 				)
 			).then(() => {
