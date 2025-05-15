@@ -440,7 +440,6 @@
 	{#if showContactForm && allBookings.some((b) => b.selectedStartTime)}
 		<section class="space-y-4">
 			<ContactForm
-				totalPrice={totalPriceForAllBookings()}
 				bookings={allBookings}
 				experienceId={parseInt(experience.id)}
 				experienceType={experience.type}

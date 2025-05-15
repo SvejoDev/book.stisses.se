@@ -8,7 +8,7 @@
 		CardTitle
 	} from '$lib/components/ui/card';
 	import { cn } from '$lib/utils';
-	import { getBothPrices, getDisplayPrice, formatPrice } from '$lib/utils/price';
+	import { getDisplayPrice, formatPrice } from '$lib/utils/price';
 	import type { SelectedProduct, Product } from '$lib/types/booking';
 
 	let {
@@ -37,18 +37,6 @@
 	let isLoading = $state(true);
 	let products = $state<Product[]>([]);
 	let error = $state<string | null>(null);
-
-	let totalProductPrice = /** @readonly */ $derived(() => {
-		if (pricingType === 'per_person') return 0;
-
-		return Object.entries(selectedQuantities).reduce((total, [productId, quantity]) => {
-			const product = products.find((p) => p.id === parseInt(productId));
-			if (product?.price) {
-				return total + getDisplayPrice(product.price * quantity, experienceType);
-			}
-			return total;
-		}, 0);
-	});
 
 	async function fetchProducts() {
 		try {

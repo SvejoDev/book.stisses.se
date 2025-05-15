@@ -7,7 +7,7 @@
 	import { PhoneInput } from '$lib/components/extra/ui/phone-input';
 	import { superForm, type SuperValidated } from 'sveltekit-superforms/client';
 	import { zodClient } from 'sveltekit-superforms/adapters';
-	import { formatPrice, getDisplayPrice, getPaymentPrice } from '$lib/utils/price';
+	import { formatPrice, getPaymentPrice } from '$lib/utils/price';
 	import { format } from 'date-fns';
 	import { sv } from 'date-fns/locale';
 	import type { SelectedProduct, SelectedAddon, SelectedStartTime } from '$lib/types/booking';
@@ -26,11 +26,10 @@
 		totalPrice: number;
 	};
 
-	let { data, totalPrice, bookings, experienceId, experienceType, products, addons } = $props<{
+	let { data, bookings, experienceId, experienceType, products, addons } = $props<{
 		data?: {
 			form: SuperValidated<FormSchema>;
 		};
-		totalPrice: number;
 		bookings: Array<Booking>;
 		experienceId: number;
 		experienceType: string;

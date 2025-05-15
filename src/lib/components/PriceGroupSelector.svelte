@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { cn } from '$lib/utils';
-	import { getBothPrices, formatPrice, getDisplayPrice } from '$lib/utils/price';
+	import { formatPrice, getDisplayPrice } from '$lib/utils/price';
 	import type { PriceGroup } from '$lib/types/booking';
 
 	let {

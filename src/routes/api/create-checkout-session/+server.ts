@@ -10,54 +10,6 @@ import type { BookingRequest, BookingPayload } from '$lib/types/booking';
 
 const stripe = new Stripe(SECRET_STRIPE_KEY);
 
-// Helper function to calculate end date for overnight bookings
-function calculateEndDate(startDate: string, durationType: string, durationValue: number): string {
-  if (durationType !== 'overnights') return startDate;
-  const start = parseISO(startDate);
-  const end = addDays(start, durationValue);
-  return format(end, 'yyyy-MM-dd');
-}
-
-// Helper function to check availability
-async function checkAvailability(
-  productId: number,
-  date: string,
-  startMinutes: number,
-  endMinutes: number,
-  requestedQuantity: number
-): Promise<boolean> {
-  const tableName = `availability_product_${productId}`;
-  
-  const { data: currentAvailability } = await supabase
-    .from(tableName)
-    .select('*')
-    .eq('datum', date)
-    .single();
-
-  if (!currentAvailability) return true; // No existing bookings
-
-  // Check each 15-minute slot
-  for (let minute = startMinutes; minute <= endMinutes; minute += 15) {
-    const slotKey = minute.toString();
-    const currentlyBooked = currentAvailability[slotKey] || 0;
-    
-    // Get product's max quantity
-    const { data: product } = await supabase
-      .from('products')
-      .select('total_quantity')
-      .eq('id', productId)
-      .single();
-    
-    if (!product) return false;
-    
-    if (currentlyBooked + requestedQuantity > product.total_quantity) {
-      return false;
-    }
-  }
-
-  return true;
-}
-
 export const POST: RequestHandler = async (args: { request: Request }) => {
   try {
     const { bookings }: BookingRequest = await args.request.json();
@@ -135,30 +87,3 @@ export const POST: RequestHandler = async (args: { request: Request }) => {
     return json({ error: 'Could not create checkout session' }, { status: 500 });
   }
 };
-
-// Helper function to convert time to minutes
-function timeToMinutes(time: string): number {
-  const [hours, minutes] = time.split(':').map(Number);
-  return hours * 60 + minutes;
-}
-
-// Helper functions
-function getDurationText(type: string, value: number): string {
-  if (type === 'hours') {
-    return value === 1 ? '1 timme' : `${value} timmar`;
-  } else if (type === 'overnights') {
-    return value === 1 ? '1 övernattning' : `${value} övernattningar`;
-  }
-  return '';
-}
-
-function formatBookingPeriod(startDate: string, endDate: string, startTime: string, endTime: string, isOvernight: boolean): string {
-  const start = parseISO(startDate);
-  const end = parseISO(endDate);
-  
-  if (isOvernight) {
-    return `${format(start, 'EEEE d MMMM', { locale: sv })} ${startTime} - ${format(end, 'EEEE d MMMM', { locale: sv })} ${endTime}`;
-  }
-  
-  return `${format(start, 'EEEE d MMMM', { locale: sv })} ${startTime}-${endTime}`;
-}
