@@ -150,5 +150,102 @@ export function generateEmailHtml(booking: any): string {
         </div>
     ` : '';
 
-    return `...full HTML as in index.ts...`;
+    return `
+    <html>
+      <head>
+        <meta charset="UTF-8">
+        <title>Bokningsbekräftelse - Stisses</title>
+        <style>
+          body { font-family: 'Segoe UI', Arial, sans-serif; background: #f9fafb; color: #222; margin: 0; padding: 0; }
+          .container { max-width: 600px; margin: 32px auto; background: #fff; border-radius: 8px; box-shadow: 0 2px 8px #0001; padding: 32px; }
+          h1, h2, h3 { color: #4f46e5; }
+          .section { margin-bottom: 32px; }
+          .details-table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+          .details-table th, .details-table td { border: 1px solid #e5e7eb; padding: 8px; }
+          .details-table th { background: #f3f4f6; text-align: left; }
+          .totals-table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+          .totals-table td { padding: 8px; }
+          .totals-table .label { text-align: right; color: #6b7280; }
+          .totals-table .value { text-align: right; font-weight: bold; }
+          .comment-section { background: #f3f4f6; border-radius: 6px; padding: 16px; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <h1>Bokningsbekräftelse</h1>
+          <div class="section">
+            <h2>Hej${booking.name ? ` ${booking.name}` : ''}!</h2>
+            <p>Tack för din bokning hos Stisses. Här är din bokningsbekräftelse.</p>
+            <p><strong>Bokningsnummer:</strong> ${booking.booking_number}</p>
+          </div>
+
+          <div class="section">
+            <h2>Bokningsdetaljer</h2>
+            <table class="details-table">
+              <tr>
+                <th>Upplevelse</th>
+                <td>${get(booking, 'experience.name', 'Okänd upplevelse')}</td>
+              </tr>
+              <tr>
+                <th>Plats</th>
+                <td>${get(booking, 'start_location.name', 'Okänd plats')}</td>
+              </tr>
+              <tr>
+                <th>Datum & tid</th>
+                <td>${getDateTimeDisplay(booking)}</td>
+              </tr>
+              <tr>
+                <th>Tidslängd</th>
+                <td>${getDurationText(get(booking, 'duration.duration_type'), get(booking, 'duration.duration_value'))}</td>
+              </tr>
+            </table>
+          </div>
+
+          <div class="section">
+            <h2>Prisuppställning</h2>
+            <table class="details-table">
+              <thead>
+                <tr>
+                  <th>Typ</th>
+                  <th style="text-align: center;">Antal</th>
+                  <th style="text-align: right;">Pris (exkl. moms)</th>
+                  <th style="text-align: right;">Moms (25%)</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${bookingPriceGroupsHtml}
+                ${bookingProductsHtml}
+                ${bookingAddonsHtml}
+                ${durationHtml}
+              </tbody>
+            </table>
+            <table class="totals-table">
+              <tr>
+                <td class="label">Summa exkl. moms:</td>
+                <td class="value">${formatPrice(totalPriceExcludingVat)}</td>
+              </tr>
+              <tr>
+                <td class="label">Moms (25%):</td>
+                <td class="value">${formatPrice(totalVatAmount)}</td>
+              </tr>
+              <tr>
+                <td class="label">Totalt att betala:</td>
+                <td class="value">${formatPrice(totalPriceIncludingVat)}</td>
+              </tr>
+            </table>
+          </div>
+
+          ${bookingGuaranteeHtml}
+          ${commentHtml}
+
+          <div class="section">
+            <h2>Frågor?</h2>
+            <p>Om du har några frågor om din bokning, svara på detta mail eller kontakta oss via <a href="mailto:info@stisses.se">info@stisses.se</a>.</p>
+            <p>Vi ser fram emot att träffa dig!</p>
+            <p>Hälsningar,<br>Stisses</p>
+          </div>
+        </div>
+      </body>
+    </html>
+    `;
 } 
