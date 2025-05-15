@@ -24,7 +24,7 @@ Here are some high-level observations and recommendations after exploring your r
      • call it again immediately in `handleTimeSelect`.  
    You really only need one—pick the most straightforward and remove the other to avoid surprising duplicate calls.  
 
-5. Convert your Supabase clients to TypeScript  
+5. Convert your Supabase clients to TypeScript  ✅ **DONE**
    • Rename `supabaseClient.js` / `supabaseServerClient.js` to `.ts`, import your shared types (e.g. Reactivate the typed helpers from `@supabase/supabase-js`).  
    • That will give you autocompletion on `.from('table')` and column names.  
 
