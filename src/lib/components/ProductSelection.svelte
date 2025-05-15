@@ -38,7 +38,7 @@
 	let products = $state<Product[]>([]);
 	let error = $state<string | null>(null);
 
-	let totalProductPrice = $derived(() => {
+	let totalProductPrice = /** @readonly */ $derived(() => {
 		if (pricingType === 'per_person') return 0;
 
 		return Object.entries(selectedQuantities).reduce((total, [productId, quantity]) => {

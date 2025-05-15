@@ -32,14 +32,10 @@ Here are some high-level observations and recommendations after exploring your r
    • Your Deno Edge Function at `supabase/functions/send-booking-confirmation/index.ts` is 600+ lines. Consider splitting out helpers (`generateEmailHtml()`, availability-update logic, Resend wiring) into smaller modules.  
    • Likewise your `/routes/api/webhook/+server.ts` is huge—move the availability-update loops into their own utility so the main handler stays concise.  
 
-7. Linting, formatting, CI  
-   • Add ESLint (with the Svelte plugin) to catch unused vars, missing dependencies in `$effect`, etc.  
-   • Consider a lightweight testing harness (e.g. Vitest) for your JS utilities in `src/lib/utils/price.ts`, so your price calculations can be validated automatically.  
-
-8. Minor polish & best practices  
-   • Replace any remaining `.substr` calls with `.slice` or use `crypto.randomUUID()` for unique IDs.  
-   • Use `readonly` properties on derived state where mutation isn't needed.  
-   • In your Zod schemas, prefer `satisfies` only once—don't duplicate inline object literals.  
-   • Ensure every `<script lang="ts">` has exactly the imports it uses; remove commented-out or unused imports.  
+7. Minor polish & best practices  ✅ **DONE**
+   • Replace any remaining `.substr` calls with `.slice` or use `crypto.randomUUID()` for unique IDs.  ✅ DONE
+   • Use `readonly` properties on derived state where mutation isn't needed.  ✅ DONE
+   • In your Zod schemas, prefer `satisfies` only once—don't duplicate inline object literals.  ✅ DONE
+   • Ensure every `<script lang="ts">` has exactly the imports it uses; remove commented-out or unused imports.  ✅ DONE
 
 Once you collapse the three Booking variants into a single generic component and centralize your types, you'll have a much leaner, more maintainable codebase—and you'll reduce the chance of bugs when the booking flow changes. Let me know if you'd like concrete examples of any of these refactorings!

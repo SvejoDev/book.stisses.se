@@ -5,7 +5,7 @@ import type { RequestHandler } from './$types';
 import { supabase } from '$lib/supabaseClient';
 import { addDays, format, parseISO } from 'date-fns';
 import { sv } from 'date-fns/locale';
-import { getBothPrices, getPaymentPrice } from '$lib/utils/price';
+import { getPaymentPrice } from '$lib/utils/price';
 import type { BookingRequest, BookingPayload } from '$lib/types/booking';
 
 const stripe = new Stripe(SECRET_STRIPE_KEY);
@@ -63,7 +63,8 @@ export const POST: RequestHandler = async (args: { request: Request }) => {
     const { bookings }: BookingRequest = await args.request.json();
     
     // Generate a single booking number for all bookings
-    const bookingNumber = `BK-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    // NOTE: For a more robust unique ID, consider using crypto.randomUUID() if traceability is not required
+    const bookingNumber = `BK-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
     
     // Calculate total price for all bookings (always including VAT)
     const totalPrice = bookings.reduce((sum: number, booking: BookingPayload) => {

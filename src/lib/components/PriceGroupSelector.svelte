@@ -28,7 +28,7 @@
 	let quantities = $state<Record<number, number>>({});
 
 	// Filter price groups based on start location or no location requirement
-	let filteredPriceGroups = $derived(
+	let filteredPriceGroups = /** @readonly */ $derived(
 		priceGroups.filter(
 			(group: PriceGroup) =>
 				group.start_location_id === startLocationId || group.start_location_id === null
@@ -36,7 +36,7 @@
 	);
 
 	// Calculate total paying customers (excluding free price groups)
-	let totalPayingCustomers = $derived(
+	let totalPayingCustomers = /** @readonly */ $derived(
 		Object.entries(quantities).reduce((sum, [groupId, quantity]) => {
 			const group = priceGroups.find((g: PriceGroup) => g.id === parseInt(groupId));
 			return group && group.is_payable ? sum + quantity : sum;
@@ -44,7 +44,7 @@
 	);
 
 	// Calculate total non-paying customers
-	let totalNonPayingCustomers = $derived(
+	let totalNonPayingCustomers = /** @readonly */ $derived(
 		Object.entries(quantities).reduce((sum, [groupId, quantity]) => {
 			const group = priceGroups.find((g: PriceGroup) => g.id === parseInt(groupId));
 			return group && !group.is_payable ? sum + quantity : sum;
@@ -52,7 +52,7 @@
 	);
 
 	// Calculate total amount EXCLUDING extra price and VAT
-	let calculatedBaseTotalExclVat = $derived(() => {
+	let calculatedBaseTotalExclVat = /** @readonly */ $derived(() => {
 		if (pricingType === 'per_product') return 0;
 
 		return Object.entries(quantities).reduce((sum, [groupId, quantity]) => {

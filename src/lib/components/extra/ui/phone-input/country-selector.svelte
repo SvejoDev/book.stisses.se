@@ -32,7 +32,7 @@
 		}
 	}: Props = $props();
 
-	let selectedCountry = $derived(countries.find((a) => a.iso2 == selected));
+	let selectedCountry = /** @readonly */ $derived(countries.find((a) => a.iso2 == selected));
 
 	let open = $state(false);
 

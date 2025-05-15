@@ -46,7 +46,7 @@
 	let error = $state<string | null>(null);
 	let hasAttemptedFetch = $state(false);
 
-	let totalAddonPrice = $derived(() => {
+	let totalAddonPrice = /** @readonly */ $derived(() => {
 		return addons.reduce((total, addon) => {
 			if (!addon.price) return total;
 

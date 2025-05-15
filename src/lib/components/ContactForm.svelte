@@ -7,7 +7,6 @@
 	import { PhoneInput } from '$lib/components/extra/ui/phone-input';
 	import { superForm, type SuperValidated } from 'sveltekit-superforms/client';
 	import { zodClient } from 'sveltekit-superforms/adapters';
-	import { z } from 'zod';
 	import { formatPrice, getDisplayPrice, getPaymentPrice } from '$lib/utils/price';
 	import { format } from 'date-fns';
 	import { sv } from 'date-fns/locale';
@@ -102,7 +101,7 @@
 
 	const { form: formData, enhance, errors } = form;
 
-	let isFormValid = $derived(
+	let isFormValid = /** @readonly */ $derived(
 		!$errors.firstName &&
 			!$errors.lastName &&
 			!$errors.email &&
@@ -110,11 +109,11 @@
 			$formData.acceptTerms
 	);
 
-	let totalBookingsPrice = $derived(() => {
+	let totalBookingsPrice = /** @readonly */ $derived(() => {
 		return bookings.reduce((sum: number, b: { totalPrice: number }) => sum + b.totalPrice, 0);
 	});
 
-	let displayTotalPrice = $derived(() => {
+	let displayTotalPrice = /** @readonly */ $derived(() => {
 		const baseTotal = totalBookingsPrice();
 		const totalIncVat = getPaymentPrice(baseTotal, experienceType);
 

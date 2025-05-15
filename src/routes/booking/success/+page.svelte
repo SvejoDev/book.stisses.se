@@ -8,8 +8,8 @@
 
 	// --- Props ---
 	let { data } = $props<{ data: PageData }>();
-	let bookings = $derived(data.bookings);
-	let totalBookings = $derived(data.totalBookings);
+	let bookings = /** @readonly */ $derived(data.bookings);
+	let totalBookings = /** @readonly */ $derived(data.totalBookings);
 
 	// --- Price Calculation Helpers ---
 	function calculatePriceExcludingVat(totalIncludingVat: number): number {
@@ -31,14 +31,18 @@
 	}
 
 	// --- Derived Values for Display ---
-	let totalPriceIncludingVat = $derived(() =>
+	let totalPriceIncludingVat = /** @readonly */ $derived(() =>
 		bookings.reduce(
 			(sum: number, booking: { total_price: number }) => sum + (booking.total_price || 0),
 			0
 		)
 	);
-	let totalPriceExcludingVat = $derived(() => calculatePriceExcludingVat(totalPriceIncludingVat()));
-	let totalVatAmount = $derived(() => calculateVatAmount(totalPriceIncludingVat()));
+	let totalPriceExcludingVat = /** @readonly */ $derived(() =>
+		calculatePriceExcludingVat(totalPriceIncludingVat())
+	);
+	let totalVatAmount = /** @readonly */ $derived(() =>
+		calculateVatAmount(totalPriceIncludingVat())
+	);
 
 	// --- Formatting Helpers ---
 	function formatDateTime(date: string, time: string): string {

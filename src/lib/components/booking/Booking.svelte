@@ -63,7 +63,7 @@
 	} | null>(null);
 
 	// Derived state
-	let totalPrice = $derived(() => {
+	let totalPrice = /** @readonly */ $derived(() => {
 		const productTotal = selectedProducts.reduce((sum, p) => sum + (p.price || 0) * p.quantity, 0);
 		const addonTotal = selectedAddons.reduce((sum, a) => sum + (a.price || 0) * a.quantity, 0);
 		const priceGroupTotal = priceGroupRef?.totalAmount() ?? 0;
@@ -71,16 +71,16 @@
 		return productTotal + addonTotal + priceGroupTotal + durationTotal;
 	});
 
-	let displayTotal = $derived(() => {
+	let displayTotal = /** @readonly */ $derived(() => {
 		return getDisplayPrice(totalPrice(), experience.type);
 	});
 
-	let hasStartLocations = $derived(startLocations.length > 0);
+	let hasStartLocations = /** @readonly */ $derived(startLocations.length > 0);
 
-	let shouldShowDurations = $derived(
+	let shouldShowDurations = /** @readonly */ $derived(
 		showDurations && (selectedLocationId !== null || !hasStartLocations)
 	);
-	let shouldShowProducts = $derived(
+	let shouldShowProducts = /** @readonly */ $derived(
 		selectedDate !== null && (selectedLocationId !== null || !hasStartLocations)
 	);
 
@@ -273,10 +273,10 @@
 		);
 	}
 
-	let totalPriceForAllBookings = $derived(() =>
+	let totalPriceForAllBookings = /** @readonly */ $derived(() =>
 		allBookings.reduce((sum, b) => sum + (b.totalPrice || 0), 0)
 	);
-	let displayTotalForAllBookings = $derived(() =>
+	let displayTotalForAllBookings = /** @readonly */ $derived(() =>
 		getDisplayPrice(totalPriceForAllBookings(), experience.type)
 	);
 
