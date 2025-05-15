@@ -28,7 +28,7 @@ Here are some high-level observations and recommendations after exploring your r
    • Rename `supabaseClient.js` / `supabaseServerClient.js` to `.ts`, import your shared types (e.g. Reactivate the typed helpers from `@supabase/supabase-js`).  
    • That will give you autocompletion on `.from('table')` and column names.  
 
-6. Break up very large files  
+6. Break up very large files  ✅ **DONE**
    • Your Deno Edge Function at `supabase/functions/send-booking-confirmation/index.ts` is 600+ lines. Consider splitting out helpers (`generateEmailHtml()`, availability-update logic, Resend wiring) into smaller modules.  
    • Likewise your `/routes/api/webhook/+server.ts` is huge—move the availability-update loops into their own utility so the main handler stays concise.  
 
