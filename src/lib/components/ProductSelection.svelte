@@ -9,16 +9,7 @@
 	} from '$lib/components/ui/card';
 	import { cn } from '$lib/utils';
 	import { getBothPrices, getDisplayPrice, formatPrice } from '$lib/utils/price';
-	import type { SelectedProduct } from '$lib/types/booking';
-
-	interface Product {
-		id: number;
-		name: string;
-		description: string;
-		total_quantity: number;
-		imageUrl: string;
-		price?: number;
-	}
+	import type { SelectedProduct, Product } from '$lib/types/booking';
 
 	let {
 		startLocationId = $bindable(''),
@@ -111,7 +102,9 @@
 						new Promise<void>((resolve) => {
 							const img = new Image();
 							img.onload = () => resolve();
-							img.src = product.imageUrl;
+							if (product.imageUrl) {
+								img.src = product.imageUrl;
+							}
 						})
 				)
 			).then(() => {

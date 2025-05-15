@@ -9,17 +9,7 @@
 	} from '$lib/components/ui/card';
 	import { cn } from '$lib/utils';
 	import { formatPrice, getDisplayPrice } from '$lib/utils/price';
-	import type { SelectedAddon } from '$lib/types/booking';
-
-	interface Addon {
-		id: number;
-		name: string;
-		description: string;
-		total_quantity: number;
-		imageUrl: string;
-		price?: number;
-		pricing_type: 'per_person' | 'per_unit';
-	}
+	import type { SelectedAddon, Addon } from '$lib/types/booking';
 
 	let {
 		startLocationId = $bindable(''),
@@ -130,7 +120,9 @@
 						new Promise<void>((resolve) => {
 							const img = new Image();
 							img.onload = () => resolve();
-							img.src = addon.imageUrl;
+							if (addon.imageUrl) {
+								img.src = addon.imageUrl;
+							}
 						})
 				)
 			).then(() => {
@@ -145,7 +137,11 @@
 		const currentQuantity = selectedQuantities[addonId] || 0;
 		const addon = addons.find((a) => a.id === addonId);
 
-		if (addon && currentQuantity < addon.total_quantity) {
+		if (
+			addon &&
+			typeof addon.total_quantity === 'number' &&
+			currentQuantity < addon.total_quantity
+		) {
 			selectedQuantities[addonId] = currentQuantity + 1;
 		}
 	}
@@ -270,7 +266,7 @@
 								{#if addon.price === 0 || addon.price === undefined}
 									Ingår
 								{:else}
-									{formatPrice(getDisplayPrice(addon.price, experienceType))}
+									{formatPrice(getDisplayPrice(addon.price ?? 0, experienceType))}
 									{#if addon.pricing_type === 'per_person'}
 										per person
 									{:else}
@@ -303,7 +299,9 @@
 										variant="outline"
 										size="icon"
 										onclick={() => incrementAddon(addon.id)}
-										disabled={selectedQuantities[addon.id] >= addon.total_quantity || isLocked}
+										disabled={typeof addon.total_quantity !== 'number' ||
+											selectedQuantities[addon.id] >= addon.total_quantity ||
+											isLocked}
 										class={cn(isLocked && 'cursor-not-allowed opacity-50')}
 									>
 										+
@@ -320,7 +318,10 @@
 									{:else if selectedQuantities[addon.id]}
 										<div class="text-sm font-medium">
 											Totalt: {formatPrice(
-												getDisplayPrice(addon.price * selectedQuantities[addon.id], experienceType)
+												getDisplayPrice(
+													(addon.price ?? 0) * selectedQuantities[addon.id],
+													experienceType
+												)
 											)}
 											{#if experienceType === 'private'}
 												<span class="text-xs">(inkl. moms)</span>
@@ -345,7 +346,7 @@
 									{:else if selectedPerPersonAddons[addon.id]}
 										<div class="ml-4 text-sm font-medium">
 											Totalt: {formatPrice(
-												getDisplayPrice(addon.price * payingCustomers, experienceType)
+												getDisplayPrice((addon.price ?? 0) * payingCustomers, experienceType)
 											)}
 											{#if experienceType === 'private'}
 												<span class="text-xs">(inkl. moms)</span>

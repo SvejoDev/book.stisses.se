@@ -11,23 +11,8 @@
 	import { formatPrice, getDisplayPrice, getPaymentPrice } from '$lib/utils/price';
 	import { format } from 'date-fns';
 	import { sv } from 'date-fns/locale';
-
-	interface SelectedProduct {
-		productId: number;
-		quantity: number;
-		price?: number;
-	}
-
-	interface SelectedAddon {
-		addonId: number;
-		quantity: number;
-		price?: number;
-	}
-
-	interface SelectedStartTime {
-		startTime: string;
-		endTime: string;
-	}
+	import type { SelectedProduct, SelectedAddon, SelectedStartTime } from '$lib/types/booking';
+	import { formSchema, type FormSchema } from '$lib/schemas/contact-form';
 
 	type Booking = {
 		selectedLocationId: number | null;
@@ -41,20 +26,6 @@
 		selectedStartTime: SelectedStartTime | null;
 		totalPrice: number;
 	};
-
-	// Define the form schema
-	export const formSchema = z.object({
-		firstName: z.string().min(2, 'Förnamn måste vara minst 2 tecken'),
-		lastName: z.string().min(2, 'Efternamn måste vara minst 2 tecken'),
-		email: z.string().email('Ogiltig e-postadress'),
-		phone: z.string().min(1, 'Telefonnummer krävs'),
-		comment: z.string().optional(),
-		acceptTerms: z.boolean().refine((val) => val === true, {
-			message: 'Du måste godkänna bokningsavtalet och köpvillkoren'
-		})
-	}) satisfies z.ZodType<Record<string, unknown>>;
-
-	type FormSchema = z.infer<typeof formSchema>;
 
 	let { data, totalPrice, bookings, experienceId, experienceType, products, addons } = $props<{
 		data?: {

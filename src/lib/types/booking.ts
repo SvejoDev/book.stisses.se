@@ -76,6 +76,7 @@ export interface Product {
   description?: string | null;
   total_quantity: number;
   imageUrl?: string | null;
+  price?: number | null;
 }
 
 export interface Addon {
@@ -87,4 +88,5 @@ export interface Addon {
   created_at: string;
   track_availability?: boolean | null;
   pricing_type?: string | null;
+  price?: number | null;
 } 

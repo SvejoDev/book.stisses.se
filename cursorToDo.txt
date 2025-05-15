@@ -7,7 +7,7 @@ Here are some high-level observations and recommendations after exploring your r
    
    **STEP 1 COMPLETED: All three booking components are now replaced by a single generic Booking.svelte. All usages and imports have been updated. Old files are deleted.**
 
-2. Centralize and share your TypeScript types  
+2. Centralize and share your TypeScript types  ✅ **DONE**
    • You have inline interface definitions for `Experience`, `Duration`, `OpenDate`, `BlockedDate`, etc. in multiple components. Instead, define them once under `src/lib/types/booking.ts` (or similar) and import.  
    • Your `BlockedDate` type in Svelte doesn't include the `close_time` field that your Calendar logic refers to—update your type to fully match the API.  
    • Move all shared Zod schemas into `src/lib/schemas` (you already have `contact-form.ts`) and reuse them on client+server.  
