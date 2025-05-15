@@ -135,11 +135,7 @@
 
 	function handleTimeSelect(time: AvailableTime) {
 		selectedTime = time;
-		// Call onStartTimeSelect immediately when a time is selected
-		onStartTimeSelect({
-			startTime: time.startTime,
-			endTime: time.endTime
-		});
+		// onStartTimeSelect will be called by the $effect tracking selectedTime
 	}
 
 	function handleReset() {

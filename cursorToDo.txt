@@ -18,7 +18,7 @@ Here are some high-level observations and recommendations after exploring your r
    
    **DONE: Booking POST body types are now shared and statically typed in API handlers.**
 
-4. Reduce double-invocation of `onStartTimeSelect`  
+4. Reduce double-invocation of `onStartTimeSelect`  ✅ **DONE**
    In `AvailableStartTimes.svelte` you both:  
      • call `onStartTimeSelect(selectedTime)` inside the `$effect` tracking `selectedTime`, and  
      • call it again immediately in `handleTimeSelect`.  
