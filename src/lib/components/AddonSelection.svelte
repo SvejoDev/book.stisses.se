@@ -46,22 +46,6 @@
 	let error = $state<string | null>(null);
 	let hasAttemptedFetch = $state(false);
 
-	let totalAddonPrice = /** @readonly */ $derived(() => {
-		return addons.reduce((total, addon) => {
-			if (!addon.price) return total;
-
-			let addonTotal = 0;
-			if (addon.pricing_type === 'per_unit') {
-				const quantity = selectedQuantities[addon.id] || 0;
-				addonTotal = getDisplayPrice(addon.price * quantity, experienceType);
-			} else if (addon.pricing_type === 'per_person' && selectedPerPersonAddons[addon.id]) {
-				addonTotal = getDisplayPrice(addon.price * payingCustomers, experienceType);
-			}
-
-			return total + addonTotal;
-		}, 0);
-	});
-
 	async function fetchAddons() {
 		try {
 			isLoading = true;
