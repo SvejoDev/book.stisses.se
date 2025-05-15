@@ -92,13 +92,15 @@
 	let productsLoaded = $state(false);
 	$effect(() => {
 		if (selectedDate && shouldShowProducts && productsLoaded) {
-			const isMobile = window.innerWidth < 768;
-			if (!isMobile) setTimeout(() => scrollToElement(addonsSection), 300);
+			if (typeof window !== 'undefined') {
+				const isMobile = window.innerWidth < 768;
+				if (!isMobile) setTimeout(() => scrollToElement(addonsSection), 300);
+			}
 		}
 	});
 
 	function scrollToElement(element: HTMLElement | null) {
-		if (!element) return;
+		if (!element || typeof window === 'undefined') return;
 		const rect = element.getBoundingClientRect();
 		const top = rect.top + window.pageYOffset;
 		const isMobile = window.innerWidth < 768;
