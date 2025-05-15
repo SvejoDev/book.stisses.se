@@ -28,13 +28,6 @@ function timeToMinutes(time: string): number {
   return hours * 60 + minutes;
 }
 
-// Helper function to convert minutes to time string (HH:MM)
-function minutesToTime(minutes: number): string {
-  const hours = Math.floor(minutes / 60);
-  const mins = minutes % 60;
-  return `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`;
-}
-
 // Helper function to generate dates between start and end date
 function generateDateRange(startDate: string, endDate: string): string[] {
   const dates: string[] = [];

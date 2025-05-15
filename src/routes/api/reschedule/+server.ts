@@ -4,7 +4,6 @@ import { supabase } from '$lib/supabaseClient';
 import { supabaseServer } from '$lib/supabaseServerClient';
 import { PUBLIC_SUPABASE_URL } from '$env/static/public';
 import { SUPABASE_SERVICE_ROLE_KEY } from '$env/static/private';
-import type { BookingProduct, BookingAddon } from './[bookingId]/+server';
 import { addDays, parseISO, format } from 'date-fns';
 
 interface AvailabilityUpdate {
