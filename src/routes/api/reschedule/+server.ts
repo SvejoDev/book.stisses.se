@@ -143,10 +143,6 @@ async function getBookingData(bookingId: string) {
 }
 
 async function updateAvailability(updates: AvailabilityUpdate[], isSubtract: boolean = false) {
-    console.log('updateAvailability called', { isSubtract, updatesCount: updates.length });
-    console.log('Unique dates for updates:', Array.from(new Set(updates.map(u => u.date))));
-    console.log('Table names for updates:', Array.from(new Set(updates.map(u => u.tableName))));
-    
     // Group updates by table and date for batch processing
     const groupedUpdates = new Map<string, Map<string, Record<string, number>>>();
     
@@ -186,10 +182,12 @@ async function updateAvailability(updates: AvailabilityUpdate[], isSubtract: boo
         for (let minute = startMinutes; minute <= endMinutes; minute += 15) {
             const slotKey = minute.toString();
             const currentValue = getAvailabilityFromCache(tableName, date, slotKey);
-            const newValue = isSubtract 
-                ? Math.max(0, currentValue - quantity) // Only subtract the exact quantity
-                : Math.min(maxQuantity, currentValue + quantity); // Don't exceed max quantity
-
+            let newValue;
+            if (isSubtract) {
+                newValue = Math.max(0, currentValue - quantity);
+            } else {
+                newValue = Math.min(maxQuantity, currentValue + quantity);
+            }
             dateUpdates[slotKey] = newValue;
         }
     }
@@ -230,15 +228,12 @@ async function updateAvailability(updates: AvailabilityUpdate[], isSubtract: boo
 export const POST: RequestHandler = async ({ request }) => {
     try {
         const { bookingId, newDate, newStartTime, newEndTime, reason } = await request.json();
-        console.log('Reschedule POST called with params:', { bookingId, newDate, newStartTime, newEndTime, reason });
 
         // Clear booking cache to fetch the latest booking state
         bookingCache.delete(bookingId);
-        console.log('Booking cache cleared for bookingId:', bookingId);
 
         // Get booking data from cache or database
         const booking = await getBookingData(bookingId);
-        console.log('Fetched booking data:', { durationType: booking.duration.duration_type, durationValue: booking.duration.duration_value, startDate: booking.start_date, endDate: booking.end_date });
 
         // Convert times to minutes
         const oldStartMinutes = parseInt(booking.start_time.split(':')[0]) * 60 + parseInt(booking.start_time.split(':')[1]);
@@ -248,7 +243,6 @@ export const POST: RequestHandler = async ({ request }) => {
 
         // Check if it's an overnight booking
         const isOvernight = booking.duration.duration_type === 'overnights';
-        console.log('isOvernight:', isOvernight);
 
         // Always compute oldEndDate for overnight bookings
         let oldEndDate: string;
@@ -258,11 +252,9 @@ export const POST: RequestHandler = async ({ request }) => {
             oldEndDate = booking.end_date;
         }
         const oldDates = generateDateRange(booking.start_date, oldEndDate);
-        console.log('Old dates for subtraction:', oldDates);
         const newEndDate = isOvernight 
             ? format(addDays(parseISO(newDate), booking.duration.duration_value), 'yyyy-MM-dd')
             : newDate;
-        console.log('New end date for addition:', newEndDate);
 
         // Clear cache for all affected dates
         const allDates = [...oldDates, newDate];
@@ -486,7 +478,6 @@ export const POST: RequestHandler = async ({ request }) => {
             });
 
         if (historyError) {
-            console.error('Error creating booking history:', historyError);
             throw new Error('Failed to log booking history');
         }
 
@@ -502,7 +493,6 @@ export const POST: RequestHandler = async ({ request }) => {
             .eq('id', bookingId);
 
         if (updateError) {
-            console.error('Error updating booking:', updateError);
             throw new Error('Failed to update booking');
         }
 
@@ -518,14 +508,11 @@ export const POST: RequestHandler = async ({ request }) => {
         });
 
         if (!emailResponse.ok) {
-            console.error('Failed to send confirmation email:', await emailResponse.text());
-        } else {
-            console.log('Successfully sent confirmation email');
+            throw new Error('Failed to send confirmation email');
         }
 
         return json({ success: true });
     } catch (error) {
-        console.error('Error in reschedule endpoint:', error);
         return json({ error: error instanceof Error ? error.message : 'Failed to reschedule booking' }, { status: 500 });
     }
 }; 

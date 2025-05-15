@@ -35,11 +35,8 @@ export const GET: RequestHandler = async ({ params }) => {
         const { bookingId } = params;
         
         if (!bookingId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(bookingId)) {
-            console.error('Invalid bookingId format:', bookingId);
             return json({ error: 'Invalid booking ID format' }, { status: 400 });
         }
-
-        console.log('Fetching booking details for ID:', bookingId);
 
         // Fetch booking details with all related data
         const { data: booking, error: bookingError } = await supabase
@@ -90,12 +87,10 @@ export const GET: RequestHandler = async ({ params }) => {
             .single();
 
         if (bookingError) {
-            console.error('Error fetching booking:', bookingError);
             return json({ error: 'Failed to fetch booking' }, { status: 500 });
         }
 
         if (!booking) {
-            console.error('No booking found for ID:', bookingId);
             return json({ error: 'Booking not found' }, { status: 404 });
         }
 
@@ -155,7 +150,6 @@ export const GET: RequestHandler = async ({ params }) => {
             }
         });
     } catch (error) {
-        console.error('Error in reschedule endpoint:', error);
         return json({ error: 'Internal server error' }, { status: 500 });
     }
 }; 
