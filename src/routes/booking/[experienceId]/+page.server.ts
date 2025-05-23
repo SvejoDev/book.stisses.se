@@ -64,17 +64,6 @@ export async function load({ params }) {
         imageUrl: item.start_locations.image_url
     }));
 
-    // Fetch price groups for this experience
-    const { data: priceGroups, error: priceGroupsError } = await supabase
-        .from("price_groups")
-        .select("*")
-        .eq("experience_id", experienceId);
-
-    if (priceGroupsError) {
-        console.error('Price groups error:', priceGroupsError);
-        throw error(500, "Failed to load price groups");
-    }
-
     // Fetch open dates for this experience using simpler query first
     const { data: openDates, error: openDatesError } = await supabase
         .from("experience_open_dates")
@@ -113,7 +102,6 @@ export async function load({ params }) {
         startLocations: locationsWithImages,
         openDates: filteredOpenDates,
         blockedDates: blockedDates || [],
-        priceGroups: priceGroups || [],
         pricingType: experience.pricing_type
     };
 

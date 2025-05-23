@@ -15,7 +15,6 @@
 		startLocations={data.startLocations}
 		openDates={data.openDates}
 		blockedDates={data.blockedDates}
-		priceGroups={data.priceGroups}
 		pricingType={data.experience.pricing_type}
 	/>
 </div>
