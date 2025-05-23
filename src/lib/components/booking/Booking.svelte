@@ -26,14 +26,12 @@
 		startLocations,
 		openDates = [],
 		blockedDates = [],
-		priceGroups = [],
 		pricingType = 'per_person'
 	} = $props<{
 		experience: Experience;
 		startLocations: StartLocation[];
 		openDates?: OpenDate[];
 		blockedDates?: BlockedDate[];
-		priceGroups?: PriceGroup[];
 		pricingType?: 'per_person' | 'per_product' | 'hybrid';
 	}>();
 
@@ -318,8 +316,8 @@
 		<section class="space-y-4" bind:this={priceGroupSection}>
 			<PriceGroupSelector
 				bind:this={priceGroupRef}
-				{priceGroups}
 				{pricingType}
+				experienceId={experience.id}
 				startLocationId={selectedLocationId ?? 0}
 				onQuantityChange={handlePriceGroupQuantityChange}
 				isLocked={isBookingLocked}
