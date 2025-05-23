@@ -13,12 +13,11 @@
 		StartLocation,
 		Duration,
 		OpenDate,
-		BlockedDate,
-		PriceGroup,
-		SelectedProduct,
-		SelectedAddon,
-		SelectedStartTime
-	} from '$lib/types/booking';
+		BlockedDate
+	} from '$lib/types/experience';
+	import type { SelectedProduct } from '$lib/types/product';
+	import type { SelectedAddon } from '$lib/types/addon';
+	import type { SelectedStartTime } from '$lib/types/availability';
 
 	// Props
 	let {
