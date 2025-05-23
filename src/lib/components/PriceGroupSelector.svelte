@@ -73,6 +73,8 @@
 		} catch (error) {
 			console.error('Error fetching price groups:', error);
 			priceGroups = [];
+			quantities = {};
+			onQuantityChange({});
 		} finally {
 			isLoading = false;
 		}
