@@ -6,7 +6,7 @@ import { supabase } from '$lib/supabaseClient';
 import { addDays, format, parseISO } from 'date-fns';
 import { sv } from 'date-fns/locale';
 import { getPaymentPrice } from '$lib/utils/price';
-import type { BookingRequest, BookingPayload } from '$lib/types/booking';
+import type { BookingRequest, BookingPayload } from '$lib/types/api';
 
 const stripe = new Stripe(SECRET_STRIPE_KEY);
 

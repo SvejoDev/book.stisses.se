@@ -1,12 +1,4 @@
-export interface AvailableTime {
-    startTime: string;  // Format: "HH:mm"
-    endTime: string;    // Format: "HH:mm"
-}
+// Legacy types file - re-exports for backward compatibility
+// Use imports from src/lib/types/* for new code
 
-export interface Product {
-    id: number;
-    name: string;
-    description: string;
-    total_quantity: number;
-    imageUrl: string;
-} 
+export * from './types'; 

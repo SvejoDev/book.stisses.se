@@ -1,33 +1,9 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { supabase } from '$lib/supabaseClient';
-
-export interface BookingProduct {
-    quantity: number;
-    products: {
-        id: number;
-        name: string;
-        total_quantity: number;
-    };
-}
-
-export interface BookingAddon {
-    quantity: number;
-    addons: {
-        id: number;
-        name: string;
-        total_quantity: number;
-        track_availability: boolean;
-    };
-}
-
-export interface BookingPriceGroup {
-    quantity: number;
-    price_groups: {
-        id: number;
-        display_name: string;
-    };
-}
+import type { BookingProduct } from '$lib/types/product';
+import type { BookingAddon } from '$lib/types/addon';
+import type { BookingPriceGroup } from '$lib/types/price';
 
 export const GET: RequestHandler = async ({ params }) => {
     try {

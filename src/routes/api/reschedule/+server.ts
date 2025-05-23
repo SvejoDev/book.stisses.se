@@ -5,15 +5,7 @@ import { supabaseServer } from '$lib/supabaseServerClient';
 import { PUBLIC_SUPABASE_URL } from '$env/static/public';
 import { SUPABASE_SERVICE_ROLE_KEY } from '$env/static/private';
 import { addDays, parseISO, format } from 'date-fns';
-
-interface AvailabilityUpdate {
-    tableName: string;
-    date: string;
-    startMinutes: number;
-    endMinutes: number;
-    quantity: number;
-    maxQuantity: number;
-}
+import type { AvailabilityUpdate } from '$lib/types/availability';
 
 // Cache for availability data
 const availabilityCache = new Map<string, Map<string, number>>();

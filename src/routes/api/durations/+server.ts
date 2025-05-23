@@ -1,20 +1,7 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { supabase } from '$lib/supabaseClient';
-
-
-interface Duration {
-    id: number;
-    duration_type: string;
-    duration_value: number;
-    extra_price: number;
-}
-
-interface DurationResponse {
-    duration_id: number;
-    durations: Duration;
-}
-
+import type { Duration, DurationResponse } from '$lib/types/experience';
 
 export const GET: RequestHandler = async ({ url }) => {
     const startLocationId = url.searchParams.get('startLocationId');
