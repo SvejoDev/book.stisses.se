@@ -1,7 +1,5 @@
-import type { ExperienceType } from '$lib/types/price.types';
-
-// Constants
-export const VAT_RATE = 0.25; // 25% VAT in Sweden
+import type { ExperienceType } from '$lib/types/price';
+import { VAT_RATE } from '$lib/types/price';
 
 /**
  * Determines if prices should be displayed including VAT based on experience type

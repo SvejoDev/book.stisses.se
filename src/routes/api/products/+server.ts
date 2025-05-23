@@ -1,21 +1,7 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { supabase } from '$lib/supabaseClient';
-
-interface Product {
-    id: number;
-    name: string;
-    description: string;
-    total_quantity: number;
-    image_url: string;
-    price?: number | null;
-}
-
-interface ProductResponse {
-    product_id: number;
-    price: number | null;
-    products: Product;
-}
+import type { Product, ProductResponse } from '$lib/types';
 
 export const GET: RequestHandler = async ({ url }) => {
     const startLocationId = url.searchParams.get('startLocationId');
@@ -66,17 +52,7 @@ export const GET: RequestHandler = async ({ url }) => {
         const productMap = new Map<number, Product & { imageUrl: string; price: number | null }>();
 
         // Type assertion for the response data
-        const productsData = (data || []) as unknown as Array<{
-            product_id: number;
-            price: number | null;
-            products: {
-                id: number;
-                name: string;
-                description: string;
-                total_quantity: number;
-                image_url: string;
-            };
-        }>;
+        const productsData = (data || []) as unknown as ProductResponse[];
 
         for (const item of productsData) {
             if (!item.products) continue;

@@ -1,14 +1,15 @@
 import { supabaseServer } from "$lib/supabaseServerClient";
 import { error } from '@sveltejs/kit';
 
-interface OpenDate {
+// Local types that match the database query structure
+interface OpenDateQuery {
     type: 'interval' | 'specific';
-    start_date: string;
-    end_date: string;
-    specific_date: string;
+    start_date: string | null;
+    end_date: string | null;
+    specific_date: string | null;
 }
 
-interface BlockedDate {
+interface BlockedDateQuery {
     start_date: string;
     end_date: string;
 }
@@ -102,16 +103,16 @@ export async function load({ params }) {
     }
 
     // Filter open dates to only include future dates
-    const filteredOpenDates = (experienceDates?.open_dates || []).filter((date: OpenDate) => {
+    const filteredOpenDates = (experienceDates?.open_dates || []).filter((date: OpenDateQuery) => {
         if (date.type === 'interval') {
-            return date.end_date >= today;
+            return date.end_date && date.end_date >= today;
         } else {
-            return date.specific_date >= today;
+            return date.specific_date && date.specific_date >= today;
         }
     });
 
     // Filter blocked dates to only include future dates
-    const filteredBlockedDates = (experienceDates?.blocked_dates || []).filter((date: BlockedDate) => {
+    const filteredBlockedDates = (experienceDates?.blocked_dates || []).filter((date: BlockedDateQuery) => {
         return date.end_date >= today;
     });
 

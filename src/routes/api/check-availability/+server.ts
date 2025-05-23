@@ -2,45 +2,12 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { supabase } from '$lib/supabaseClient';
 import { addHours, addDays, parseISO, format } from 'date-fns';
-
-interface AvailabilityRequest {
-    date: string;
-    durationType: 'hours' | 'overnights';
-    durationValue: number;
-    products: Array<{
-        productId: number;
-        quantity: number;
-    }>;
-    addons?: Array<{
-        addonId: number;
-        quantity: number;
-    }>;
-    experienceId: number;
-}
-
-// Cache for product/addon availability data
-interface AvailabilityCache {
-    [id: number]: {
-        maxQuantity: number;
-        availability: {
-            [date: string]: {
-                [minute: string]: number | null;
-            };
-        };
-        type: 'product' | 'addon';
-        trackAvailability: boolean;
-    };
-}
-
-interface AvailableTime {
-    startTime: string;
-    endTime: string;
-}
-
-interface AvailabilityResult {
-    minute: number;
-    isAvailable: boolean;
-}
+import type { 
+    AvailabilityRequest, 
+    AvailabilityCache, 
+    AvailableTime, 
+    AvailabilityResult 
+} from '$lib/types/availability';
 
 async function getOpeningHours(experienceId: number, date: string) {
     // First try to find a specific date entry

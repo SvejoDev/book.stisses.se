@@ -1,34 +1,7 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { supabase } from '$lib/supabaseClient';
-
-interface Addon {
-    id: number;
-    name: string;
-    description: string;
-    total_quantity: number;
-    image_url: string;
-    imageUrl: string;
-    price?: number | null;
-    pricing_type: string;
-}
-
-interface AddonEntry {
-    id: number;
-    experience_id: number | null;
-    start_location_id: number | null;
-    product_id: number | null;
-    addon_id: number;
-    price: number | null;
-    addons: {
-        id: number;
-        name: string;
-        description: string;
-        total_quantity: number;
-        image_url: string;
-        pricing_type: string;
-    };
-}
+import type { Addon, AddonEntry } from '$lib/types/addon';
 
 export const GET: RequestHandler = async ({ url }) => {
     const startLocationId = url.searchParams.get('startLocationId');
