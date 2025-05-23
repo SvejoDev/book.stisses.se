@@ -18,7 +18,6 @@ export async function load({ params }) {
     
     // Validate booking ID format
     if (!bookingId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(bookingId)) {
-        console.error('Invalid booking ID format:', bookingId);
         throw error(400, "Invalid booking ID");
     }
 
@@ -73,12 +72,10 @@ export async function load({ params }) {
         .single();
 
     if (bookingError) {
-        console.error('Error fetching booking:', bookingError);
         throw error(500, "Error fetching booking");
     }
 
     if (!bookingData) {
-        console.error('Booking not found for ID:', bookingId);
         throw error(404, "Booking not found");
     }
 
@@ -101,7 +98,6 @@ export async function load({ params }) {
         .single();
 
     if (datesError) {
-        console.error('Error fetching experience dates:', datesError);
         throw error(500, "Error fetching experience dates");
     }
 

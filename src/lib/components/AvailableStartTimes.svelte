@@ -1,7 +1,8 @@
 <script lang="ts">
 	import type { AvailableTime } from '$lib/types';
+	import type { SelectedStartTime } from '$lib/types/booking';
 	import { cn } from '$lib/utils';
-	import { addHours, addDays, format } from 'date-fns';
+	import { addHours, addDays } from 'date-fns';
 
 	let {
 		experienceId,
@@ -31,16 +32,16 @@
 	let error = $state<string | null>(null);
 	let selectedTime = $state<AvailableTime | null>(null);
 
-	let totalProductQuantity = $derived(
+	let totalProductQuantity = /** @readonly */ $derived(
 		selectedProducts.reduce(
 			(sum: number, product: { quantity: number }) => sum + product.quantity,
 			0
 		)
 	);
-	let canGenerateTimes = $derived(totalProductQuantity > 0);
+	let canGenerateTimes = /** @readonly */ $derived(totalProductQuantity > 0);
 
 	// Filter times to show only 30-minute intervals
-	let displayTimes = $derived(
+	let displayTimes = /** @readonly */ $derived(
 		availableTimes.filter((time) => {
 			const [hours, minutes] = time.startTime.split(':').map(Number);
 			return minutes % 30 === 0;
@@ -134,11 +135,7 @@
 
 	function handleTimeSelect(time: AvailableTime) {
 		selectedTime = time;
-		// Call onStartTimeSelect immediately when a time is selected
-		onStartTimeSelect({
-			startTime: time.startTime,
-			endTime: time.endTime
-		});
+		// onStartTimeSelect will be called by the $effect tracking selectedTime
 	}
 
 	function handleReset() {

@@ -1,37 +1,42 @@
 <script lang="ts">
 	import * as Card from '$lib/components/ui/card';
 	import { cn } from '$lib/utils';
-
-	interface StartLocation {
-		id: number;
-		experience_id: number;
-		name: string;
-		imageUrl: string;
-	}
+	import type { StartLocation } from '$lib/types/booking';
 
 	let {
 		startLocations,
 		onSelect,
-		isLocked = $bindable(false)
+		isLocked = $bindable(false),
+		reset = $bindable(false)
 	} = $props<{
 		startLocations: StartLocation[];
 		onSelect: (locationId: string) => void;
 		isLocked?: boolean;
+		reset?: boolean;
 	}>();
 	let value = $state('');
 	let isSingleLocation = $derived(startLocations.length === 1);
 
+	// Reset value when reset prop changes
+	$effect(() => {
+		if (reset) {
+			value = '';
+		}
+	});
+
 	// Preload images
 	$effect(() => {
 		startLocations.forEach((location: StartLocation) => {
-			const img = new Image();
-			img.src = location.imageUrl;
+			if (location.imageUrl) {
+				const img = new Image();
+				img.src = location.imageUrl;
+			}
 		});
 	});
 
 	$effect(() => {
 		// Auto-select if there's only one start location
-		if (isSingleLocation && !value) {
+		if (startLocations.length === 1 && !value) {
 			handleSelect(startLocations[0].id.toString());
 		}
 	});
@@ -45,6 +50,11 @@
 	function handleSelect(locationId: string) {
 		if (isLocked) return;
 		value = locationId;
+
+		// Add a small delay before calling onSelect to allow the page to settle
+		setTimeout(() => {
+			onSelect(locationId);
+		}, 300);
 	}
 </script>
 

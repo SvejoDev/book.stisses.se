@@ -8,24 +8,14 @@
 		CardTitle
 	} from '$lib/components/ui/card';
 	import { cn } from '$lib/utils';
-	import { getBothPrices, getDisplayPrice, formatPrice } from '$lib/utils/price';
-
-	interface Product {
-		id: number;
-		name: string;
-		description: string;
-		total_quantity: number;
-		imageUrl: string;
-		price?: number;
-	}
+	import { getDisplayPrice, formatPrice } from '$lib/utils/price';
+	import type { SelectedProduct, Product } from '$lib/types/booking';
 
 	let {
 		startLocationId = $bindable(''),
 		experienceId = $bindable(''),
 		isLocked = $bindable(false),
-		onProductsSelected = (
-			products: Array<{ productId: number; quantity: number; price?: number }>
-		) => {},
+		onProductsSelected = (products: SelectedProduct[]) => {},
 		onProductsLoaded = () => {},
 		pricingType = $bindable<'per_person' | 'per_product' | 'hybrid'>('per_person'),
 		experienceType = $bindable<string>('private'),
@@ -34,9 +24,7 @@
 		startLocationId: string;
 		experienceId: string;
 		isLocked?: boolean;
-		onProductsSelected?: (
-			products: Array<{ productId: number; quantity: number; price?: number }>
-		) => void;
+		onProductsSelected?: (products: SelectedProduct[]) => void;
 		onProductsLoaded?: () => void;
 		pricingType?: 'per_person' | 'per_product' | 'hybrid';
 		experienceType: string;
@@ -49,20 +37,6 @@
 	let isLoading = $state(true);
 	let products = $state<Product[]>([]);
 	let error = $state<string | null>(null);
-
-	let totalProductPrice = $derived(() => {
-		if (pricingType === 'per_person') return 0;
-
-		const total = Object.entries(selectedQuantities).reduce((total, [productId, quantity]) => {
-			const product = products.find((p) => p.id === parseInt(productId));
-			if (product?.price) {
-				return total + getDisplayPrice(product.price * quantity, experienceType);
-			}
-			return total;
-		}, 0);
-
-		return total;
-	});
 
 	async function fetchProducts() {
 		try {
@@ -116,7 +90,9 @@
 						new Promise<void>((resolve) => {
 							const img = new Image();
 							img.onload = () => resolve();
-							img.src = product.imageUrl;
+							if (product.imageUrl) {
+								img.src = product.imageUrl;
+							}
 						})
 				)
 			).then(() => {
@@ -145,21 +121,17 @@
 		}
 	}
 
-	// Notify parent of quantity changes
+	// Ensure quantity changes trigger updates
 	$effect(() => {
 		const selectedProducts = Object.entries(selectedQuantities)
 			.filter(([_, quantity]) => quantity > 0)
-			.map(([productId, quantity]) => {
-				const product = products.find((p) => p.id === parseInt(productId));
+			.map(([productId, quantity]) => ({
+				productId: parseInt(productId),
+				quantity,
+				price: products.find((p) => p.id === parseInt(productId))?.price
+			}));
 
-				return {
-					productId: parseInt(productId),
-					quantity,
-					price: product?.price
-				};
-			});
-
-		onProductsSelected(selectedProducts);
+		onProductsSelected(selectedProducts as SelectedProduct[]);
 	});
 </script>
 

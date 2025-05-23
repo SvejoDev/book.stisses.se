@@ -9,23 +9,14 @@
 	} from '$lib/components/ui/card';
 	import { cn } from '$lib/utils';
 	import { formatPrice, getDisplayPrice } from '$lib/utils/price';
-
-	interface Addon {
-		id: number;
-		name: string;
-		description: string;
-		total_quantity: number;
-		imageUrl: string;
-		price?: number;
-		pricing_type: 'per_person' | 'per_unit';
-	}
+	import type { SelectedAddon, Addon } from '$lib/types/booking';
 
 	let {
 		startLocationId = $bindable(''),
 		experienceId = $bindable(''),
 		selectedProducts = [],
 		isLocked = $bindable(false),
-		onAddonsSelected = (addons: Array<{ addonId: number; quantity: number; price?: number }>) => {},
+		onAddonsSelected = (addons: SelectedAddon[]) => {},
 		onAddonsLoaded = () => {},
 		pricingType = $bindable<'per_person' | 'per_product' | 'hybrid'>('per_person'),
 		payingCustomers = $bindable(0),
@@ -37,9 +28,7 @@
 		experienceId: string;
 		selectedProducts: Array<{ productId: number; quantity: number }>;
 		isLocked?: boolean;
-		onAddonsSelected?: (
-			addons: Array<{ addonId: number; quantity: number; price?: number }>
-		) => void;
+		onAddonsSelected?: (addons: SelectedAddon[]) => void;
 		onAddonsLoaded?: () => void;
 		pricingType?: 'per_person' | 'per_product' | 'hybrid';
 		payingCustomers?: number;
@@ -56,24 +45,6 @@
 	let addons = $state<Addon[]>([]);
 	let error = $state<string | null>(null);
 	let hasAttemptedFetch = $state(false);
-
-	let totalAddonPrice = $derived(() => {
-		const total = addons.reduce((total, addon) => {
-			if (!addon.price) return total;
-
-			let addonTotal = 0;
-			if (addon.pricing_type === 'per_unit') {
-				const quantity = selectedQuantities[addon.id] || 0;
-				addonTotal = getDisplayPrice(addon.price * quantity, experienceType);
-			} else if (addon.pricing_type === 'per_person' && selectedPerPersonAddons[addon.id]) {
-				addonTotal = getDisplayPrice(addon.price * payingCustomers, experienceType);
-			}
-
-			return total + addonTotal;
-		}, 0);
-
-		return total;
-	});
 
 	async function fetchAddons() {
 		try {
@@ -119,7 +90,8 @@
 	$effect(() => {
 		if (addons.length > 0 && !initialLoadDone) {
 			initialLoadDone = true;
-			const unloadedImages = addons.filter((addon) => !addon.imageUrl);
+			// Only load images that actually have a URL
+			const unloadedImages = addons.filter((addon) => addon.imageUrl);
 
 			if (unloadedImages.length === 0) {
 				allImagesLoaded = true;
@@ -131,8 +103,14 @@
 				unloadedImages.map(
 					(addon) =>
 						new Promise<void>((resolve) => {
+							// addons without imageUrl resolve immediately
+							if (!addon.imageUrl) {
+								resolve();
+								return;
+							}
 							const img = new Image();
 							img.onload = () => resolve();
+							img.onerror = () => resolve(); // avoid hanging on broken URLs
 							img.src = addon.imageUrl;
 						})
 				)
@@ -148,7 +126,11 @@
 		const currentQuantity = selectedQuantities[addonId] || 0;
 		const addon = addons.find((a) => a.id === addonId);
 
-		if (addon && currentQuantity < addon.total_quantity) {
+		if (
+			addon &&
+			typeof addon.total_quantity === 'number' &&
+			currentQuantity < addon.total_quantity
+		) {
 			selectedQuantities[addonId] = currentQuantity + 1;
 		}
 	}
@@ -170,31 +152,23 @@
 	// Notify parent of quantity changes
 	$effect(() => {
 		const selectedAddons = [
-			// Per-unit addons
 			...Object.entries(selectedQuantities)
 				.filter(([_, quantity]) => quantity > 0)
-				.map(([addonId, quantity]) => {
-					const addon = addons.find((a) => a.id === parseInt(addonId));
-					return {
-						addonId: parseInt(addonId),
-						quantity,
-						price: addon?.price
-					};
-				}),
-			// Per-person addons
+				.map(([addonId, quantity]) => ({
+					addonId: parseInt(addonId),
+					quantity,
+					price: addons.find((a) => a.id === parseInt(addonId))?.price
+				})),
 			...Object.entries(selectedPerPersonAddons)
 				.filter(([_, selected]) => selected)
-				.map(([addonId]) => {
-					const addon = addons.find((a) => a.id === parseInt(addonId));
-					return {
-						addonId: parseInt(addonId),
-						quantity: payingCustomers,
-						price: addon?.price
-					};
-				})
+				.map(([addonId]) => ({
+					addonId: parseInt(addonId),
+					quantity: payingCustomers,
+					price: addons.find((a) => a.id === parseInt(addonId))?.price
+				}))
 		];
 
-		onAddonsSelected(selectedAddons);
+		onAddonsSelected(selectedAddons as SelectedAddon[]);
 	});
 
 	function handleFetchAddons() {
@@ -281,7 +255,7 @@
 								{#if addon.price === 0 || addon.price === undefined}
 									Ingår
 								{:else}
-									{formatPrice(getDisplayPrice(addon.price, experienceType))}
+									{formatPrice(getDisplayPrice(addon.price ?? 0, experienceType))}
 									{#if addon.pricing_type === 'per_person'}
 										per person
 									{:else}
@@ -314,7 +288,9 @@
 										variant="outline"
 										size="icon"
 										onclick={() => incrementAddon(addon.id)}
-										disabled={selectedQuantities[addon.id] >= addon.total_quantity || isLocked}
+										disabled={typeof addon.total_quantity !== 'number' ||
+											selectedQuantities[addon.id] >= addon.total_quantity ||
+											isLocked}
 										class={cn(isLocked && 'cursor-not-allowed opacity-50')}
 									>
 										+
@@ -331,7 +307,10 @@
 									{:else if selectedQuantities[addon.id]}
 										<div class="text-sm font-medium">
 											Totalt: {formatPrice(
-												getDisplayPrice(addon.price * selectedQuantities[addon.id], experienceType)
+												getDisplayPrice(
+													(addon.price ?? 0) * selectedQuantities[addon.id],
+													experienceType
+												)
 											)}
 											{#if experienceType === 'private'}
 												<span class="text-xs">(inkl. moms)</span>
@@ -356,7 +335,7 @@
 									{:else if selectedPerPersonAddons[addon.id]}
 										<div class="ml-4 text-sm font-medium">
 											Totalt: {formatPrice(
-												getDisplayPrice(addon.price * payingCustomers, experienceType)
+												getDisplayPrice((addon.price ?? 0) * payingCustomers, experienceType)
 											)}
 											{#if experienceType === 'private'}
 												<span class="text-xs">(inkl. moms)</span>

@@ -7,6 +7,7 @@ import { PUBLIC_SUPABASE_URL } from '$env/static/public';
 import { SUPABASE_SERVICE_ROLE_KEY } from '$env/static/private';
 import { addDays, format, parseISO } from 'date-fns';
 import { getPaymentPrice } from '$lib/utils/price';
+import crypto from 'crypto';
 
 // Create a Supabase client with the service role key for the webhook
 const supabase = createClient(
@@ -25,13 +26,6 @@ const stripe = new Stripe(SECRET_STRIPE_KEY);
 function timeToMinutes(time: string): number {
   const [hours, minutes] = time.split(':').map(Number);
   return hours * 60 + minutes;
-}
-
-// Helper function to convert minutes to time string (HH:MM)
-function minutesToTime(minutes: number): string {
-  const hours = Math.floor(minutes / 60);
-  const mins = minutes % 60;
-  return `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`;
 }
 
 // Helper function to generate dates between start and end date
@@ -339,6 +333,67 @@ async function updateAvailabilityForBooking(
   }
 }
 
+// Helper function to delay execution
+const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+// Send email confirmations for each booking with rate limiting
+const sendEmailsWithRateLimit = async (bookings: any[]) => {
+  const failedBookings: any[] = [];
+  const RATE_LIMIT_DELAY = 1000; // 1 second delay between emails
+  const MAX_RETRIES = 3;
+
+  for (const booking of bookings) {
+    let retryCount = 0;
+    let success = false;
+
+    while (retryCount < MAX_RETRIES && !success) {
+      try {
+        const emailEndpoint = `${PUBLIC_SUPABASE_URL}/functions/v1/send-booking-confirmation`;
+        const response = await fetch(emailEndpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`
+          },
+          body: JSON.stringify({
+            bookingId: booking.id
+          })
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          if (errorData.name === 'rate_limit_exceeded' && retryCount < MAX_RETRIES - 1) {
+            // If rate limited, wait longer before retrying
+            await delay(RATE_LIMIT_DELAY * (retryCount + 2));
+            retryCount++;
+            continue;
+          }
+          throw new Error(`Failed to send email: ${errorData.message}`);
+        }
+
+        success = true;
+        // Add delay between successful emails to respect rate limit
+        await delay(RATE_LIMIT_DELAY);
+      } catch (error) {
+        console.error(`Error sending confirmation email for booking ${booking.id} (attempt ${retryCount + 1}):`, error);
+        retryCount++;
+        
+        if (retryCount === MAX_RETRIES) {
+          failedBookings.push({
+            booking,
+            error: error instanceof Error ? error.message : 'Unknown error'
+          });
+        } else {
+          // Exponential backoff for retries
+          await delay(RATE_LIMIT_DELAY * Math.pow(2, retryCount));
+        }
+      }
+    }
+  }
+
+  return failedBookings;
+};
+
 export const POST: RequestHandler = async ({ request }) => {
   const body = await request.text();
   const signature = request.headers.get('stripe-signature');
@@ -359,141 +414,159 @@ export const POST: RequestHandler = async ({ request }) => {
     const session = event.data.object as Stripe.Checkout.Session;
     
     try {
-      const metadata = session.metadata as any;
-      const priceGroups = JSON.parse(metadata.price_groups);
-      const products = JSON.parse(metadata.products);
-      const addons = JSON.parse(metadata.addons);
-      
-      if (session.amount_total === null || session.amount_total === undefined) {
-        throw new Error('Stripe session is missing final amount information.');
-      }
-      const totalPriceIncludingVat = session.amount_total / 100;
-
-      const { data: booking, error: bookingError } = await supabase
-        .from('bookings')
-        .insert([
-          {
-            booking_number: metadata.booking_number,
-            first_name: metadata.first_name,
-            last_name: metadata.last_name,
-            email: metadata.email,
-            phone: metadata.phone,
-            comment: metadata.comment,
-            experience_id: metadata.experience_id,
-            experience_type: metadata.experience_type,
-            start_location_id: metadata.start_location_id,
-            duration_id: metadata.duration_id,
-            start_date: metadata.start_date,
-            start_time: metadata.start_time,
-            end_date: metadata.end_date,
-            end_time: metadata.end_time,
-            has_booking_guarantee: metadata.has_booking_guarantee === 'true',
-            total_price: Math.round(totalPriceIncludingVat),
-            is_paid: true,
-            stripe_payment_id: session.payment_intent as string,
-            availability_confirmed: true
-          }
-        ])
-        .select()
+      // Get the full booking data from pending_bookings
+      const { data: pendingBooking, error: pendingError } = await supabase
+        .from('pending_bookings')
+        .select('*')
+        .eq('session_id', session.id)
         .single();
 
-      if (bookingError) {
-        return json({ error: 'Failed to create booking' }, { status: 500 });
+      if (pendingError || !pendingBooking) {
+        throw new Error('Could not find pending booking');
       }
 
-      const [priceGroupsResult, productsResult, addonsResult] = await Promise.all([
-        (async () => {
-          const { data: priceGroupData, error: priceGroupError } = await supabase
-            .from('price_groups')
-            .select('id, price')
-            .in('id', Array.isArray(priceGroups) 
-              ? priceGroups.map(pg => pg.id)
-              : Object.keys(priceGroups).map(id => parseInt(id))
-            );
-
-          if (priceGroupError) {
-            throw priceGroupError;
-          }
-
-          const priceMap = new Map(priceGroupData.map(pg => [pg.id, pg.price]));
-
-          return supabase.from('booking_price_groups').insert(
-            Array.isArray(priceGroups) 
-              ? priceGroups.map((pg: any) => ({
-                  booking_id: booking.id,
-                  price_group_id: pg.id,
-                  quantity: pg.quantity,
-                  price_at_time: priceMap.get(pg.id) || 0
-                }))
-              : Object.entries(priceGroups).map(([id, quantity]) => ({
-                  booking_id: booking.id,
-                  price_group_id: parseInt(id),
-                  quantity,
-                  price_at_time: priceMap.get(parseInt(id)) || 0
-                }))
-          );
-        })(),
-
-        supabase.from('booking_products').insert(
-          products.map((p: any) => ({
-            booking_id: booking.id,
-            product_id: p.productId,
-            quantity: p.quantity,
-            price_at_time: p.price
-          }))
-        ),
-
-        supabase.from('booking_addons').insert(
-          addons.map((a: any) => ({
-            booking_id: booking.id,
-            addon_id: a.addonId,
-            quantity: a.quantity,
-            price_at_time: a.price
-          }))
-        )
-      ]);
-
-      if (priceGroupsResult.error) {
-        throw priceGroupsResult.error;
-      }
-      if (productsResult.error) {
-        throw productsResult.error;
-      }
-      if (addonsResult.error) {
-        throw addonsResult.error;
-      }
-
-      const formattedProducts = products.map((p: any) => ({
-        id: p.productId,
-        quantity: p.quantity
-      }));
-
-      const formattedAddons = addons.map((a: any) => ({
-        id: a.addonId,
-        quantity: a.quantity
-      }));
-
-      await updateAvailabilityForBooking(booking as Booking, formattedProducts, formattedAddons);
-
-      try {
-        const emailEndpoint = `${PUBLIC_SUPABASE_URL}/functions/v1/send-booking-confirmation`;
+      const bookings = pendingBooking.booking_data;
+      
+      // Create bookings in parallel with unique numbers
+      const bookingPromises = bookings.map(async (booking: any, index: number) => {
+        // Generate a unique booking number for each booking
+        const timestamp = Date.now();
+        const uniqueId = crypto.randomUUID().split('-')[0];
+        const bookingNumber = `BK-${timestamp}-${uniqueId}-${index}`;
         
-        const response = await fetch(emailEndpoint, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`
-          },
-          body: JSON.stringify({
-            bookingId: booking.id
-          })
-        });
+        const { data: bookingData, error: bookingError } = await supabase
+          .from('bookings')
+          .insert([
+            {
+              booking_number: bookingNumber,
+              first_name: booking.firstName,
+              last_name: booking.lastName,
+              email: booking.email,
+              phone: booking.phone,
+              comment: booking.comment,
+              experience_id: booking.experienceId,
+              experience_type: booking.experienceType,
+              start_location_id: booking.startLocationId,
+              duration_id: booking.durationId,
+              start_date: booking.startDate,
+              start_time: booking.startTime,
+              end_date: booking.startDate,
+              end_time: booking.endTime,
+              has_booking_guarantee: booking.hasBookingGuarantee,
+              total_price: Math.round(getPaymentPrice(booking.totalPrice, booking.experienceType)),
+              is_paid: true,
+              stripe_payment_id: session.payment_intent as string,
+              availability_confirmed: true
+            }
+          ])
+          .select()
+          .single();
 
-        await response.text();
-      } catch (error) {
-        // Email sending failed, but we don't want to fail the whole webhook
+        if (bookingError) {
+          throw bookingError;
+        }
+
+        // Process price groups, products, and addons as before
+        const priceGroups = booking.priceGroups;
+        const products = booking.products;
+        const addons = booking.addons;
+
+        const [priceGroupsResult, productsResult, addonsResult] = await Promise.all([
+          (async () => {
+            const { data: priceGroupData, error: priceGroupError } = await supabase
+              .from('price_groups')
+              .select('id, price')
+              .in('id', Array.isArray(priceGroups) 
+                ? priceGroups.map((pg: any) => pg.id)
+                : Object.keys(priceGroups).map(id => parseInt(id))
+              );
+
+            if (priceGroupError) {
+              throw priceGroupError;
+            }
+
+            const priceMap = new Map(priceGroupData.map(pg => [pg.id, pg.price]));
+
+            return supabase.from('booking_price_groups').insert(
+              Array.isArray(priceGroups) 
+                ? priceGroups.map((pg: any) => ({
+                    booking_id: bookingData.id,
+                    price_group_id: pg.id,
+                    quantity: pg.quantity,
+                    price_at_time: priceMap.get(pg.id) || 0
+                  }))
+                : Object.entries(priceGroups).map(([id, quantity]) => ({
+                    booking_id: bookingData.id,
+                    price_group_id: parseInt(id),
+                    quantity,
+                    price_at_time: priceMap.get(parseInt(id)) || 0
+                  }))
+            );
+          })(),
+
+          supabase.from('booking_products').insert(
+            products.map((p: any) => ({
+              booking_id: bookingData.id,
+              product_id: p.productId,
+              quantity: p.quantity,
+              price_at_time: p.price
+            }))
+          ),
+
+          supabase.from('booking_addons').insert(
+            addons.map((a: any) => ({
+              booking_id: bookingData.id,
+              addon_id: a.addonId,
+              quantity: a.quantity,
+              price_at_time: a.price
+            }))
+          )
+        ]);
+
+        if (priceGroupsResult.error) {
+          throw priceGroupsResult.error;
+        }
+        if (productsResult.error) {
+          throw productsResult.error;
+        }
+        if (addonsResult.error) {
+          throw addonsResult.error;
+        }
+
+        const formattedProducts = products.map((p: any) => ({
+          id: p.productId,
+          quantity: p.quantity
+        }));
+
+        const formattedAddons = addons.map((a: any) => ({
+          id: a.addonId,
+          quantity: a.quantity
+        }));
+
+        await updateAvailabilityForBooking(bookingData, formattedProducts, formattedAddons);
+        
+        return bookingData;
+      });
+
+      const createdBookings = await Promise.all(bookingPromises);
+
+      // Replace the email sending code with:
+      const failedBookings = await sendEmailsWithRateLimit(createdBookings);
+
+      // Log any failed bookings for follow-up
+      if (failedBookings.length > 0) {
+        console.error('Failed to send confirmation emails for the following bookings:', failedBookings);
+       
       }
+
+      // Clean up the pending booking
+      await supabase
+        .from('pending_bookings')
+        .delete()
+        .eq('session_id', session.id);
+
     } catch (error) {
+      console.error('Error processing webhook:', error);
       return json({ error: 'Internal server error' }, { status: 500 });
     }
   }
