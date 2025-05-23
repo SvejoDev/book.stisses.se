@@ -13,7 +13,7 @@ export interface Addon {
 }
 
 export interface AddonWithPrice extends Addon {
-    price: number | null;
+    price: number;
     pricing_type: string;
 }
 

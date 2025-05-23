@@ -27,8 +27,8 @@ export interface PriceGroupSelection {
 
 export interface BookingPriceGroup {
     quantity: number;
-    price_groups: {
+    price_groups: Array<{
         id: number;
         display_name: string;
-    };
+    }>;
 } 
