@@ -51,18 +51,19 @@ export const GET = async ({ url }: { url: URL }) => {
             throw error;
         }
 
-        // Transform the data and remove duplicates based on internal_name or id
-        // Prioritize more specific entries (with start_location_id) over general ones
-        const priceGroupMap = new Map<number, PriceGroup>();
+// Remove duplicates based on `internal_name` so that a location-specific variant
+// can override a generic one with the same business meaning.
+const priceGroupMap = new Map<string, PriceGroup>();
 
-        for (const priceGroup of (priceGroupsData || []) as PriceGroup[]) {
-            const existingGroup = priceGroupMap.get(priceGroup.id);
-            
-            // If the price group doesn't exist yet, or if this version is more specific, use it
-            if (!existingGroup || (priceGroup.start_location_id !== null && existingGroup.start_location_id === null)) {
-                priceGroupMap.set(priceGroup.id, priceGroup);
-            }
-        }
+for (const priceGroup of (priceGroupsData || []) as PriceGroup[]) {
+    const key = priceGroup.internal_name ?? priceGroup.id.toString();
+    const existingGroup = priceGroupMap.get(key);
+     
+    // Prefer the entry that is tied to a start location, otherwise keep the first one
+     if (!existingGroup || (priceGroup.start_location_id !== null && existingGroup.start_location_id === null)) {
+        priceGroupMap.set(key, priceGroup);
+     }
+ }
 
         const priceGroups = Array.from(priceGroupMap.values());
         return json(priceGroups);
