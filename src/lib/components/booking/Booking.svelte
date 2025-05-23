@@ -199,6 +199,7 @@
 	]);
 
 	let bookingOptionsSection = $state<HTMLElement | null>(null);
+	let showCancelConfirmation = $state(false);
 
 	function handleStartTimeSelect(time: SelectedStartTime) {
 		selectedStartTime = time;
@@ -264,6 +265,38 @@
 		setTimeout(() => (resetStartLocations = false), 100);
 	}
 
+	function cancelCurrentBooking() {
+		showCancelConfirmation = false;
+
+		// Remove the incomplete booking from the array
+		allBookings.pop();
+		totalBookings--;
+		currentBookingIndex--;
+
+		// Restore state from the last completed booking
+		const lastBooking = allBookings[currentBookingIndex];
+		selectedLocationId = lastBooking.selectedLocationId;
+		selectedDuration = lastBooking.selectedDuration;
+		durationType = lastBooking.durationType;
+		durationValue = lastBooking.durationValue;
+		selectedDate = lastBooking.selectedDate;
+		selectedProducts = lastBooking.selectedProducts;
+		selectedAddons = lastBooking.selectedAddons;
+		priceGroupQuantities = lastBooking.priceGroupQuantities;
+		selectedStartTime = lastBooking.selectedStartTime;
+
+		// Show the multiple booking options again
+		showMultipleBookingOption = true;
+		showDurations = true;
+		isBookingLocked = true;
+		showAvailableTimesButton = true;
+		showContactForm = false;
+		resetStartLocations = false;
+
+		// Scroll to the booking options
+		setTimeout(() => scrollToElement(bookingOptionsSection), 100);
+	}
+
 	function proceedToContactForm() {
 		showContactForm = true;
 		setTimeout(
@@ -279,6 +312,9 @@
 		getDisplayPrice(totalPriceForAllBookings(), experience.type)
 	);
 
+	// Check if current booking is incomplete (user is on a new booking form)
+	let isOnIncompleteBooking = /** @readonly */ $derived(totalBookings > 1 && !selectedStartTime);
+
 	export function getTotalPrice(): number {
 		return totalPrice();
 	}
@@ -289,11 +325,34 @@
 		<h1 class="text-4xl font-bold tracking-tight">{experience.name}</h1>
 	</header>
 
+	{#if isOnIncompleteBooking}
+		<div class="flex justify-center">
+			<button
+				class="rounded-lg border-2 border-red-500 px-4 py-2 text-red-500 transition-colors hover:bg-red-50"
+				onclick={() => (showCancelConfirmation = true)}
+			>
+				Tillbaka till föregående bokning
+			</button>
+		</div>
+	{/if}
+
 	{#if totalBookings > 1}
 		<div
 			class="fixed left-4 top-4 z-10 rounded-lg bg-primary/10 px-3 py-2 text-sm font-medium text-primary shadow-sm"
 		>
-			Du har {totalBookings - 1} bokning{totalBookings - 1 === 1 ? '' : 'ar'} i din kundvagn
+			<div class="flex items-center gap-2">
+				<span
+					>Du har {totalBookings - 1} bokning{totalBookings - 1 === 1 ? '' : 'ar'} i din kundvagn</span
+				>
+				{#if isOnIncompleteBooking}
+					<button
+						class="ml-2 rounded bg-red-500 px-2 py-1 text-xs text-white transition-colors hover:bg-red-600"
+						onclick={() => (showCancelConfirmation = true)}
+					>
+						Avbryt
+					</button>
+				{/if}
+			</div>
 		</div>
 	{/if}
 
@@ -448,3 +507,30 @@
 		</section>
 	{/if}
 </div>
+
+<!-- Confirmation Dialog -->
+{#if showCancelConfirmation}
+	<div class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+		<div class="mx-4 max-w-md rounded-lg bg-white p-6 shadow-xl">
+			<h3 class="mb-4 text-lg font-semibold text-gray-900">Tillbaka till föregående bokning?</h3>
+			<p class="mb-6 text-gray-600">
+				Är du säker på att du vill avbryta den nuvarande bokningen och gå tillbaka till din
+				föregående bokning? All information du fyllt i kommer att försvinna.
+			</p>
+			<div class="flex gap-3">
+				<button
+					class="flex-1 rounded-lg bg-red-500 px-4 py-2 text-white transition-colors hover:bg-red-600"
+					onclick={cancelCurrentBooking}
+				>
+					Ja, gå tillbaka
+				</button>
+				<button
+					class="flex-1 rounded-lg border border-gray-300 px-4 py-2 text-gray-700 transition-colors hover:bg-gray-50"
+					onclick={() => (showCancelConfirmation = false)}
+				>
+					Avbryt
+				</button>
+			</div>
+		</div>
+	</div>
+{/if}
