@@ -1,26 +1,36 @@
 <script lang="ts">
 	import * as Card from '$lib/components/ui/card';
 	import { cn } from '$lib/utils';
-	import type { StartLocation } from '$lib/types/booking';
+	import type { StartLocation } from '$lib/types/experience';
 
 	let {
 		startLocations,
 		onSelect,
 		isLocked = $bindable(false),
-		reset = $bindable(false)
+		reset = $bindable(false),
+		selectedValue = $bindable('')
 	} = $props<{
 		startLocations: StartLocation[];
 		onSelect: (locationId: string) => void;
 		isLocked?: boolean;
 		reset?: boolean;
+		selectedValue?: string;
 	}>();
 	let value = $state('');
 	let isSingleLocation = $derived(startLocations.length === 1);
+
+	// Sync internal value with selectedValue prop when provided
+	$effect(() => {
+		if (selectedValue !== undefined && selectedValue !== value) {
+			value = selectedValue;
+		}
+	});
 
 	// Reset value when reset prop changes
 	$effect(() => {
 		if (reset) {
 			value = '';
+			selectedValue = '';
 		}
 	});
 
@@ -50,6 +60,7 @@
 	function handleSelect(locationId: string) {
 		if (isLocked) return;
 		value = locationId;
+		selectedValue = locationId;
 
 		// Add a small delay before calling onSelect to allow the page to settle
 		setTimeout(() => {

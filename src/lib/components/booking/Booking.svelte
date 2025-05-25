@@ -36,6 +36,7 @@
 
 	// Reactive state
 	let selectedLocationId = $state<number | null>(null);
+	let selectedLocationValue = $state('');
 	let selectedDuration = $state('');
 	let durationType = $state<'hours' | 'overnights'>('hours');
 	let durationValue = $state(0);
@@ -86,6 +87,18 @@
 		if (!hasStartLocations) selectedLocationId = null;
 	});
 
+	// Keep selectedLocationValue in sync with selectedLocationId
+	$effect(() => {
+		if (selectedLocationId !== null) {
+			const newValue = selectedLocationId.toString();
+			if (selectedLocationValue !== newValue) {
+				selectedLocationValue = newValue;
+			}
+		} else if (selectedLocationValue !== '') {
+			selectedLocationValue = '';
+		}
+	});
+
 	let productsLoaded = $state(false);
 	$effect(() => {
 		if (selectedDate && shouldShowProducts && productsLoaded) {
@@ -109,6 +122,7 @@
 		const newId = parseInt(loc);
 		if (selectedLocationId !== newId) {
 			selectedLocationId = newId;
+			selectedLocationValue = loc;
 			priceGroupQuantities = {};
 			selectedDuration = '';
 			durationType = 'hours';
@@ -235,6 +249,7 @@
 		totalBookings++;
 		currentBookingIndex++;
 		selectedLocationId = null;
+		selectedLocationValue = '';
 		selectedDuration = '';
 		durationType = 'hours';
 		durationValue = 0;
@@ -276,6 +291,9 @@
 		// Restore state from the last completed booking
 		const lastBooking = allBookings[currentBookingIndex];
 		selectedLocationId = lastBooking.selectedLocationId;
+		selectedLocationValue = lastBooking.selectedLocationId
+			? lastBooking.selectedLocationId.toString()
+			: '';
 		selectedDuration = lastBooking.selectedDuration;
 		durationType = lastBooking.durationType;
 		durationValue = lastBooking.durationValue;
@@ -366,6 +384,7 @@
 				onSelect={handleLocationSelect}
 				isLocked={isBookingLocked}
 				reset={resetStartLocations}
+				bind:selectedValue={selectedLocationValue}
 			/>
 		</section>
 	{/if}
