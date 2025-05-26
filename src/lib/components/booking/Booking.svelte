@@ -310,6 +310,7 @@
 		showAvailableTimesButton = true;
 		showContactForm = false;
 		resetStartLocations = false;
+		productsLoaded = true;
 
 		// Scroll to the booking options
 		setTimeout(() => scrollToElement(bookingOptionsSection), 100);
@@ -331,7 +332,9 @@
 	);
 
 	// Check if current booking is incomplete (user is on a new booking form)
-	let isOnIncompleteBooking = /** @readonly */ $derived(totalBookings > 1 && !selectedStartTime);
+	let isOnIncompleteBooking = /** @readonly */ $derived(
+		totalBookings > 1 && !showContactForm && currentBookingIndex === totalBookings - 1
+	);
 
 	export function getTotalPrice(): number {
 		return totalPrice();
@@ -402,6 +405,7 @@
 				includeVat={experience.type === 'private'}
 				{extraPrice}
 				experienceType={experience.type}
+				initialQuantities={priceGroupQuantities}
 			/>
 		</section>
 	{/if}
@@ -421,6 +425,7 @@
 					onDurationSelect={handleDurationSelect}
 					isLocked={isBookingLocked}
 					experienceType={experience.type}
+					initialSelectedDuration={selectedDuration}
 				/>
 			</div>
 		</section>
@@ -437,6 +442,7 @@
 						onDateSelect={handleDateSelect}
 						isLocked={isBookingLocked}
 						bookingForesightHours={experience.booking_foresight_hours}
+						bind:selectedDate
 					/>
 				</div>
 			</section>
@@ -453,6 +459,7 @@
 						{pricingType}
 						experienceType={experience.type}
 						includeVat={experience.type === 'private'}
+						initialSelectedProducts={selectedProducts}
 					/>
 				</section>
 
@@ -470,6 +477,7 @@
 						onAddonsFetched={() => (showAvailableTimesButton = true)}
 						includeVat={experience.type === 'private'}
 						experienceType={experience.type}
+						initialSelectedAddons={selectedAddons}
 					/>
 
 					{#if pricingType !== 'per_person' && totalPrice() > 0}
@@ -494,6 +502,8 @@
 								onStartTimeSelect: handleStartTimeSelect
 							}}
 							showButton={showMultipleBookingOption || showAvailableTimesButton}
+							initialSelectedStartTime={selectedStartTime}
+							isLocked={isBookingLocked}
 						/>
 					</div>
 				</section>

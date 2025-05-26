@@ -10,7 +10,9 @@
 	import { formatPrice, getPaymentPrice } from '$lib/utils/price';
 	import { format } from 'date-fns';
 	import { sv } from 'date-fns/locale';
-	import type { SelectedProduct, SelectedAddon, SelectedStartTime } from '$lib/types/booking';
+	import type { SelectedProduct } from '$lib/types/product';
+	import type { SelectedAddon } from '$lib/types/addon';
+	import type { SelectedStartTime } from '$lib/types/availability';
 	import { formSchema, type FormSchema } from '$lib/schemas/contact-form';
 
 	type Booking = {

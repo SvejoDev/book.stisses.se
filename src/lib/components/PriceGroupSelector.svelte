@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { cn } from '$lib/utils';
 	import { formatPrice, getDisplayPrice } from '$lib/utils/price';
-	import type { PriceGroup } from '$lib/types/booking';
+	import type { PriceGroup } from '$lib/types/price';
 
 	let {
 		priceGroups = $bindable<PriceGroup[]>([]),
@@ -14,7 +14,8 @@
 		extraPrice = $bindable(0),
 		pricingType = $bindable('per_person'),
 		experienceType = $bindable<string>('private'),
-		isLoading = $bindable(false)
+		isLoading = $bindable(false),
+		initialQuantities = {}
 	} = $props<{
 		priceGroups?: PriceGroup[];
 		startLocationId: number | string;
@@ -27,9 +28,11 @@
 		pricingType: 'per_person' | 'per_product' | 'hybrid';
 		experienceType: string;
 		isLoading?: boolean;
+		initialQuantities?: Record<number, number>;
 	}>();
 
 	let quantities = $state<Record<number, number>>({});
+	let lastInitializedQuantities = $state('');
 
 	// Calculate total paying customers (excluding free price groups)
 	let totalPayingCustomers = /** @readonly */ $derived(
@@ -67,14 +70,18 @@
 			if (!response.ok) throw new Error('Failed to fetch price groups');
 			priceGroups = await response.json();
 
-			// Reset quantities when price groups change
-			quantities = {};
-			onQuantityChange({});
+			// Only reset quantities when price groups change if not locked AND no initial quantities
+			if (!isLocked && Object.keys(initialQuantities).length === 0) {
+				quantities = {};
+				onQuantityChange({});
+			}
 		} catch (error) {
 			console.error('Error fetching price groups:', error);
 			priceGroups = [];
-			quantities = {};
-			onQuantityChange({});
+			if (!isLocked && Object.keys(initialQuantities).length === 0) {
+				quantities = {};
+				onQuantityChange({});
+			}
 		} finally {
 			isLoading = false;
 		}
@@ -83,7 +90,24 @@
 	// Fetch price groups when startLocationId or experienceId changes
 	$effect(() => {
 		if (startLocationId !== undefined && experienceId) {
+			// Reset the last initialized quantities when location changes
+			lastInitializedQuantities = '';
 			fetchPriceGroups(startLocationId);
+		}
+	});
+
+	// Initialize quantities from initialQuantities when provided
+	$effect(() => {
+		const currentInitialQuantities = JSON.stringify(initialQuantities);
+
+		if (
+			Object.keys(initialQuantities).length > 0 &&
+			priceGroups.length > 0 &&
+			lastInitializedQuantities !== currentInitialQuantities
+		) {
+			quantities = { ...initialQuantities };
+			lastInitializedQuantities = currentInitialQuantities;
+			onQuantityChange(quantities);
 		}
 	});
 

@@ -1,6 +1,6 @@
 <script lang="ts">
-	import type { AvailableTime } from '$lib/types';
-	import type { SelectedStartTime } from '$lib/types/booking';
+	import type { AvailableTime } from '$lib/types/availability';
+	import type { SelectedStartTime } from '$lib/types/availability';
 	import { cn } from '$lib/utils';
 	import { addHours, addDays } from 'date-fns';
 
@@ -13,7 +13,9 @@
 		selectedAddons = [],
 		onLockStateChange = () => {},
 		onStartTimeSelect = () => {},
-		showButton = true
+		showButton = true,
+		initialSelectedStartTime = null,
+		isLocked = false
 	} = $props<{
 		experienceId: number;
 		selectedDate: Date;
@@ -24,6 +26,8 @@
 		onLockStateChange?: (locked: boolean) => void;
 		onStartTimeSelect?: (time: { startTime: string; endTime: string }) => void;
 		showButton?: boolean;
+		initialSelectedStartTime?: { startTime: string; endTime: string } | null;
+		isLocked?: boolean;
 	}>();
 
 	let isLoading = $state(false);
@@ -31,6 +35,7 @@
 	let availableTimes = $state<AvailableTime[]>([]);
 	let error = $state<string | null>(null);
 	let selectedTime = $state<AvailableTime | null>(null);
+	let hasInitialized = $state(false);
 
 	let totalProductQuantity = /** @readonly */ $derived(
 		selectedProducts.reduce(
@@ -51,6 +56,23 @@
 	// Monitor addons state changes
 	$effect(() => {
 		if (selectedAddons?.length > 0) {
+		}
+	});
+
+	// Auto-load times and set selected time when restoring a previous booking
+	$effect(() => {
+		if (initialSelectedStartTime && !hasInitialized && canGenerateTimes) {
+			hasInitialized = true;
+			hasAttemptedLoad = true;
+			generateStartTimes().then(() => {
+				// After times are loaded, find and set the matching selected time
+				const matchingTime = availableTimes.find(
+					(time) => time.startTime === initialSelectedStartTime.startTime
+				);
+				if (matchingTime) {
+					selectedTime = matchingTime;
+				}
+			});
 		}
 	});
 
