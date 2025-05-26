@@ -24,7 +24,8 @@
 		onAddonsFetched = () => {},
 		includeVat = $bindable(true),
 		experienceType = $bindable<string>('private'),
-		initialSelectedAddons = []
+		initialSelectedAddons = [],
+		autoFetch = $bindable(false)
 	} = $props<{
 		startLocationId: string;
 		experienceId: string;
@@ -38,6 +39,7 @@
 		includeVat?: boolean;
 		experienceType: string;
 		initialSelectedAddons?: SelectedAddon[];
+		autoFetch?: boolean;
 	}>();
 
 	let selectedQuantities = $state<Record<number, number>>({});
@@ -80,11 +82,15 @@
 		}
 	});
 
-	// Reset initialization when key parameters change
+	// Auto-fetch addons when autoFetch is true
 	$effect(() => {
-		// Reset initialization flag when location or experience changes
-		if (startLocationId || experienceId) {
-			lastInitializedAddons = '';
+		if (
+			autoFetch &&
+			!hasAttemptedFetch &&
+			selectedProducts.length > 0 &&
+			selectedProducts.some((p: { quantity: number }) => p.quantity > 0)
+		) {
+			fetchAddons();
 		}
 	});
 

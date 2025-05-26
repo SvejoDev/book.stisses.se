@@ -214,6 +214,7 @@
 
 	let bookingOptionsSection = $state<HTMLElement | null>(null);
 	let showCancelConfirmation = $state(false);
+	let autoFetchAddons = $state(false);
 
 	function handleStartTimeSelect(time: SelectedStartTime) {
 		selectedStartTime = time;
@@ -264,6 +265,7 @@
 		isBookingLocked = false;
 		showAvailableTimesButton = false;
 		showContactForm = false;
+		autoFetchAddons = false;
 		allBookings.push({
 			selectedLocationId: null,
 			selectedDuration: '',
@@ -311,6 +313,7 @@
 		showContactForm = false;
 		resetStartLocations = false;
 		productsLoaded = true;
+		autoFetchAddons = true;
 
 		// Scroll to the booking options
 		setTimeout(() => scrollToElement(bookingOptionsSection), 100);
@@ -478,6 +481,7 @@
 						includeVat={experience.type === 'private'}
 						experienceType={experience.type}
 						initialSelectedAddons={selectedAddons}
+						autoFetch={autoFetchAddons}
 					/>
 
 					{#if pricingType !== 'per_person' && totalPrice() > 0}
