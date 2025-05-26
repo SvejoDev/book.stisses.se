@@ -85,24 +85,13 @@ async function checkQuantityLimit(
 
 // Helper function to check if date exists and create if it doesn't
 async function ensureDateExists(tableName: string, date: string) {
-  const { data, error: checkError } = await supabase
+  // Use upsert with ON CONFLICT DO NOTHING to handle race conditions
+  const { error: insertError } = await supabase
     .from(tableName)
-    .select('datum')
-    .eq('datum', date);
+    .upsert({ datum: date }, { onConflict: 'datum', ignoreDuplicates: true });
 
-  if (checkError) {
-    throw checkError;
-  }
-
-  // If date doesn't exist, create it
-  if (!data || data.length === 0) {
-    const { error: insertError } = await supabase
-      .from(tableName)
-      .insert({ datum: date });
-
-    if (insertError) {
-      throw insertError;
-    }
+  if (insertError) {
+    throw insertError;
   }
 }
 
@@ -133,11 +122,19 @@ async function updateAvailability(
       throw new Error(`Booking would exceed maximum quantity for ${tableName} on ${date}`);
     }
 
+    // Get current availability data to add to existing values
+    const { data: currentData } = await supabase
+      .from(tableName)
+      .select('*')
+      .eq('datum', date)
+      .single();
+
     // Generate the update object for all 15-minute slots
     const updates: Record<string, number> = {};
-    for (let minute = startMinutes; minute <= endMinutes; minute += 15) {
+    for (let minute = startMinutes; minute < endMinutes; minute += 15) {
       const slotKey = minute.toString();
-      updates[slotKey] = quantity;
+      const currentValue = currentData?.[slotKey] || 0;
+      updates[slotKey] = currentValue + quantity; // Add to existing value instead of overwriting
     }
 
     // Update the availability
@@ -434,6 +431,19 @@ export const POST: RequestHandler = async ({ request }) => {
         const uniqueId = crypto.randomUUID().split('-')[0];
         const bookingNumber = `BK-${timestamp}-${uniqueId}-${index}`;
         
+        // Get duration details to calculate proper end date
+        const { data: durationData } = await supabase
+          .from('durations')
+          .select('duration_type, duration_value')
+          .eq('id', booking.durationId)
+          .single();
+
+        // Calculate end date based on duration type
+        const isOvernight = durationData?.duration_type === 'overnights';
+        const endDate = isOvernight 
+          ? calculateEndDate(booking.startDate, durationData?.duration_value || 0)
+          : booking.startDate;
+        
         const { data: bookingData, error: bookingError } = await supabase
           .from('bookings')
           .insert([
@@ -450,7 +460,7 @@ export const POST: RequestHandler = async ({ request }) => {
               duration_id: booking.durationId,
               start_date: booking.startDate,
               start_time: booking.startTime,
-              end_date: booking.startDate,
+              end_date: endDate,
               end_time: booking.endTime,
               has_booking_guarantee: booking.hasBookingGuarantee,
               total_price: Math.round(getPaymentPrice(booking.totalPrice, booking.experienceType)),
