@@ -12,11 +12,7 @@ const stripe = new Stripe(SECRET_STRIPE_KEY);
 
 export const POST: RequestHandler = async (args: { request: Request }) => {
   try {
-    const { bookings }: BookingRequest = await args.request.json();
-    
-    // Generate a single booking number for all bookings
-    // NOTE: For a more robust unique ID, consider using crypto.randomUUID() if traceability is not required
-    const bookingNumber = `BK-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
+    const { bookings, bookingNumber }: BookingRequest & { bookingNumber?: string } = await args.request.json();
     
     // Calculate total price for all bookings (always including VAT)
     const totalPrice = bookings.reduce((sum: number, booking: BookingPayload) => {
@@ -32,8 +28,18 @@ export const POST: RequestHandler = async (args: { request: Request }) => {
       time: `${booking.startTime}-${booking.endTime}`
     }));
 
+    let finalBookingNumber: string;
+
+    if (bookingNumber) {
+      // Use existing booking number from reservation
+      finalBookingNumber = bookingNumber;
+    } else {
+      // Generate a new booking number (fallback for non-reservation flow)
+      finalBookingNumber = `BK-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
+    }
+
     const bookingMetadata = {
-      booking_number: bookingNumber,
+      booking_number: finalBookingNumber,
       first_name: bookings[0].firstName,
       last_name: bookings[0].lastName,
       email: bookings[0].email,
@@ -50,7 +56,7 @@ export const POST: RequestHandler = async (args: { request: Request }) => {
           price_data: {
             currency: 'sek',
             product_data: {
-              name: `Bokning ${bookingNumber}`,
+              name: `Bokning ${finalBookingNumber}`,
               description: `${bookings.length} bokning${bookings.length > 1 ? 'ar' : ''}`
             },
             unit_amount: Math.round(totalPrice * 100) // Convert to öre
@@ -65,20 +71,43 @@ export const POST: RequestHandler = async (args: { request: Request }) => {
       metadata: bookingMetadata
     });
 
-    // Store the full booking data in your database here
-    // This way you don't need to rely on Stripe's metadata for all the details
-    const { data: storedBookings, error: storageError } = await supabase
-      .from('pending_bookings')
-      .insert([
-        {
-          booking_number: bookingNumber,
+    if (bookingNumber) {
+      // Update existing pending booking with session_id
+      console.log('Updating pending booking with session_id:', {
+        bookingNumber,
+        sessionId: session.id
+      });
+      
+      const { error: updateError } = await supabase
+        .from('pending_bookings')
+        .update({
           session_id: session.id,
           booking_data: bookings
-        }
-      ]);
+        })
+        .eq('booking_number', bookingNumber);
 
-    if (storageError) {
-      throw storageError;
+      if (updateError) {
+        console.error('Error updating pending booking:', updateError);
+        throw updateError;
+      }
+      
+      console.log('Successfully updated pending booking with session_id');
+    } else {
+      // Store the full booking data in your database (fallback for non-reservation flow)
+      const { error: storageError } = await supabase
+        .from('pending_bookings')
+        .insert([
+          {
+            booking_number: finalBookingNumber,
+            session_id: session.id,
+            booking_data: bookings,
+            availability_reserved: false // Not reserved since this is fallback flow
+          }
+        ]);
+
+      if (storageError) {
+        throw storageError;
+      }
     }
 
     return json({ url: session.url });

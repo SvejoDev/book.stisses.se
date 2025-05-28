@@ -184,6 +184,79 @@
 	let showMultipleBookingOption = $state(false);
 	let currentBookingIndex = $state(0);
 	let totalBookings = $state(1);
+	let currentBookingNumber = $state<string | null>(null);
+	let availableStartTimesRef = $state<{
+		getBookingNumber: () => string | null;
+		getReservationExpiry: () => Date | null;
+	} | null>(null);
+
+	// Derived booking data for reservation
+	let currentBookingData = /** @readonly */ $derived(() => {
+		console.log('Creating booking data with:', {
+			selectedDate,
+			selectedLocationId,
+			selectedDuration,
+			selectedProducts: selectedProducts?.length || 0,
+			selectedAddons: selectedAddons?.length || 0
+		});
+
+		if (!selectedDate || !selectedLocationId || !selectedDuration) {
+			console.log('Missing required fields for booking data:', {
+				hasDate: !!selectedDate,
+				hasLocation: !!selectedLocationId,
+				hasDuration: !!selectedDuration
+			});
+			return null;
+		}
+
+		const durationId = parseInt(selectedDuration);
+		if (isNaN(durationId)) {
+			console.error('Invalid duration ID:', selectedDuration);
+			return null;
+		}
+
+		const bookingData = {
+			firstName: '', // Will be filled in ContactForm
+			lastName: '',
+			email: '',
+			phone: '',
+			comment: '',
+			experienceId: parseInt(experience.id),
+			experienceType: experience.type,
+			startLocationId: selectedLocationId,
+			durationId: durationId,
+			startDate: selectedDate.toISOString().split('T')[0],
+			startTime: '', // Will be set when time is selected
+			endTime: '', // Will be set when time is selected
+			hasBookingGuarantee: true,
+			totalPrice: totalPrice(),
+			priceGroups: Object.entries(priceGroupQuantities).map(([id, quantity]) => ({
+				id: parseInt(id),
+				quantity
+			})),
+			products: selectedProducts || [],
+			addons: selectedAddons || []
+		};
+
+		console.log('Current booking data created:', {
+			...bookingData,
+			productsCount: bookingData.products.length,
+			addonsCount: bookingData.addons.length
+		});
+
+		return bookingData;
+	});
+
+	// Debug effect for currentBookingData
+	$effect(() => {
+		console.log('currentBookingData changed:', {
+			value: currentBookingData,
+			type: typeof currentBookingData,
+			isNull: currentBookingData === null,
+			keys: currentBookingData ? Object.keys(currentBookingData) : 'null'
+		});
+	});
+
 	let allBookings = $state<
 		Array<{
 			selectedLocationId: number | null;
@@ -219,6 +292,10 @@
 	function handleStartTimeSelect(time: SelectedStartTime) {
 		selectedStartTime = time;
 		showMultipleBookingOption = true;
+
+		// Get the current booking number from the AvailableStartTimes component
+		currentBookingNumber = availableStartTimesRef?.getBookingNumber() || null;
+
 		allBookings[currentBookingIndex] = {
 			selectedLocationId,
 			selectedDuration,
@@ -495,6 +572,7 @@
 
 					<div class="mx-auto mt-4 max-w-2xl">
 						<AvailableStartTimes
+							bind:this={availableStartTimesRef}
 							{...{
 								experienceId: parseInt(experience.id),
 								selectedDate,
@@ -508,6 +586,8 @@
 							showButton={showMultipleBookingOption || showAvailableTimesButton}
 							initialSelectedStartTime={selectedStartTime}
 							isLocked={isBookingLocked}
+							bookingData={currentBookingData}
+							existingBookingNumber={currentBookingNumber}
 						/>
 					</div>
 				</section>
@@ -536,6 +616,7 @@
 				experienceType={experience.type}
 				products={selectedProducts}
 				addons={selectedAddons}
+				bookingNumber={currentBookingNumber}
 			/>
 		</section>
 	{/if}

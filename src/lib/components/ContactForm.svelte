@@ -28,7 +28,7 @@
 		totalPrice: number;
 	};
 
-	let { data, bookings, experienceId, experienceType, products, addons } = $props<{
+	let { data, bookings, experienceId, experienceType, products, addons, bookingNumber } = $props<{
 		data?: {
 			form: SuperValidated<FormSchema>;
 		};
@@ -37,6 +37,7 @@
 		experienceType: string;
 		products: SelectedProduct[];
 		addons: SelectedAddon[];
+		bookingNumber?: string | null;
 	}>();
 
 	const defaultData = {
@@ -83,7 +84,8 @@
 						'Content-Type': 'application/json'
 					},
 					body: JSON.stringify({
-						bookings: bookingData
+						bookings: bookingData,
+						bookingNumber
 					})
 				});
 

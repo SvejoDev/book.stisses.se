@@ -15,7 +15,10 @@
 		onStartTimeSelect = () => {},
 		showButton = true,
 		initialSelectedStartTime = null,
-		isLocked = false
+		isLocked = false,
+		// New props for reservation system
+		bookingData = null,
+		existingBookingNumber = null
 	} = $props<{
 		experienceId: number;
 		selectedDate: Date;
@@ -28,6 +31,9 @@
 		showButton?: boolean;
 		initialSelectedStartTime?: { startTime: string; endTime: string } | null;
 		isLocked?: boolean;
+		// New props for reservation system
+		bookingData?: any;
+		existingBookingNumber?: string | null;
 	}>();
 
 	let isLoading = $state(false);
@@ -36,6 +42,18 @@
 	let error = $state<string | null>(null);
 	let selectedTime = $state<AvailableTime | null>(null);
 	let hasInitialized = $state(false);
+	let currentBookingNumber = $state<string | null>(existingBookingNumber);
+	let reservationExpiry = $state<Date | null>(null);
+
+	// Debug effect to monitor bookingData prop
+	$effect(() => {
+		console.log('AvailableStartTimes bookingData prop:', {
+			bookingData,
+			type: typeof bookingData,
+			isNull: bookingData === null,
+			isFunction: typeof bookingData === 'function'
+		});
+	});
 
 	let totalProductQuantity = /** @readonly */ $derived(
 		selectedProducts.reduce(
@@ -52,6 +70,49 @@
 			return minutes % 30 === 0;
 		})
 	);
+
+	// Browser close detection for cleanup
+	$effect(() => {
+		if (typeof window !== 'undefined' && currentBookingNumber) {
+			const handleBeforeUnload = () => {
+				// Use sendBeacon for reliable cleanup on page unload
+				if (navigator.sendBeacon) {
+					navigator.sendBeacon(
+						'/api/cleanup-expired',
+						JSON.stringify({
+							bookingNumber: currentBookingNumber
+						})
+					);
+				}
+			};
+
+			window.addEventListener('beforeunload', handleBeforeUnload);
+
+			return () => {
+				window.removeEventListener('beforeunload', handleBeforeUnload);
+			};
+		}
+	});
+
+	// Periodic cleanup - runs every 1 minute (for development)
+	$effect(() => {
+		if (typeof window !== 'undefined') {
+			const cleanupInterval = setInterval(
+				async () => {
+					try {
+						await fetch('/api/cleanup-expired', { method: 'GET' });
+					} catch (error) {
+						console.error('Periodic cleanup failed:', error);
+					}
+				},
+				1 * 60 * 1000
+			); // 1 minute for development
+
+			return () => {
+				clearInterval(cleanupInterval);
+			};
+		}
+	});
 
 	// Monitor addons state changes
 	$effect(() => {
@@ -155,9 +216,80 @@
 		}
 	}
 
-	function handleTimeSelect(time: AvailableTime) {
-		selectedTime = time;
-		// onStartTimeSelect will be called by the $effect tracking selectedTime
+	async function handleTimeSelect(time: AvailableTime) {
+		console.log('handleTimeSelect called with:', {
+			time,
+			bookingData,
+			bookingDataType: typeof bookingData,
+			bookingDataKeys: bookingData ? Object.keys(bookingData) : 'null'
+		});
+
+		// Handle the case where bookingData is a derived function
+		const actualBookingData = typeof bookingData === 'function' ? bookingData() : bookingData;
+
+		console.log('Actual booking data:', {
+			actualBookingData,
+			type: typeof actualBookingData,
+			keys: actualBookingData ? Object.keys(actualBookingData) : 'null'
+		});
+
+		if (!actualBookingData) {
+			console.error('No booking data available for reservation');
+			return;
+		}
+
+		try {
+			selectedTime = time;
+
+			// Prepare booking data with selected time
+			const reservationData = {
+				...actualBookingData,
+				startTime: time.startTime,
+				endTime: time.endTime
+			};
+
+			// Debug logging
+			console.log('Sending reservation data:', {
+				bookingNumber: currentBookingNumber,
+				bookingData: reservationData,
+				products: reservationData.products,
+				addons: reservationData.addons
+			});
+
+			// Call reservation API
+			const response = await fetch('/api/reserve-availability', {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json'
+				},
+				body: JSON.stringify({
+					bookingNumber: currentBookingNumber,
+					bookingData: reservationData
+				})
+			});
+
+			if (!response.ok) {
+				const errorData = await response.json();
+				throw new Error(errorData.error || 'Failed to reserve availability');
+			}
+
+			const result = await response.json();
+			currentBookingNumber = result.bookingNumber;
+			reservationExpiry = new Date(result.expiresAt);
+
+			console.log('Reservation successful:', {
+				bookingNumber: result.bookingNumber,
+				currentBookingNumber,
+				expiresAt: result.expiresAt
+			});
+
+			// onStartTimeSelect will be called by the $effect tracking selectedTime
+		} catch (error) {
+			console.error('Error reserving availability:', error);
+			// Reset selected time on error
+			selectedTime = null;
+			alert('Failed to reserve this time slot. Please try again.');
+		}
 	}
 
 	function handleReset() {
@@ -166,6 +298,15 @@
 		error = null;
 		selectedTime = null;
 		onLockStateChange(false);
+	}
+
+	// Expose booking number for parent components
+	export function getBookingNumber() {
+		return currentBookingNumber;
+	}
+
+	export function getReservationExpiry() {
+		return reservationExpiry;
 	}
 </script>
 
@@ -195,6 +336,18 @@
 
 	{#if error && hasAttemptedLoad}
 		<p class="text-sm text-destructive">{error}</p>
+	{/if}
+
+	{#if reservationExpiry}
+		<div class="rounded-md bg-blue-50 p-3 text-sm text-blue-800">
+			<p class="font-medium">Tid reserverad</p>
+			<p>
+				Din bokning är reserverad till {reservationExpiry.toLocaleTimeString('sv-SE', {
+					hour: '2-digit',
+					minute: '2-digit'
+				})} (2 minuter)
+			</p>
+		</div>
 	{/if}
 
 	{#if availableTimes.length > 0}
