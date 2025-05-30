@@ -553,6 +553,8 @@
 				if (!response.ok) {
 					throw new Error('Failed to cleanup booking from database');
 				}
+
+				console.log('✅ Immediate cleanup successful for booking:', bookingToRemove.bookingNumber);
 			}
 
 			// Check if this is the last completed booking in the current reservation group

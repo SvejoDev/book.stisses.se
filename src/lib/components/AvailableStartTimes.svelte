@@ -165,10 +165,10 @@
 		}
 	});
 
-	// Browser close detection for cleanup
+	// Browser close detection for cleanup - Enhanced with multiple strategies
 	$effect(() => {
 		if (typeof window !== 'undefined' && currentBookingNumber) {
-			const handleBeforeUnload = () => {
+			const cleanup = () => {
 				// Use sendBeacon for reliable cleanup on page unload
 				if (navigator.sendBeacon) {
 					navigator.sendBeacon(
@@ -177,34 +177,29 @@
 							bookingNumber: currentBookingNumber
 						})
 					);
+				} else {
+					// Fallback for browsers that don't support sendBeacon
+					fetch('/api/cleanup-expired', {
+						method: 'POST',
+						headers: { 'Content-Type': 'application/json' },
+						body: JSON.stringify({ bookingNumber: currentBookingNumber }),
+						keepalive: true
+					}).catch(() => {
+						// Ignore errors in cleanup
+					});
 				}
 			};
 
-			window.addEventListener('beforeunload', handleBeforeUnload);
+			// Only use critical unload events - removed visibilitychange as it's too aggressive
+			const events = ['beforeunload', 'unload', 'pagehide'];
+			events.forEach((event) => {
+				window.addEventListener(event, cleanup);
+			});
 
 			return () => {
-				window.removeEventListener('beforeunload', handleBeforeUnload);
-			};
-		}
-	});
-
-	// Periodic cleanup - runs every 30 seconds to clean up expired reservations
-	$effect(() => {
-		if (typeof window !== 'undefined') {
-			const cleanupInterval = setInterval(
-				async () => {
-					try {
-						// Only clean up expired reservations, not those with session_id (in payment)
-						await fetch('/api/cleanup-expired', { method: 'GET' });
-					} catch (error) {
-						console.error('Periodic cleanup failed:', error);
-					}
-				},
-				30 * 1000 // Every 30 seconds
-			);
-
-			return () => {
-				clearInterval(cleanupInterval);
+				events.forEach((event) => {
+					window.removeEventListener(event, cleanup);
+				});
 			};
 		}
 	});

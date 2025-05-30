@@ -130,11 +130,14 @@ export async function updateAvailability(
       const slotKey = minute.toString();
       const currentValue = currentData?.[slotKey] || 0;
       
+      let newValue: number;
       if (operation === 'add') {
-        updates[slotKey] = currentValue + quantity;
+        newValue = currentValue + quantity;
       } else {
-        updates[slotKey] = Math.max(0, currentValue - quantity); // Prevent negative values
+        newValue = Math.max(0, currentValue - quantity); // Prevent negative values
       }
+      
+      updates[slotKey] = newValue;
     }
 
     // Update the availability
@@ -206,23 +209,25 @@ export async function updateAvailabilityForBooking(
       const tableName = `availability_product_${product.id}`;
 
       if (isOvernight) {
+        // First day: from start time to end of day (24:00)
         await updateAvailability(
           tableName,
           dates[0],
           startMinutes,
-          24 * 60,
+          24 * 60, // 1440 minutes = end of day
           product.quantity,
           productData.total_quantity,
           operation
         );
 
+        // Middle days: full days (00:00 to 24:00)
         if (dates.length > 2) {
           for (let i = 1; i < dates.length - 1; i++) {
             await updateAvailability(
               tableName,
               dates[i],
               0,
-              24 * 60,
+              24 * 60, // Full day
               product.quantity,
               productData.total_quantity,
               operation
@@ -230,15 +235,18 @@ export async function updateAvailabilityForBooking(
           }
         }
 
-        await updateAvailability(
-          tableName,
-          dates[dates.length - 1],
-          0,
-          endMinutes,
-          product.quantity,
-          productData.total_quantity,
-          operation
-        );
+        // Last day: from start of day to end time
+        if (dates.length > 1) {
+          await updateAvailability(
+            tableName,
+            dates[dates.length - 1],
+            0,
+            endMinutes,
+            product.quantity,
+            productData.total_quantity,
+            operation
+          );
+        }
       } else {
         await updateAvailability(
           tableName,
@@ -273,6 +281,7 @@ export async function updateAvailabilityForBooking(
         const tableName = `availability_addon_${addon.id}`;
 
         if (isOvernight) {
+          // First day: from start time to end of day
           await updateAvailability(
             tableName,
             dates[0],
@@ -283,6 +292,7 @@ export async function updateAvailabilityForBooking(
             operation
           );
 
+          // Middle days: full days
           if (dates.length > 2) {
             for (let i = 1; i < dates.length - 1; i++) {
               await updateAvailability(
@@ -297,15 +307,18 @@ export async function updateAvailabilityForBooking(
             }
           }
 
-          await updateAvailability(
-            tableName,
-            dates[dates.length - 1],
-            0,
-            endMinutes,
-            addon.quantity,
-            addonData.total_quantity,
-            operation
-          );
+          // Last day: from start of day to end time
+          if (dates.length > 1) {
+            await updateAvailability(
+              tableName,
+              dates[dates.length - 1],
+              0,
+              endMinutes,
+              addon.quantity,
+              addonData.total_quantity,
+              operation
+            );
+          }
         } else {
           await updateAvailability(
             tableName,
