@@ -105,36 +105,81 @@ export const POST: RequestHandler = async ({ request }) => {
     try {
       console.log('Webhook processing session:', session.id);
       
-      // Get the full booking data from pending_bookings
-      const { data: pendingBooking, error: pendingError } = await supabase
-        .from('pending_bookings')
-        .select('*')
-        .eq('session_id', session.id)
-        .single();
-
-      console.log('Pending booking lookup result:', {
-        found: !!pendingBooking,
-        error: pendingError?.message,
-        sessionId: session.id
+      // Debug environment variables
+      console.log('Webhook environment check:', {
+        supabaseUrl: PUBLIC_SUPABASE_URL,
+        hasServiceKey: !!SUPABASE_SERVICE_ROLE_KEY,
+        serviceKeyPrefix: SUPABASE_SERVICE_ROLE_KEY?.substring(0, 20) + '...'
       });
-
-      if (pendingError || !pendingBooking) {
-        // Let's also check if there are any bookings with this session_id
-        const { data: allBookings } = await supabase
+      
+      // Check ALL pending bookings to see what's in the database
+      const { data: allPendingBookings, error: allError } = await supabase
+        .from('pending_bookings')
+        .select('booking_number, session_id, availability_reserved, expires_at, created_at')
+        .order('created_at', { ascending: false })
+        .limit(10);
+      
+      console.log('All recent pending bookings:', {
+        count: allPendingBookings?.length || 0,
+        bookings: allPendingBookings,
+        error: allError?.message
+      });
+      
+      // First, let's check what pending bookings exist with this session_id
+      const { data: debugBookings, error: debugError } = await supabase
+        .from('pending_bookings')
+        .select('booking_number, session_id, availability_reserved, expires_at, created_at')
+        .eq('session_id', session.id);
+      
+      console.log('Debug - All bookings with session_id:', {
+        sessionId: session.id,
+        bookings: debugBookings,
+        error: debugError?.message
+      });
+      
+      // Retry mechanism for timing issues
+      let pendingBookings = null;
+      let pendingError = null;
+      let retryCount = 0;
+      const maxRetries = 3;
+      
+      while (retryCount < maxRetries && (!pendingBookings || pendingBookings.length === 0)) {
+        if (retryCount > 0) {
+          console.log(`Retry ${retryCount} for session ${session.id}, waiting 1 second...`);
+          await delay(1000); // Wait 1 second before retry
+        }
+        
+        // Get all booking data from pending_bookings with this session_id
+        const result = await supabase
           .from('pending_bookings')
-          .select('booking_number, session_id, expires_at, availability_reserved')
+          .select('*')
           .eq('session_id', session.id);
         
+        pendingBookings = result.data;
+        pendingError = result.error;
+        retryCount++;
+      }
+
+      console.log('Pending booking lookup result:', {
+        found: !!pendingBookings && pendingBookings.length > 0,
+        count: pendingBookings?.length || 0,
+        error: pendingError?.message,
+        sessionId: session.id,
+        bookingNumbers: pendingBookings?.map(b => b.booking_number) || [],
+        reservationGroupIds: [...new Set(pendingBookings?.map(b => b.reservation_group_id) || [])],
+        retriesUsed: retryCount - 1
+      });
+
+      if (pendingError || !pendingBookings || pendingBookings.length === 0) {
         console.log('No bookings found for session:', session.id);
-        console.log('All bookings with this session_id:', allBookings);
-        
         throw new Error('Could not find pending booking');
       }
 
-      const bookings = pendingBooking.booking_data;
+      // Each pending booking row now contains a single booking in booking_data array
+      const allBookingData = pendingBookings.flatMap(pb => pb.booking_data);
       
       // Create bookings in parallel with unique numbers
-      const bookingPromises = bookings.map(async (booking: any, index: number) => {
+      const bookingPromises = allBookingData.map(async (booking: any, index: number) => {
         // Generate a unique booking number for each booking
         const timestamp = Date.now();
         const uniqueId = crypto.randomUUID().split('-')[0];
@@ -261,15 +306,15 @@ export const POST: RequestHandler = async ({ request }) => {
 
       const createdBookings = await Promise.all(bookingPromises);
 
-      // Mark the pending booking as permanent (availability_reserved = false)
-      // This keeps the availability blocked but marks it as a confirmed booking
+      // Mark all pending bookings as permanent (availability_reserved = false)
+      // This keeps the availability blocked but marks it as confirmed bookings
       const { error: updateError } = await supabase
         .from('pending_bookings')
         .update({ availability_reserved: false })
         .eq('session_id', session.id);
 
       if (updateError) {
-        console.error('Error marking booking as permanent:', updateError);
+        console.error('Error marking bookings as permanent:', updateError);
         // Don't throw here as the booking was created successfully
       }
 

@@ -18,29 +18,38 @@ const supabase = createClient(
 
 export const POST: RequestHandler = async ({ request }) => {
   try {
-    const { bookingNumber } = await request.json();
+    const { reservationGroupId, sessionId } = await request.json();
     
     let expiredBookings;
     
-    if (bookingNumber) {
-      // Clean up specific booking number (for immediate cleanup, e.g., browser close)
-      // This can include bookings with session_id since it's a specific request
+    if (sessionId) {
+      // Clean up specific session (for failed payments)
       const { data, error } = await supabase
         .from('pending_bookings')
         .select('*')
-        .eq('booking_number', bookingNumber)
+        .eq('session_id', sessionId);
+      
+      if (error) throw error;
+      expiredBookings = data;
+    } else if (reservationGroupId) {
+      // Clean up specific reservation group (for immediate cleanup, e.g., browser close)
+      const { data, error } = await supabase
+        .from('pending_bookings')
+        .select('*')
+        .eq('reservation_group_id', reservationGroupId)
         .eq('availability_reserved', true);
       
       if (error) throw error;
       expiredBookings = data;
     } else {
       // Clean up all expired reservations (but not those with session_id - they're in payment process)
+      // Only clean up bookings that have null session_id (not real Stripe session IDs)
       const { data, error } = await supabase
         .from('pending_bookings')
         .select('*')
         .eq('availability_reserved', true)
         .lt('expires_at', new Date().toISOString())
-        .eq('session_id', ''); // Only clean up bookings with empty session_id (not in payment process)
+        .is('session_id', null); // Only clean up bookings that haven't started payment
       
       if (error) throw error;
       expiredBookings = data;
@@ -50,7 +59,7 @@ export const POST: RequestHandler = async ({ request }) => {
 
     for (const booking of expiredBookings) {
       try {
-        // Process each booking in the booking_data array
+        // Process each booking in the booking_data array (now each row has one booking)
         for (const bookingData of booking.booking_data) {
           // Get duration details to calculate proper end date
           const { data: durationData } = await supabase
@@ -102,12 +111,14 @@ export const POST: RequestHandler = async ({ request }) => {
           console.error(`Failed to delete booking ${booking.booking_number}:`, deleteError);
           cleanupResults.push({
             bookingNumber: booking.booking_number,
+            reservationGroupId: booking.reservation_group_id,
             success: false,
             error: deleteError.message
           });
         } else {
           cleanupResults.push({
             bookingNumber: booking.booking_number,
+            reservationGroupId: booking.reservation_group_id,
             success: true
           });
         }
@@ -116,6 +127,7 @@ export const POST: RequestHandler = async ({ request }) => {
         console.error(`Error cleaning up booking ${booking.booking_number}:`, error);
         cleanupResults.push({
           bookingNumber: booking.booking_number,
+          reservationGroupId: booking.reservation_group_id,
           success: false,
           error: error instanceof Error ? error.message : 'Unknown error'
         });
@@ -179,7 +191,7 @@ export const GET: RequestHandler = async ({ url }) => {
       .select('*')
       .eq('availability_reserved', true)
       .lt('expires_at', now.toISOString())
-      .eq('session_id', ''); // Only clean up bookings with empty session_id (not in payment process)
+      .is('session_id', null); // Only clean up bookings that haven't started payment
     
     if (error) throw error;
 
@@ -189,9 +201,9 @@ export const GET: RequestHandler = async ({ url }) => {
 
     for (const booking of expiredBookings) {
       try {
-        console.log(`Cleaning up booking: ${booking.booking_number}, expired at: ${booking.expires_at}`);
+        console.log(`Cleaning up booking: ${booking.booking_number}, reservation group: ${booking.reservation_group_id}, expired at: ${booking.expires_at}`);
         
-        // Process each booking in the booking_data array
+        // Process each booking in the booking_data array (now each row has one booking)
         for (const bookingData of booking.booking_data) {
           // Get duration details to calculate proper end date
           const { data: durationData } = await supabase
@@ -243,6 +255,7 @@ export const GET: RequestHandler = async ({ url }) => {
           console.error(`Failed to delete booking ${booking.booking_number}:`, deleteError);
           cleanupResults.push({
             bookingNumber: booking.booking_number,
+            reservationGroupId: booking.reservation_group_id,
             success: false,
             error: deleteError.message
           });
@@ -250,6 +263,7 @@ export const GET: RequestHandler = async ({ url }) => {
           console.log(`Successfully cleaned up booking: ${booking.booking_number}`);
           cleanupResults.push({
             bookingNumber: booking.booking_number,
+            reservationGroupId: booking.reservation_group_id,
             success: true
           });
         }
@@ -258,6 +272,7 @@ export const GET: RequestHandler = async ({ url }) => {
         console.error(`Error cleaning up booking ${booking.booking_number}:`, error);
         cleanupResults.push({
           bookingNumber: booking.booking_number,
+          reservationGroupId: booking.reservation_group_id,
           success: false,
           error: error instanceof Error ? error.message : 'Unknown error'
         });

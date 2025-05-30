@@ -18,7 +18,7 @@ const supabase = createClient(
 );
 
 interface ReservationRequest {
-  bookingNumber?: string; // For extending existing reservations
+  reservationGroupId?: string; // For extending existing reservations
   bookingData: {
     firstName: string;
     lastName: string;
@@ -43,11 +43,11 @@ interface ReservationRequest {
 export const POST: RequestHandler = async ({ request }) => {
   try {
     const requestBody = await request.json();
-    const { bookingNumber, bookingData }: ReservationRequest = requestBody;
+    const { reservationGroupId, bookingData }: ReservationRequest = requestBody;
     
     // Debug logging
     console.log('Reserve availability request:', {
-      bookingNumber,
+      reservationGroupId,
       bookingDataKeys: bookingData ? Object.keys(bookingData) : 'undefined',
       products: bookingData?.products,
       addons: bookingData?.addons
@@ -79,8 +79,24 @@ export const POST: RequestHandler = async ({ request }) => {
     
     console.log('Processed arrays:', { products, addons });
     
-    // Calculate expiry time (2 minutes from now for development)
-    const expiresAt = new Date(Date.now() + 2 * 60 * 1000);
+    // Calculate expiry time (2 minutes from now for development, plus 2 minutes for each existing booking)
+    let baseExpiryMinutes = 2; // Base 2 minutes for development
+    
+    if (reservationGroupId) {
+      // For extending reservations, check how many bookings already exist
+      const { data: existingBookings } = await supabase
+        .from('pending_bookings')
+        .select('id')
+        .eq('reservation_group_id', reservationGroupId)
+        .eq('availability_reserved', true);
+      
+      if (existingBookings) {
+        // Add 2 minutes for each existing booking
+        baseExpiryMinutes += existingBookings.length * 2;
+      }
+    }
+    
+    const expiresAt = new Date(Date.now() + baseExpiryMinutes * 60 * 1000);
     
     // Get duration details to calculate proper end date
     const { data: durationData } = await supabase
@@ -113,16 +129,28 @@ export const POST: RequestHandler = async ({ request }) => {
       duration_id: bookingData.durationId.toString()
     };
 
-    if (bookingNumber) {
-      // Extending existing reservation - check if it exists and is still valid
-      const { data: existingBooking, error: fetchError } = await supabase
+    if (reservationGroupId) {
+      // Extending existing reservation
+      console.log('EXTENDING existing reservation:', reservationGroupId);
+      
+      const { data: existingBookings, error: fetchError } = await supabase
         .from('pending_bookings')
         .select('*')
-        .eq('booking_number', bookingNumber)
-        .eq('availability_reserved', true)
-        .single();
+        .eq('reservation_group_id', reservationGroupId)
+        .eq('availability_reserved', true);
 
-      if (fetchError || !existingBooking) {
+      console.log('Existing booking lookup result:', {
+        found: !!existingBookings && existingBookings.length > 0,
+        reservationGroupId,
+        error: fetchError?.message,
+        currentBookingCount: existingBookings?.length || 0
+      });
+
+      if (fetchError || !existingBookings || existingBookings.length === 0) {
+        console.error('FAILED to find existing reservation for extension:', {
+          reservationGroupId,
+          error: fetchError?.message
+        });
         return json({ error: 'Existing reservation not found or expired' }, { status: 404 });
       }
 
@@ -134,19 +162,23 @@ export const POST: RequestHandler = async ({ request }) => {
         'add'
       );
 
-      // Add the new booking to the existing booking data and extend expiry
-      const updatedBookingData = [...existingBooking.booking_data, bookingData];
+      // Generate a unique booking number for this specific booking
+      const newBookingNumber = `BK-${Date.now()}-${crypto.randomUUID().split('-')[0]}`;
       
-      const { error: updateError } = await supabase
+      // Create a new pending booking row for this booking
+      const { error: insertError } = await supabase
         .from('pending_bookings')
-        .update({
-          booking_data: updatedBookingData,
-          expires_at: expiresAt.toISOString()
-        })
-        .eq('booking_number', bookingNumber);
+        .insert({
+          booking_number: newBookingNumber,
+          session_id: null, // No session yet
+          booking_data: [bookingData], // Single booking in array for consistency
+          expires_at: expiresAt.toISOString(),
+          availability_reserved: true,
+          reservation_group_id: reservationGroupId
+        });
 
-      if (updateError) {
-        // If update fails, try to rollback availability
+      if (insertError) {
+        // If insert fails, try to rollback availability
         try {
           await updateAvailabilityForBooking(
             bookingForAvailability,
@@ -157,20 +189,24 @@ export const POST: RequestHandler = async ({ request }) => {
         } catch (rollbackError) {
           console.error('Failed to rollback availability:', rollbackError);
         }
-        throw updateError;
+        throw insertError;
       }
 
       return json({ 
         success: true, 
-        bookingNumber,
+        reservationGroupId,
+        bookingNumber: newBookingNumber,
         expiresAt: expiresAt.toISOString()
       });
 
     } else {
       // Creating new reservation
+      console.log('CREATING new reservation (no existing reservation group provided)');
+      
+      const newReservationGroupId = `RG-${Date.now()}-${crypto.randomUUID().split('-')[0]}`;
       const newBookingNumber = `BK-${Date.now()}-${crypto.randomUUID().split('-')[0]}`;
 
-      console.log('Creating new reservation with booking number:', newBookingNumber);
+      console.log('Creating new reservation with group ID:', newReservationGroupId);
 
       // Reserve availability first
       await updateAvailabilityForBooking(
@@ -185,10 +221,11 @@ export const POST: RequestHandler = async ({ request }) => {
         .from('pending_bookings')
         .insert({
           booking_number: newBookingNumber,
-          session_id: '', // Will be set when creating checkout session
-          booking_data: [bookingData],
+          session_id: null, // No session yet - this is now nullable
+          booking_data: [bookingData], // Single booking in array for consistency
           expires_at: expiresAt.toISOString(),
-          availability_reserved: true
+          availability_reserved: true,
+          reservation_group_id: newReservationGroupId
         });
 
       if (insertError) {
@@ -211,6 +248,7 @@ export const POST: RequestHandler = async ({ request }) => {
 
       return json({ 
         success: true, 
+        reservationGroupId: newReservationGroupId,
         bookingNumber: newBookingNumber,
         expiresAt: expiresAt.toISOString()
       });

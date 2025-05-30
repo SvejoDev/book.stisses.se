@@ -28,17 +28,18 @@
 		totalPrice: number;
 	};
 
-	let { data, bookings, experienceId, experienceType, products, addons, bookingNumber } = $props<{
-		data?: {
-			form: SuperValidated<FormSchema>;
-		};
-		bookings: Array<Booking>;
-		experienceId: number;
-		experienceType: string;
-		products: SelectedProduct[];
-		addons: SelectedAddon[];
-		bookingNumber?: string | null;
-	}>();
+	let { data, bookings, experienceId, experienceType, products, addons, reservationGroupId } =
+		$props<{
+			data?: {
+				form: SuperValidated<FormSchema>;
+			};
+			bookings: Array<Booking>;
+			experienceId: number;
+			experienceType: string;
+			products: SelectedProduct[];
+			addons: SelectedAddon[];
+			reservationGroupId?: string | null;
+		}>();
 
 	const defaultData = {
 		firstName: '',
@@ -85,7 +86,7 @@
 					},
 					body: JSON.stringify({
 						bookings: bookingData,
-						bookingNumber
+						reservationGroupId
 					})
 				});
 

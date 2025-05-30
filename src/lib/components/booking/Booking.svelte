@@ -184,8 +184,9 @@
 	let showMultipleBookingOption = $state(false);
 	let currentBookingIndex = $state(0);
 	let totalBookings = $state(1);
-	let currentBookingNumber = $state<string | null>(null);
+	let currentReservationGroupId = $state<string | null>(null);
 	let availableStartTimesRef = $state<{
+		getReservationGroupId: () => string | null;
 		getBookingNumber: () => string | null;
 		getReservationExpiry: () => Date | null;
 	} | null>(null);
@@ -197,14 +198,19 @@
 			selectedLocationId,
 			selectedDuration,
 			selectedProducts: selectedProducts?.length || 0,
-			selectedAddons: selectedAddons?.length || 0
+			selectedAddons: selectedAddons?.length || 0,
+			hasStartLocations
 		});
 
-		if (!selectedDate || !selectedLocationId || !selectedDuration) {
+		// For experiences without start locations, selectedLocationId can be null
+		const locationId = hasStartLocations ? selectedLocationId : 0;
+
+		if (!selectedDate || (hasStartLocations && !selectedLocationId) || !selectedDuration) {
 			console.log('Missing required fields for booking data:', {
 				hasDate: !!selectedDate,
-				hasLocation: !!selectedLocationId,
-				hasDuration: !!selectedDuration
+				hasLocation: hasStartLocations ? !!selectedLocationId : true,
+				hasDuration: !!selectedDuration,
+				hasStartLocations
 			});
 			return null;
 		}
@@ -223,7 +229,7 @@
 			comment: '',
 			experienceId: parseInt(experience.id),
 			experienceType: experience.type,
-			startLocationId: selectedLocationId,
+			startLocationId: locationId,
 			durationId: durationId,
 			startDate: selectedDate.toISOString().split('T')[0],
 			startTime: '', // Will be set when time is selected
@@ -245,16 +251,6 @@
 		});
 
 		return bookingData;
-	});
-
-	// Debug effect for currentBookingData
-	$effect(() => {
-		console.log('currentBookingData changed:', {
-			value: currentBookingData,
-			type: typeof currentBookingData,
-			isNull: currentBookingData === null,
-			keys: currentBookingData ? Object.keys(currentBookingData) : 'null'
-		});
 	});
 
 	let allBookings = $state<
@@ -290,11 +286,31 @@
 	let autoFetchAddons = $state(false);
 
 	function handleStartTimeSelect(time: SelectedStartTime) {
+		console.log('handleStartTimeSelect called:', {
+			currentReservationGroupId: currentReservationGroupId,
+			totalBookings: totalBookings,
+			currentBookingIndex: currentBookingIndex,
+			isFirstBooking: currentBookingIndex === 0
+		});
+
 		selectedStartTime = time;
 		showMultipleBookingOption = true;
 
-		// Get the current booking number from the AvailableStartTimes component
-		currentBookingNumber = availableStartTimesRef?.getBookingNumber() || null;
+		// Get the current reservation group ID from the AvailableStartTimes component
+		const newReservationGroupId = availableStartTimesRef?.getReservationGroupId() || null;
+		console.log('Reservation group ID from AvailableStartTimes:', {
+			previous: currentReservationGroupId,
+			new: newReservationGroupId,
+			changed: currentReservationGroupId !== newReservationGroupId,
+			source: 'AvailableStartTimes.getReservationGroupId()'
+		});
+
+		// Always update to the latest reservation group ID from the component
+		// This ensures we have the correct ID for subsequent bookings
+		if (newReservationGroupId) {
+			currentReservationGroupId = newReservationGroupId;
+			console.log('Updated currentReservationGroupId to:', currentReservationGroupId);
+		}
 
 		allBookings[currentBookingIndex] = {
 			selectedLocationId,
@@ -312,6 +328,20 @@
 	}
 
 	function addAnotherBooking() {
+		console.log('addAnotherBooking called:', {
+			currentReservationGroupId,
+			totalBookings,
+			currentBookingIndex,
+			hasReservationGroup: !!currentReservationGroupId
+		});
+
+		// Validate that we have a reservation group ID before proceeding
+		if (!currentReservationGroupId) {
+			console.error('No currentReservationGroupId available for extending reservation!');
+			alert('Error: No reservation group found. Please try again.');
+			return;
+		}
+
 		allBookings[currentBookingIndex] = {
 			selectedLocationId,
 			selectedDuration,
@@ -343,6 +373,7 @@
 		showAvailableTimesButton = false;
 		showContactForm = false;
 		autoFetchAddons = false;
+		// DON'T reset currentReservationGroupId - we want to extend the existing reservation
 		allBookings.push({
 			selectedLocationId: null,
 			selectedDuration: '',
@@ -355,6 +386,14 @@
 			selectedStartTime: null,
 			totalPrice: 0
 		});
+
+		console.log('After addAnotherBooking - state preserved:', {
+			currentReservationGroupId,
+			totalBookings,
+			currentBookingIndex,
+			allBookingsLength: allBookings.length
+		});
+
 		window.scrollTo({ top: 0, behavior: 'smooth' });
 		setTimeout(() => (resetStartLocations = false), 100);
 	}
@@ -571,24 +610,31 @@
 					{/if}
 
 					<div class="mx-auto mt-4 max-w-2xl">
-						<AvailableStartTimes
-							bind:this={availableStartTimesRef}
-							{...{
-								experienceId: parseInt(experience.id),
-								selectedDate,
-								durationType,
-								durationValue,
-								selectedProducts,
-								selectedAddons,
-								onLockStateChange: handleLockStateChange,
-								onStartTimeSelect: handleStartTimeSelect
-							}}
-							showButton={showMultipleBookingOption || showAvailableTimesButton}
-							initialSelectedStartTime={selectedStartTime}
-							isLocked={isBookingLocked}
-							bookingData={currentBookingData}
-							existingBookingNumber={currentBookingNumber}
-						/>
+						{#if currentBookingData}
+							<AvailableStartTimes
+								bind:this={availableStartTimesRef}
+								{...{
+									experienceId: parseInt(experience.id),
+									selectedDate,
+									durationType,
+									durationValue,
+									selectedProducts,
+									selectedAddons,
+									onLockStateChange: handleLockStateChange,
+									onStartTimeSelect: handleStartTimeSelect
+								}}
+								showButton={showMultipleBookingOption || showAvailableTimesButton}
+								initialSelectedStartTime={selectedStartTime}
+								isLocked={isBookingLocked}
+								bookingData={currentBookingData}
+								existingReservationGroupId={currentReservationGroupId}
+								{totalBookings}
+							/>
+						{:else}
+							<div class="text-center text-sm text-muted-foreground">
+								Fyll i alla obligatoriska fält för att se tillgängliga tider
+							</div>
+						{/if}
 					</div>
 				</section>
 			{/if}
@@ -616,7 +662,7 @@
 				experienceType={experience.type}
 				products={selectedProducts}
 				addons={selectedAddons}
-				bookingNumber={currentBookingNumber}
+				reservationGroupId={currentReservationGroupId}
 			/>
 		</section>
 	{/if}

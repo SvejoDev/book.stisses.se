@@ -18,7 +18,8 @@
 		isLocked = false,
 		// New props for reservation system
 		bookingData = null,
-		existingBookingNumber = null
+		existingReservationGroupId = null,
+		totalBookings = 1
 	} = $props<{
 		experienceId: number;
 		selectedDate: Date;
@@ -33,7 +34,8 @@
 		isLocked?: boolean;
 		// New props for reservation system
 		bookingData?: any;
-		existingBookingNumber?: string | null;
+		existingReservationGroupId?: string | null;
+		totalBookings?: number;
 	}>();
 
 	let isLoading = $state(false);
@@ -42,17 +44,30 @@
 	let error = $state<string | null>(null);
 	let selectedTime = $state<AvailableTime | null>(null);
 	let hasInitialized = $state(false);
-	let currentBookingNumber = $state<string | null>(existingBookingNumber);
+	let currentReservationGroupId = $state<string | null>(existingReservationGroupId);
+	let currentBookingNumber = $state<string | null>(null);
 	let reservationExpiry = $state<Date | null>(null);
+	let reservationCheckInterval: NodeJS.Timeout | null = null;
 
-	// Debug effect to monitor bookingData prop
+	// Single effect to handle reservation group ID initialization and synchronization
 	$effect(() => {
-		console.log('AvailableStartTimes bookingData prop:', {
-			bookingData,
-			type: typeof bookingData,
-			isNull: bookingData === null,
-			isFunction: typeof bookingData === 'function'
+		console.log('🔄 EFFECT 1 - Reservation Group Sync:', {
+			existingReservationGroupId,
+			currentReservationGroupId,
+			willUpdate:
+				existingReservationGroupId && existingReservationGroupId !== currentReservationGroupId,
+			timestamp: Date.now()
 		});
+
+		// Only update if we have an existingReservationGroupId and it's different from current
+		if (existingReservationGroupId && existingReservationGroupId !== currentReservationGroupId) {
+			console.log('🔄 EFFECT 1 - UPDATING currentReservationGroupId:', {
+				from: currentReservationGroupId,
+				to: existingReservationGroupId,
+				reason: currentReservationGroupId ? 'update' : 'initialize'
+			});
+			currentReservationGroupId = existingReservationGroupId;
+		}
 	});
 
 	let totalProductQuantity = /** @readonly */ $derived(
@@ -71,8 +86,58 @@
 		})
 	);
 
+	// Simplified reservation monitoring - no countdown to prevent infinite loops
+	$effect(() => {
+		console.log('🔄 EFFECT 2 - Reservation Expiry Monitor:', {
+			hasReservationExpiry: !!reservationExpiry,
+			hasCurrentBookingNumber: !!currentBookingNumber,
+			willSetInterval: !!(reservationExpiry && currentBookingNumber),
+			timestamp: Date.now()
+		});
+
+		if (reservationExpiry && currentBookingNumber) {
+			// Clear any existing interval
+			if (reservationCheckInterval) {
+				clearInterval(reservationCheckInterval);
+				reservationCheckInterval = null;
+			}
+
+			// Simple check every 30 seconds to see if reservation expired
+			reservationCheckInterval = setInterval(() => {
+				if (!reservationExpiry) return;
+
+				const now = new Date();
+				if (now >= reservationExpiry) {
+					console.log('Reservation has expired, resetting UI');
+					handleReservationExpired();
+				}
+			}, 30000); // Check every 30 seconds
+
+			// Cleanup function
+			return () => {
+				if (reservationCheckInterval) {
+					clearInterval(reservationCheckInterval);
+					reservationCheckInterval = null;
+				}
+			};
+		} else {
+			// Clear interval if no reservation
+			if (reservationCheckInterval) {
+				clearInterval(reservationCheckInterval);
+				reservationCheckInterval = null;
+			}
+		}
+	});
+
 	// Browser close detection for cleanup
 	$effect(() => {
+		console.log('🔄 EFFECT 3 - Browser Cleanup:', {
+			isWindow: typeof window !== 'undefined',
+			hasCurrentBookingNumber: !!currentBookingNumber,
+			willAddListener: typeof window !== 'undefined' && !!currentBookingNumber,
+			timestamp: Date.now()
+		});
+
 		if (typeof window !== 'undefined' && currentBookingNumber) {
 			const handleBeforeUnload = () => {
 				// Use sendBeacon for reliable cleanup on page unload
@@ -95,6 +160,8 @@
 	});
 
 	// Periodic cleanup - runs every 1 minute (for development)
+	// DISABLED: This was causing bookings to be deleted too aggressively during development
+	/*
 	$effect(() => {
 		if (typeof window !== 'undefined') {
 			const cleanupInterval = setInterval(
@@ -113,15 +180,18 @@
 			};
 		}
 	});
-
-	// Monitor addons state changes
-	$effect(() => {
-		if (selectedAddons?.length > 0) {
-		}
-	});
+	*/
 
 	// Auto-load times and set selected time when restoring a previous booking
 	$effect(() => {
+		console.log('🔄 EFFECT 4 - Auto-load Previous Booking:', {
+			hasInitialSelectedStartTime: !!initialSelectedStartTime,
+			hasInitialized,
+			canGenerateTimes,
+			willExecute: !!(initialSelectedStartTime && !hasInitialized && canGenerateTimes),
+			timestamp: Date.now()
+		});
+
 		if (initialSelectedStartTime && !hasInitialized && canGenerateTimes) {
 			hasInitialized = true;
 			hasAttemptedLoad = true;
@@ -132,31 +202,36 @@
 				);
 				if (matchingTime) {
 					selectedTime = matchingTime;
+					// Call onStartTimeSelect when restoring a previous booking
+					onStartTimeSelect(matchingTime);
 				}
 			});
 		}
 	});
 
-	$effect(() => {
-		if (selectedTime) {
-			const [hours, minutes] = selectedTime.startTime.split(':').map(Number);
-			const startDateTime = new Date(selectedDate);
-			startDateTime.setHours(hours, minutes, 0, 0);
+	function handleReservationExpired() {
+		// Reset all reservation-related state
+		currentBookingNumber = null;
+		reservationExpiry = null;
+		selectedTime = null;
 
-			let endDateTime;
-			if (durationType === 'hours') {
-				endDateTime = addHours(startDateTime, durationValue);
-			} else {
-				// For overnight bookings, end time is the closing time of the last day
-				endDateTime = addDays(startDateTime, durationValue);
-				const [endHours, endMinutes] = selectedTime.endTime.split(':').map(Number);
-				endDateTime.setHours(endHours, endMinutes, 0, 0);
-			}
-
-			// Call onStartTimeSelect with the selected time
-			onStartTimeSelect(selectedTime);
+		// Clear the interval
+		if (reservationCheckInterval) {
+			clearInterval(reservationCheckInterval);
+			reservationCheckInterval = null;
 		}
-	});
+
+		// Unlock the booking form
+		onLockStateChange(false);
+
+		// Show a message to the user
+		alert('Din reservation har gått ut. Vänligen välj en ny tid.');
+
+		// Optionally reload available times to show current availability
+		if (hasAttemptedLoad) {
+			generateStartTimes();
+		}
+	}
 
 	function scrollToBottom() {
 		setTimeout(() => {
@@ -217,11 +292,25 @@
 	}
 
 	async function handleTimeSelect(time: AvailableTime) {
+		console.log('🎯 handleTimeSelect START:', {
+			time: time.startTime,
+			currentState: {
+				selectedTime: selectedTime?.startTime || null,
+				currentReservationGroupId,
+				currentBookingNumber,
+				reservationExpiry: !!reservationExpiry
+			},
+			timestamp: Date.now()
+		});
+
 		console.log('handleTimeSelect called with:', {
 			time,
 			bookingData,
 			bookingDataType: typeof bookingData,
-			bookingDataKeys: bookingData ? Object.keys(bookingData) : 'null'
+			bookingDataKeys: bookingData ? Object.keys(bookingData) : 'null',
+			currentReservationGroupId,
+			existingReservationGroupId,
+			willExtendExisting: !!currentReservationGroupId
 		});
 
 		// Handle the case where bookingData is a derived function
@@ -239,6 +328,7 @@
 		}
 
 		try {
+			console.log('🎯 Setting selectedTime to:', time.startTime);
 			selectedTime = time;
 
 			// Prepare booking data with selected time
@@ -248,12 +338,21 @@
 				endTime: time.endTime
 			};
 
+			// Use existing reservation group ID if available, otherwise let API create new one
+			const reservationGroupIdToUse = currentReservationGroupId || existingReservationGroupId;
+
 			// Debug logging
 			console.log('Sending reservation data:', {
-				bookingNumber: currentBookingNumber,
+				reservationGroupId: reservationGroupIdToUse,
 				bookingData: reservationData,
 				products: reservationData.products,
-				addons: reservationData.addons
+				addons: reservationData.addons,
+				willExtendExisting: !!reservationGroupIdToUse,
+				source: currentReservationGroupId
+					? 'currentReservationGroupId'
+					: existingReservationGroupId
+						? 'existingReservationGroupId'
+						: 'new'
 			});
 
 			// Call reservation API
@@ -263,9 +362,18 @@
 					'Content-Type': 'application/json'
 				},
 				body: JSON.stringify({
-					bookingNumber: currentBookingNumber,
+					reservationGroupId: reservationGroupIdToUse,
 					bookingData: reservationData
 				})
+			});
+
+			console.log('Reserve availability API call:', {
+				url: '/api/reserve-availability',
+				method: 'POST',
+				reservationGroupId: reservationGroupIdToUse,
+				existingReservationGroupId,
+				totalBookings,
+				isExtendingExisting: !!reservationGroupIdToUse
 			});
 
 			if (!response.ok) {
@@ -274,16 +382,33 @@
 			}
 
 			const result = await response.json();
+			console.log('🎯 Setting reservation state:', {
+				reservationGroupId: result.reservationGroupId,
+				bookingNumber: result.bookingNumber,
+				expiresAt: result.expiresAt
+			});
+
+			currentReservationGroupId = result.reservationGroupId;
+			console.log('🎯 Set currentReservationGroupId to:', currentReservationGroupId);
+
 			currentBookingNumber = result.bookingNumber;
+			console.log('🎯 Set currentBookingNumber to:', currentBookingNumber);
+
 			reservationExpiry = new Date(result.expiresAt);
+			console.log('🎯 Set reservationExpiry to:', reservationExpiry);
 
 			console.log('Reservation successful:', {
+				reservationGroupId: result.reservationGroupId,
 				bookingNumber: result.bookingNumber,
+				currentReservationGroupId,
 				currentBookingNumber,
 				expiresAt: result.expiresAt
 			});
 
-			// onStartTimeSelect will be called by the $effect tracking selectedTime
+			// Call onStartTimeSelect directly after successful reservation
+			console.log('🎯 Calling onStartTimeSelect with:', selectedTime);
+			onStartTimeSelect(selectedTime);
+			console.log('🎯 onStartTimeSelect completed');
 		} catch (error) {
 			console.error('Error reserving availability:', error);
 			// Reset selected time on error
@@ -297,10 +422,24 @@
 		availableTimes = [];
 		error = null;
 		selectedTime = null;
+
+		// Clear reservation state
+		currentReservationGroupId = null;
+		currentBookingNumber = null;
+		reservationExpiry = null;
+		if (reservationCheckInterval) {
+			clearInterval(reservationCheckInterval);
+			reservationCheckInterval = null;
+		}
+
 		onLockStateChange(false);
 	}
 
-	// Expose booking number for parent components
+	// Expose reservation group ID for parent components
+	export function getReservationGroupId() {
+		return currentReservationGroupId;
+	}
+
 	export function getBookingNumber() {
 		return currentBookingNumber;
 	}
@@ -309,6 +448,43 @@
 		return reservationExpiry;
 	}
 </script>
+
+<!-- Fixed reservation timer -->
+{#if reservationExpiry}
+	<div
+		class="fixed right-4 top-4 z-50 rounded-lg border border-gray-200 bg-white px-3 py-2 shadow-lg sm:px-4 sm:py-3"
+	>
+		<div class="flex items-center gap-2 sm:gap-3">
+			<div class="flex h-6 w-6 items-center justify-center rounded-full bg-gray-100 sm:h-8 sm:w-8">
+				<svg
+					class="h-3 w-3 text-gray-600 sm:h-4 sm:w-4"
+					fill="none"
+					stroke="currentColor"
+					viewBox="0 0 24 24"
+				>
+					<path
+						stroke-linecap="round"
+						stroke-linejoin="round"
+						stroke-width="2"
+						d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+					></path>
+				</svg>
+			</div>
+			<div>
+				<p class="text-xs font-medium text-gray-600 sm:text-sm">
+					{#if totalBookings > 1}
+						Reserverad tid ({totalBookings} bokningar)
+					{:else}
+						Reserverad tid
+					{/if}
+				</p>
+				<p class="font-mono text-sm font-semibold text-gray-900 sm:text-base">
+					<span class="text-green-600">Reserverad</span>
+				</p>
+			</div>
+		</div>
+	</div>
+{/if}
 
 <div class="space-y-4">
 	{#if !hasAttemptedLoad && showButton}
@@ -336,18 +512,6 @@
 
 	{#if error && hasAttemptedLoad}
 		<p class="text-sm text-destructive">{error}</p>
-	{/if}
-
-	{#if reservationExpiry}
-		<div class="rounded-md bg-blue-50 p-3 text-sm text-blue-800">
-			<p class="font-medium">Tid reserverad</p>
-			<p>
-				Din bokning är reserverad till {reservationExpiry.toLocaleTimeString('sv-SE', {
-					hour: '2-digit',
-					minute: '2-digit'
-				})} (2 minuter)
-			</p>
-		</div>
 	{/if}
 
 	{#if availableTimes.length > 0}
