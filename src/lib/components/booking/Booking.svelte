@@ -218,6 +218,8 @@
 	let currentBookingIndex = $state(0);
 	let totalBookings = $state(1);
 	let currentReservationGroupId = $state<string | null>(null);
+	let removingBookingIndex = $state<number | null>(null); // Track which booking is being removed
+	let showRemoveConfirmation = $state<{ index: number; booking: any } | null>(null);
 	let availableStartTimesRef = $state<{
 		getReservationGroupId: () => string | null;
 		getBookingNumber: () => string | null;
@@ -326,7 +328,7 @@
 		showDurations = booking.showDurations;
 		productsLoaded = booking.productsLoaded;
 		showAvailableTimesButton = booking.showAvailableTimesButton;
-		autoFetchAddons = booking.autoFetchAddons;
+		autoFetchAddons = booking.autoFetchAddons || booking.isCompleted; // Auto-fetch addons for completed bookings
 
 		// Reset some UI states that should be fresh
 		showMultipleBookingOption = booking.isCompleted;
@@ -356,25 +358,10 @@
 
 	// Derived booking data for reservation
 	let currentBookingData = /** @readonly */ $derived(() => {
-		console.log('Creating booking data with:', {
-			selectedDate,
-			selectedLocationId,
-			selectedDuration,
-			selectedProducts: selectedProducts?.length || 0,
-			selectedAddons: selectedAddons?.length || 0,
-			hasStartLocations
-		});
-
 		// For experiences without start locations, selectedLocationId can be null
 		const locationId = hasStartLocations ? selectedLocationId : 0;
 
 		if (!selectedDate || (hasStartLocations && !selectedLocationId) || !selectedDuration) {
-			console.log('Missing required fields for booking data:', {
-				hasDate: !!selectedDate,
-				hasLocation: hasStartLocations ? !!selectedLocationId : true,
-				hasDuration: !!selectedDuration,
-				hasStartLocations
-			});
 			return null;
 		}
 
@@ -407,41 +394,20 @@
 			addons: selectedAddons || []
 		};
 
-		console.log('Current booking data created:', {
-			...bookingData,
-			productsCount: bookingData.products.length,
-			addonsCount: bookingData.addons.length
-		});
-
 		return bookingData;
 	});
 
 	let bookingOptionsSection = $state<HTMLElement | null>(null);
-	let showCancelConfirmation = $state(false);
 
 	function handleStartTimeSelect(time: SelectedStartTime) {
-		console.log('handleStartTimeSelect called:', {
-			currentReservationGroupId: currentReservationGroupId,
-			totalBookings: totalBookings,
-			currentBookingIndex: currentBookingIndex,
-			isFirstBooking: currentBookingIndex === 0
-		});
-
 		selectedStartTime = time;
 
 		// Get the current reservation group ID from the AvailableStartTimes component
 		const newReservationGroupId = availableStartTimesRef?.getReservationGroupId() || null;
-		console.log('Reservation group ID from AvailableStartTimes:', {
-			previous: currentReservationGroupId,
-			new: newReservationGroupId,
-			changed: currentReservationGroupId !== newReservationGroupId,
-			source: 'AvailableStartTimes.getReservationGroupId()'
-		});
 
 		// Always update to the latest reservation group ID from the component
 		if (newReservationGroupId) {
 			currentReservationGroupId = newReservationGroupId;
-			console.log('Updated currentReservationGroupId to:', currentReservationGroupId);
 		}
 
 		// Mark this booking as completed and save the booking number
@@ -458,13 +424,6 @@
 	}
 
 	function addAnotherBooking() {
-		console.log('addAnotherBooking called:', {
-			currentReservationGroupId,
-			totalBookings,
-			currentBookingIndex,
-			hasReservationGroup: !!currentReservationGroupId
-		});
-
 		// Validate that we have a reservation group ID before proceeding
 		if (!currentReservationGroupId) {
 			console.error('No currentReservationGroupId available for extending reservation!');
@@ -522,58 +481,10 @@
 
 		// DON'T reset currentReservationGroupId - we want to extend the existing reservation
 
-		console.log('After addAnotherBooking - state preserved:', {
-			currentReservationGroupId,
-			totalBookings,
-			currentBookingIndex,
-			allBookingsStateLength: allBookingsState.length
-		});
-
 		window.scrollTo({ top: 0, behavior: 'smooth' });
 		setTimeout(() => {
 			resetStartLocations = false;
 			isInitializing = false; // Re-enable auto-save
-		}, 100);
-	}
-
-	function cancelCurrentBooking() {
-		showCancelConfirmation = false;
-
-		// Temporarily disable auto-save during restoration
-		isInitializing = true;
-
-		// Remove the incomplete booking from the array
-		allBookingsState.pop();
-		totalBookings--;
-		currentBookingIndex--;
-
-		// Restore state from the last completed booking
-		const lastBooking = allBookingsState[currentBookingIndex];
-		selectedLocationId = lastBooking.selectedLocationId;
-		selectedLocationValue = lastBooking.selectedLocationValue;
-		selectedDuration = lastBooking.selectedDuration;
-		durationType = lastBooking.durationType;
-		durationValue = lastBooking.durationValue;
-		selectedDate = lastBooking.selectedDate;
-		selectedProducts = lastBooking.selectedProducts;
-		selectedAddons = lastBooking.selectedAddons;
-		priceGroupQuantities = lastBooking.priceGroupQuantities;
-		selectedStartTime = lastBooking.selectedStartTime;
-
-		// Show the multiple booking options again
-		showMultipleBookingOption = true;
-		showDurations = true;
-		isBookingLocked = true;
-		showAvailableTimesButton = true;
-		showContactForm = false;
-		resetStartLocations = false;
-		productsLoaded = true;
-		autoFetchAddons = true;
-
-		// Scroll to the booking options and re-enable auto-save
-		setTimeout(() => {
-			scrollToElement(bookingOptionsSection);
-			isInitializing = false;
 		}, 100);
 	}
 
@@ -585,16 +496,87 @@
 		);
 	}
 
+	function confirmRemoveBooking(index: number) {
+		const booking = allBookingsState[index];
+		if (booking.isCompleted) {
+			// Show confirmation for completed bookings
+			showRemoveConfirmation = { index, booking };
+		} else {
+			// Remove incomplete bookings immediately without confirmation
+			removeBooking(index);
+		}
+	}
+
+	async function removeBooking(indexToRemove: number) {
+		// Prevent removing the last remaining booking
+		if (allBookingsState.length <= 1) {
+			return;
+		}
+
+		// Prevent spam clicking
+		if (removingBookingIndex !== null) {
+			return;
+		}
+
+		// Close confirmation dialog
+		showRemoveConfirmation = null;
+		removingBookingIndex = indexToRemove;
+
+		try {
+			const bookingToRemove = allBookingsState[indexToRemove];
+
+			// Only clean up from database if the booking is completed (has a booking number)
+			if (bookingToRemove.isCompleted && bookingToRemove.bookingNumber) {
+				// Call cleanup API to remove from database and restore availability
+				const response = await fetch('/api/cleanup-expired', {
+					method: 'POST',
+					headers: {
+						'Content-Type': 'application/json'
+					},
+					body: JSON.stringify({
+						bookingNumber: bookingToRemove.bookingNumber
+					})
+				});
+
+				if (!response.ok) {
+					throw new Error('Failed to cleanup booking from database');
+				}
+			}
+
+			// Remove the booking from the state array
+			allBookingsState.splice(indexToRemove, 1);
+			totalBookings--;
+
+			// Adjust currentBookingIndex if necessary
+			if (indexToRemove < currentBookingIndex) {
+				// If we removed a booking before the current one, shift down
+				currentBookingIndex--;
+			} else if (indexToRemove === currentBookingIndex) {
+				// If we removed the current booking, switch to a valid one
+				if (currentBookingIndex >= allBookingsState.length) {
+					currentBookingIndex = allBookingsState.length - 1;
+				}
+				// Restore the state of the new current booking
+				restoreBookingState(currentBookingIndex);
+			}
+
+			// If no bookings are left, reset everything
+			if (allBookingsState.length === 0) {
+				window.location.href = window.location.pathname;
+			}
+		} catch (error) {
+			console.error('Failed to remove booking:', error);
+			alert('Det gick inte att ta bort bokningen. Försök igen.');
+		} finally {
+			removingBookingIndex = null;
+		}
+	}
+
 	let totalPriceForAllBookings = /** @readonly */ $derived(() =>
 		allBookingsState.reduce((sum, b) => sum + (b.totalPrice || 0), 0)
 	);
 	let displayTotalForAllBookings = /** @readonly */ $derived(() =>
 		getDisplayPrice(totalPriceForAllBookings(), experience.type)
-	);
-
-	// Check if current booking is incomplete (user is on a new booking form)
-	let isOnIncompleteBooking = /** @readonly */ $derived(
-		totalBookings > 1 && !showContactForm && currentBookingIndex === totalBookings - 1
 	);
 
 	// Manual save function that can be called at specific interaction points
@@ -657,6 +639,38 @@
 											Aktuell
 										</span>
 									{/if}
+									{#if allBookingsState.length > 1}
+										<button
+											class="ml-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-xs text-white hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-50"
+											onclick={(e) => {
+												e.stopPropagation();
+												confirmRemoveBooking(index);
+											}}
+											disabled={removingBookingIndex === index}
+											title="Ta bort denna bokning"
+										>
+											{#if removingBookingIndex === index}
+												<svg class="h-3 w-3 animate-spin" viewBox="0 0 24 24">
+													<circle
+														class="opacity-25"
+														cx="12"
+														cy="12"
+														r="10"
+														stroke="currentColor"
+														stroke-width="4"
+														fill="none"
+													></circle>
+													<path
+														class="opacity-75"
+														fill="currentColor"
+														d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+													></path>
+												</svg>
+											{:else}
+												×
+											{/if}
+										</button>
+									{/if}
 								</div>
 							</div>
 							<div class="mt-2 space-y-1 text-sm text-muted-foreground">
@@ -706,17 +720,6 @@
 					</div>
 				{/if}
 			</div>
-		</div>
-	{/if}
-
-	{#if isOnIncompleteBooking}
-		<div class="flex justify-center">
-			<button
-				class="rounded-lg border-2 border-red-500 px-4 py-2 text-red-500 transition-colors hover:bg-red-50"
-				onclick={() => (showCancelConfirmation = true)}
-			>
-				Tillbaka till föregående bokning
-			</button>
 		</div>
 	{/if}
 
@@ -944,7 +947,7 @@
 				</p>
 			</div>
 			<ContactForm
-				bookings={allBookingsState}
+				bookings={allBookingsState.filter((b) => b.isCompleted)}
 				experienceId={parseInt(experience.id)}
 				experienceType={experience.type}
 				products={selectedProducts}
@@ -955,25 +958,56 @@
 	{/if}
 </div>
 
-<!-- Confirmation Dialog -->
-{#if showCancelConfirmation}
+<!-- Remove Booking Confirmation Dialog -->
+{#if showRemoveConfirmation}
 	<div class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
 		<div class="mx-4 max-w-md rounded-lg bg-white p-6 shadow-xl">
-			<h3 class="mb-4 text-lg font-semibold text-gray-900">Tillbaka till föregående bokning?</h3>
+			<h3 class="mb-4 text-lg font-semibold text-gray-900">Ta bort bokning?</h3>
 			<p class="mb-6 text-gray-600">
-				Är du säker på att du vill avbryta den nuvarande bokningen och gå tillbaka till din
-				föregående bokning? All information du fyllt i kommer att försvinna.
+				Är du säker på att du vill ta bort denna bokning?
+				{#if showRemoveConfirmation.booking.selectedDate && showRemoveConfirmation.booking.selectedStartTime}
+					<br /><strong
+						>{showRemoveConfirmation.booking.selectedDate.toLocaleDateString('sv-SE')} kl. {showRemoveConfirmation
+							.booking.selectedStartTime.startTime}</strong
+					>
+				{/if}
+				<br /><br />
+				Denna åtgärd kan inte ångras och tiden kommer att bli tillgänglig för andra att boka.
 			</p>
 			<div class="flex gap-3">
 				<button
-					class="flex-1 rounded-lg bg-red-500 px-4 py-2 text-white transition-colors hover:bg-red-600"
-					onclick={cancelCurrentBooking}
+					class="flex-1 rounded-lg bg-red-500 px-4 py-2 text-white transition-colors hover:bg-red-600 disabled:opacity-50"
+					onclick={() => removeBooking(showRemoveConfirmation!.index)}
+					disabled={removingBookingIndex !== null}
 				>
-					Ja, gå tillbaka
+					{#if removingBookingIndex === showRemoveConfirmation.index}
+						<div class="flex items-center justify-center gap-2">
+							<svg class="h-4 w-4 animate-spin" viewBox="0 0 24 24">
+								<circle
+									class="opacity-25"
+									cx="12"
+									cy="12"
+									r="10"
+									stroke="currentColor"
+									stroke-width="4"
+									fill="none"
+								></circle>
+								<path
+									class="opacity-75"
+									fill="currentColor"
+									d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+								></path>
+							</svg>
+							Tar bort...
+						</div>
+					{:else}
+						Ja, ta bort
+					{/if}
 				</button>
 				<button
-					class="flex-1 rounded-lg border border-gray-300 px-4 py-2 text-gray-700 transition-colors hover:bg-gray-50"
-					onclick={() => (showCancelConfirmation = false)}
+					class="flex-1 rounded-lg border border-gray-300 px-4 py-2 text-gray-700 transition-colors hover:bg-gray-50 disabled:opacity-50"
+					onclick={() => (showRemoveConfirmation = null)}
+					disabled={removingBookingIndex !== null}
 				>
 					Avbryt
 				</button>

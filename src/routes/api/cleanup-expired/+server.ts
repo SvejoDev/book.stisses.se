@@ -18,11 +18,20 @@ const supabase = createClient(
 
 export const POST: RequestHandler = async ({ request }) => {
   try {
-    const { reservationGroupId, sessionId } = await request.json();
+    const { reservationGroupId, sessionId, bookingNumber } = await request.json();
     
     let expiredBookings;
     
-    if (sessionId) {
+    if (bookingNumber) {
+      // Clean up specific booking by booking number (for user-initiated removal)
+      const { data, error } = await supabase
+        .from('pending_bookings')
+        .select('*')
+        .eq('booking_number', bookingNumber);
+      
+      if (error) throw error;
+      expiredBookings = data;
+    } else if (sessionId) {
       // Clean up specific session (for failed payments)
       const { data, error } = await supabase
         .from('pending_bookings')
@@ -46,10 +55,10 @@ export const POST: RequestHandler = async ({ request }) => {
       const [expiredReservations, processedBookings] = await Promise.all([
         // 1. Clean up expired reservations (but not those with session_id - they're in payment process)
         supabase
-          .from('pending_bookings')
-          .select('*')
-          .eq('availability_reserved', true)
-          .lt('expires_at', new Date().toISOString())
+        .from('pending_bookings')
+        .select('*')
+        .eq('availability_reserved', true)
+        .lt('expires_at', new Date().toISOString())
           .is('session_id', null),
         
         // 2. Clean up processed bookings older than 1 hour
@@ -203,10 +212,10 @@ export const GET: RequestHandler = async ({ url }) => {
     const [expiredReservations, processedBookings] = await Promise.all([
       // 1. Clean up expired reservations (but not those with session_id - they're in payment process)
       supabase
-        .from('pending_bookings')
-        .select('*')
-        .eq('availability_reserved', true)
-        .lt('expires_at', now.toISOString())
+      .from('pending_bookings')
+      .select('*')
+      .eq('availability_reserved', true)
+      .lt('expires_at', now.toISOString())
         .is('session_id', null),
       
       // 2. Clean up processed bookings older than 1 hour

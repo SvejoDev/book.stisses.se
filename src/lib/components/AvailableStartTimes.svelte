@@ -72,21 +72,8 @@
 
 	// Single effect to handle reservation group ID initialization and synchronization
 	$effect(() => {
-		console.log('🔄 EFFECT 1 - Reservation Group Sync:', {
-			existingReservationGroupId,
-			currentReservationGroupId,
-			willUpdate:
-				existingReservationGroupId && existingReservationGroupId !== currentReservationGroupId,
-			timestamp: Date.now()
-		});
-
 		// Only update if we have an existingReservationGroupId and it's different from current
 		if (existingReservationGroupId && existingReservationGroupId !== currentReservationGroupId) {
-			console.log('🔄 EFFECT 1 - UPDATING currentReservationGroupId:', {
-				from: currentReservationGroupId,
-				to: existingReservationGroupId,
-				reason: currentReservationGroupId ? 'update' : 'initialize'
-			});
 			currentReservationGroupId = existingReservationGroupId;
 		}
 	});
@@ -154,12 +141,6 @@
 
 	// Simplified reservation monitoring with countdown
 	$effect(() => {
-		console.log('🔄 EFFECT 2 - Reservation Expiry Monitor:', {
-			hasReservationExpiry: !!reservationExpiry,
-			hasCurrentBookingNumber: !!currentBookingNumber,
-			timestamp: Date.now()
-		});
-
 		if (reservationExpiry && currentBookingNumber) {
 			// Start the countdown timer
 			startCountdownTimer();
@@ -183,13 +164,6 @@
 
 	// Browser close detection for cleanup
 	$effect(() => {
-		console.log('🔄 EFFECT 3 - Browser Cleanup:', {
-			isWindow: typeof window !== 'undefined',
-			hasCurrentBookingNumber: !!currentBookingNumber,
-			willAddListener: typeof window !== 'undefined' && !!currentBookingNumber,
-			timestamp: Date.now()
-		});
-
 		if (typeof window !== 'undefined' && currentBookingNumber) {
 			const handleBeforeUnload = () => {
 				// Use sendBeacon for reliable cleanup on page unload
@@ -234,14 +208,6 @@
 
 	// Auto-load times and set selected time when restoring a previous booking
 	$effect(() => {
-		console.log('🔄 EFFECT 4 - Auto-load Previous Booking:', {
-			hasInitialSelectedStartTime: !!initialSelectedStartTime,
-			hasInitialized,
-			canGenerateTimes,
-			willExecute: !!(initialSelectedStartTime && !hasInitialized && canGenerateTimes),
-			timestamp: Date.now()
-		});
-
 		if (initialSelectedStartTime && !hasInitialized && canGenerateTimes) {
 			hasInitialized = true;
 			hasAttemptedLoad = true;
@@ -271,16 +237,8 @@
 			reservationCheckInterval = null;
 		}
 
-		// Unlock the booking form
-		onLockStateChange(false);
-
-		// Show a message to the user
-		alert('Din reservation har gått ut. Vänligen välj en ny tid.');
-
-		// Optionally reload available times to show current availability
-		if (hasAttemptedLoad) {
-			generateStartTimes();
-		}
+		// Redirect to start page to fully reset everything
+		window.location.href = window.location.pathname;
 	}
 
 	function scrollToBottom() {
@@ -344,22 +302,10 @@
 	async function handleTimeSelect(time: AvailableTime) {
 		// Prevent spam clicking
 		if (isSelectingTime) {
-			console.log('Already selecting a time, ignoring click');
 			return;
 		}
 
 		isSelectingTime = true;
-
-		console.log('🎯 handleTimeSelect START:', {
-			time: time.startTime,
-			currentState: {
-				selectedTime: selectedTime?.startTime || null,
-				currentReservationGroupId,
-				currentBookingNumber,
-				reservationExpiry: !!reservationExpiry
-			},
-			timestamp: Date.now()
-		});
 
 		try {
 			// Handle the case where bookingData is a derived function
@@ -382,14 +328,6 @@
 					endTime: selectedTime!.endTime,
 					startDate: actualBookingData.startDate
 				};
-
-				console.log('🔄 User changing time selection, using atomic update:', {
-					oldTime: bookingToUpdate.startTime,
-					newTime: time.startTime,
-					bookingNumber: bookingToUpdate.bookingNumber,
-					reservationGroupId: currentReservationGroupId,
-					isEditingPreviousBooking: !!editingBooking
-				});
 
 				// Use atomic update endpoint
 				const response = await fetch('/api/update-reservation-time', {
@@ -420,8 +358,6 @@
 
 				const result = await response.json();
 
-				console.log('✅ Atomic time update successful:', result);
-
 				// Update local state with new time and extended expiry
 				selectedTime = time;
 				reservationExpiry = new Date(result.expiresAt);
@@ -430,18 +366,12 @@
 				if (editingBooking) {
 					editingBooking = null;
 					await fetchCurrentBookings(); // Refresh the bookings list
-					console.log('🎯 Previous booking time updated successfully');
-				} else {
-					// If we were editing the current booking, update current booking state
-					console.log('🎯 Current booking time updated successfully');
 				}
 
 				// Notify parent of successful time change
 				onStartTimeSelect(selectedTime);
-				console.log('🎯 onStartTimeSelect completed for time change');
 			} else {
 				// First time selection or new booking - use regular reservation flow
-				console.log('🎯 Creating new reservation (first selection or new booking)');
 
 				// Set the selected time
 				selectedTime = time;
@@ -455,16 +385,6 @@
 
 				// Use existing reservation group ID if available, otherwise let API create new one
 				const reservationGroupIdToUse = currentReservationGroupId || existingReservationGroupId;
-
-				console.log('🎯 Making reservation API call:', {
-					reservationGroupId: reservationGroupIdToUse,
-					willExtendExisting: !!reservationGroupIdToUse,
-					source: currentReservationGroupId
-						? 'currentReservationGroupId'
-						: existingReservationGroupId
-							? 'existingReservationGroupId'
-							: 'new'
-				});
 
 				// Call reservation API
 				const response = await fetch('/api/reserve-availability', {
@@ -485,21 +405,13 @@
 
 				const result = await response.json();
 
-				console.log('🎯 Reservation successful, updating state:', {
-					reservationGroupId: result.reservationGroupId,
-					bookingNumber: result.bookingNumber,
-					expiresAt: result.expiresAt
-				});
-
 				// Update all state at once
 				currentReservationGroupId = result.reservationGroupId;
 				currentBookingNumber = result.bookingNumber;
 				reservationExpiry = new Date(result.expiresAt);
 
 				// Call onStartTimeSelect after successful reservation
-				console.log('🎯 Calling onStartTimeSelect with:', selectedTime);
 				onStartTimeSelect(selectedTime);
-				console.log('🎯 onStartTimeSelect completed successfully');
 			}
 		} catch (error) {
 			console.error('Error in handleTimeSelect:', error);
