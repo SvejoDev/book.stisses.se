@@ -122,6 +122,7 @@
 	let autoFetchAddons = $state(false);
 	let isInitializing = $state(true);
 	let isSaving = $state(false);
+	let isResettingBooking = $state(false); // Track reset loading state
 
 	// Set initialization to false after the component has mounted
 	$effect(() => {
@@ -131,6 +132,28 @@
 		}, 100);
 
 		return () => clearTimeout(timeout);
+	});
+
+	// Track reset state from AvailableStartTimes component
+	$effect(() => {
+		if (availableStartTimesRef) {
+			const checkResetState = () => {
+				try {
+					const isComponentResetting = availableStartTimesRef?.isResettingBooking?.() || false;
+					if (isComponentResetting !== isResettingBooking) {
+						isResettingBooking = isComponentResetting;
+					}
+				} catch (error) {
+					// Method might not be available yet, ignore error
+				}
+			};
+
+			// Check immediately and then periodically
+			checkResetState();
+			const interval = setInterval(checkResetState, 100);
+
+			return () => clearInterval(interval);
+		}
 	});
 
 	function handleLocationSelect(loc: string) {
@@ -224,6 +247,7 @@
 		getReservationGroupId: () => string | null;
 		getBookingNumber: () => string | null;
 		getReservationExpiry: () => Date | null;
+		isResettingBooking: () => boolean;
 	} | null>(null);
 
 	// Enhanced booking state structure
@@ -433,6 +457,29 @@
 
 		// Since we have at least one completed booking, we can show options
 		showMultipleBookingOption = true;
+	}
+
+	function handleBookingReset() {
+		// Set loading state
+		isResettingBooking = true;
+
+		// Clear the selected start time when the AvailableStartTimes component resets
+		selectedStartTime = null;
+
+		// Update the current booking state to reflect the reset
+		allBookingsState[currentBookingIndex].selectedStartTime = null;
+		allBookingsState[currentBookingIndex].isCompleted = false;
+
+		// Hide the booking options since the booking is no longer completed
+		showMultipleBookingOption = false;
+
+		// Save the updated state
+		saveCurrentBookingState();
+
+		// Clear loading state after a short delay to allow UI to update
+		setTimeout(() => {
+			isResettingBooking = false;
+		}, 500);
 	}
 
 	function addAnotherBooking() {
@@ -876,7 +923,8 @@
 									selectedProducts,
 									selectedAddons,
 									onLockStateChange: handleLockStateChange,
-									onStartTimeSelect: handleStartTimeSelect
+									onStartTimeSelect: handleStartTimeSelect,
+									onBookingReset: handleBookingReset
 								}}
 								showButton={showMultipleBookingOption || showAvailableTimesButton}
 								initialSelectedStartTime={selectedStartTime}
@@ -893,9 +941,35 @@
 					</div>
 
 					<!-- Booking Options Section (shown when booking is completed but navigation UI isn't showing) -->
-					{#if showMultipleBookingOption && totalBookings === 1 && !showContactForm}
+					{#if showMultipleBookingOption && totalBookings === 1 && !showContactForm && selectedStartTime}
 						<div class="mx-auto mt-8 max-w-2xl" bind:this={bookingOptionsSection}>
-							<div class="rounded-lg border bg-card p-6">
+							<div class="relative rounded-lg border bg-card p-6">
+								{#if isResettingBooking}
+									<!-- Loading overlay -->
+									<div
+										class="absolute inset-0 z-10 flex items-center justify-center rounded-lg bg-white/80 backdrop-blur-sm"
+									>
+										<div class="flex items-center gap-3">
+											<svg class="h-6 w-6 animate-spin text-primary" viewBox="0 0 24 24">
+												<circle
+													class="opacity-25"
+													cx="12"
+													cy="12"
+													r="10"
+													stroke="currentColor"
+													stroke-width="4"
+													fill="none"
+												></circle>
+												<path
+													class="opacity-75"
+													fill="currentColor"
+													d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+												></path>
+											</svg>
+											<span class="text-sm font-medium text-gray-700">Återställer bokning...</span>
+										</div>
+									</div>
+								{/if}
 								<div class="space-y-4 text-center">
 									<h3 class="text-lg font-semibold text-green-700">Bokning slutförd!</h3>
 									<p class="text-muted-foreground">
@@ -903,14 +977,16 @@
 									</p>
 									<div class="flex flex-col justify-center gap-4 sm:flex-row">
 										<button
-											class="rounded-lg border-2 border-primary px-6 py-3 text-primary transition-colors hover:bg-primary/10"
+											class="rounded-lg border-2 border-primary px-6 py-3 text-primary transition-colors hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-50"
 											onclick={addAnotherBooking}
+											disabled={isResettingBooking}
 										>
 											Lägg till en bokning till
 										</button>
 										<button
-											class="rounded-lg bg-primary px-6 py-3 text-white shadow-md transition-colors hover:bg-primary/90"
+											class="rounded-lg bg-primary px-6 py-3 text-white shadow-md transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
 											onclick={proceedToContactForm}
+											disabled={isResettingBooking}
 										>
 											Fortsätt till kontaktuppgifter
 										</button>
@@ -921,9 +997,35 @@
 					{/if}
 
 					<!-- Booking Options Section for Multiple Bookings (shown at bottom for clean flow) -->
-					{#if showMultipleBookingOption && totalBookings > 1 && allBookingsState[currentBookingIndex].isCompleted && !showContactForm}
+					{#if showMultipleBookingOption && totalBookings > 1 && allBookingsState[currentBookingIndex].isCompleted && allBookingsState[currentBookingIndex].selectedStartTime && !showContactForm}
 						<div class="mx-auto mt-8 max-w-2xl">
-							<div class="rounded-lg border bg-card p-6">
+							<div class="relative rounded-lg border bg-card p-6">
+								{#if isResettingBooking}
+									<!-- Loading overlay -->
+									<div
+										class="absolute inset-0 z-10 flex items-center justify-center rounded-lg bg-white/80 backdrop-blur-sm"
+									>
+										<div class="flex items-center gap-3">
+											<svg class="h-6 w-6 animate-spin text-primary" viewBox="0 0 24 24">
+												<circle
+													class="opacity-25"
+													cx="12"
+													cy="12"
+													r="10"
+													stroke="currentColor"
+													stroke-width="4"
+													fill="none"
+												></circle>
+												<path
+													class="opacity-75"
+													fill="currentColor"
+													d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+												></path>
+											</svg>
+											<span class="text-sm font-medium text-gray-700">Återställer bokning...</span>
+										</div>
+									</div>
+								{/if}
 								<div class="space-y-4 text-center">
 									<h3 class="text-lg font-semibold text-green-700">Bokning slutförd!</h3>
 									<p class="text-muted-foreground">
@@ -935,14 +1037,16 @@
 									</p>
 									<div class="flex flex-col justify-center gap-4 sm:flex-row">
 										<button
-											class="rounded-lg border-2 border-primary px-6 py-3 text-primary transition-colors hover:bg-primary/10"
+											class="rounded-lg border-2 border-primary px-6 py-3 text-primary transition-colors hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-50"
 											onclick={addAnotherBooking}
+											disabled={isResettingBooking}
 										>
 											Lägg till en bokning till
 										</button>
 										<button
-											class="rounded-lg bg-primary px-6 py-3 text-white shadow-md transition-colors hover:bg-primary/90"
+											class="rounded-lg bg-primary px-6 py-3 text-white shadow-md transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
 											onclick={proceedToContactForm}
+											disabled={isResettingBooking}
 										>
 											Fortsätt till kontaktuppgifter
 										</button>

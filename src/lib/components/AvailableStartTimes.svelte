@@ -16,6 +16,7 @@
 		selectedAddons = [],
 		onLockStateChange = () => {},
 		onStartTimeSelect = () => {},
+		onBookingReset = () => {},
 		showButton = true,
 		initialSelectedStartTime = null,
 		isLocked = false,
@@ -32,6 +33,7 @@
 		selectedAddons?: Array<{ addonId: number; quantity: number }>;
 		onLockStateChange?: (locked: boolean) => void;
 		onStartTimeSelect?: (time: { startTime: string; endTime: string }) => void;
+		onBookingReset?: () => void;
 		showButton?: boolean;
 		initialSelectedStartTime?: { startTime: string; endTime: string } | null;
 		isLocked?: boolean;
@@ -43,6 +45,7 @@
 
 	let isLoading = $state(false);
 	let isSelectingTime = $state(false); // New loading state for time selection
+	let isResetting = $state(false); // New loading state for reset process
 	let hasAttemptedLoad = $state(false);
 	let availableTimes = $state<AvailableTime[]>([]);
 	let error = $state<string | null>(null);
@@ -473,22 +476,99 @@
 		}
 	}
 
-	function handleReset() {
-		hasAttemptedLoad = false;
-		availableTimes = [];
-		error = null;
-		selectedTime = null;
+	async function handleReset() {
+		// Set loading state
+		isResetting = true;
 
-		// Clear reservation state
-		currentReservationGroupId = null;
-		currentBookingNumber = null;
-		reservationExpiry = null;
-		if (reservationCheckInterval) {
-			clearInterval(reservationCheckInterval);
-			reservationCheckInterval = null;
+		try {
+			// If user has made a reservation, clean it up first
+			if (currentBookingNumber) {
+				try {
+					console.log('🧹 Cleaning up current booking before reset:', currentBookingNumber);
+
+					const response = await fetch('/api/cleanup-expired', {
+						method: 'POST',
+						headers: {
+							'Content-Type': 'application/json'
+						},
+						body: JSON.stringify({
+							bookingNumber: currentBookingNumber
+						})
+					});
+
+					if (!response.ok) {
+						console.error('Failed to cleanup booking during reset');
+						// Continue with reset even if cleanup fails
+					} else {
+						console.log('✅ Successfully cleaned up booking during reset');
+					}
+				} catch (error) {
+					console.error('Error during cleanup in reset:', error);
+					// Continue with reset even if cleanup fails
+				}
+			}
+
+			// Reset UI state
+			hasAttemptedLoad = false;
+			availableTimes = [];
+			error = null;
+			selectedTime = null;
+
+			// Clear current booking state but preserve reservation group for multi-booking
+			const hadReservationGroup = !!currentReservationGroupId;
+			currentBookingNumber = null;
+			reservationExpiry = null;
+
+			// Clear timers
+			if (reservationCheckInterval) {
+				clearInterval(reservationCheckInterval);
+				reservationCheckInterval = null;
+			}
+			if (countdownInterval) {
+				clearInterval(countdownInterval);
+				countdownInterval = null;
+			}
+			timeRemaining = null;
+
+			// For multi-booking scenarios, check if there are other bookings in the group
+			if (hadReservationGroup && currentReservationGroupId) {
+				try {
+					const { data: otherBookings } = await supabase
+						.from('pending_bookings')
+						.select('booking_number')
+						.eq('reservation_group_id', currentReservationGroupId)
+						.eq('availability_reserved', true);
+
+					// If no other bookings exist, clear the reservation group
+					if (!otherBookings || otherBookings.length === 0) {
+						console.log('🔄 No other bookings in group, clearing reservation group ID');
+						currentReservationGroupId = null;
+						currentBookingsInGroup = [];
+					} else {
+						console.log(
+							`🔄 ${otherBookings.length} other bookings remain in group, keeping reservation group ID`
+						);
+						// Refresh the bookings list
+						await fetchCurrentBookings();
+					}
+				} catch (error) {
+					console.error('Error checking other bookings during reset:', error);
+					// On error, clear everything to be safe
+					currentReservationGroupId = null;
+					currentBookingsInGroup = [];
+				}
+			} else {
+				// Single booking scenario - clear everything
+				currentReservationGroupId = null;
+				currentBookingsInGroup = [];
+			}
+
+			onLockStateChange(false);
+			onBookingReset();
+		} finally {
+			// Always clear loading state
+			isResetting = false;
 		}
-
-		onLockStateChange(false);
 	}
 
 	// Function to fetch current bookings in the reservation group
@@ -591,6 +671,11 @@
 
 	export function getReservationExpiry() {
 		return reservationExpiry;
+	}
+
+	// Export function to check if component is resetting
+	export function isResettingBooking() {
+		return isResetting;
 	}
 </script>
 
@@ -715,7 +800,7 @@
 		<button
 			class="h-10 w-full rounded-md bg-primary px-4 py-2 text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
 			onclick={generateStartTimes}
-			disabled={isLoading || !canGenerateTimes || isSelectingTime}
+			disabled={isLoading || !canGenerateTimes || isSelectingTime || isResetting}
 		>
 			{#if isLoading}
 				Laddar...
@@ -729,9 +814,31 @@
 		<button
 			class="h-10 w-full rounded-md border border-primary bg-background px-4 py-2 text-primary hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-50"
 			onclick={handleReset}
-			disabled={isSelectingTime}
+			disabled={isSelectingTime || isResetting}
 		>
-			Ändra din bokning
+			{#if isResetting}
+				<div class="flex items-center justify-center gap-2">
+					<svg class="h-4 w-4 animate-spin" viewBox="0 0 24 24">
+						<circle
+							class="opacity-25"
+							cx="12"
+							cy="12"
+							r="10"
+							stroke="currentColor"
+							stroke-width="4"
+							fill="none"
+						></circle>
+						<path
+							class="opacity-75"
+							fill="currentColor"
+							d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+						></path>
+					</svg>
+					Återställer...
+				</div>
+			{:else}
+				Ändra din bokning
+			{/if}
 		</button>
 	{/if}
 
@@ -772,7 +879,69 @@
 				</button>
 			{/each}
 		</div>
-	{:else if !isLoading && !error && hasAttemptedLoad}
+	{:else if selectedTime && hasAttemptedLoad}
+		<!-- Show selected time when no available times are displayed -->
+		<div class="space-y-4">
+			<div class="rounded-lg border-2 border-green-200 bg-green-50 p-4">
+				<div class="flex items-center justify-center gap-3">
+					<div class="flex h-8 w-8 items-center justify-center rounded-full bg-green-100">
+						<svg
+							class="h-4 w-4 text-green-600"
+							fill="none"
+							stroke="currentColor"
+							viewBox="0 0 24 24"
+						>
+							<path
+								stroke-linecap="round"
+								stroke-linejoin="round"
+								stroke-width="2"
+								d="M5 13l4 4L19 7"
+							></path>
+						</svg>
+					</div>
+					<div class="text-center">
+						<p class="text-sm font-medium text-green-700">Vald tid</p>
+						{#if durationType === 'overnights'}
+							<!-- Multi-day booking: show start date + time and end date + time -->
+							{@const startDate = selectedDate}
+							{@const endDate = addDays(startDate, durationValue)}
+							<div class="space-y-1">
+								<p class="text-lg font-semibold text-green-900">
+									{startDate.toLocaleDateString('sv-SE', {
+										weekday: 'short',
+										day: 'numeric',
+										month: 'short'
+									})} kl. {selectedTime.startTime}
+								</p>
+								<p class="text-sm text-green-700">till</p>
+								<p class="text-lg font-semibold text-green-900">
+									{endDate.toLocaleDateString('sv-SE', {
+										weekday: 'short',
+										day: 'numeric',
+										month: 'short'
+									})} kl. {selectedTime.endTime}
+								</p>
+							</div>
+						{:else}
+							<!-- Same-day booking: show date with start and end time -->
+							<div class="space-y-1">
+								<p class="text-lg font-semibold text-green-900">
+									{selectedDate.toLocaleDateString('sv-SE', {
+										weekday: 'short',
+										day: 'numeric',
+										month: 'short'
+									})}
+								</p>
+								<p class="text-lg font-semibold text-green-900">
+									{selectedTime.startTime} - {selectedTime.endTime}
+								</p>
+							</div>
+						{/if}
+					</div>
+				</div>
+			</div>
+		</div>
+	{:else if !isLoading && !error && hasAttemptedLoad && !selectedTime}
 		<div class="space-y-2 text-center">
 			<p class="font-medium text-destructive">Inga tillgängliga tider hittades</p>
 			<p class="text-sm text-muted-foreground">Vänligen prova att:</p>
