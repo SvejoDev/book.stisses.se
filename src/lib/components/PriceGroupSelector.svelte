@@ -33,6 +33,8 @@
 
 	let quantities = $state<Record<number, number>>({});
 	let lastInitializedQuantities = $state('');
+	let lastStartLocationId = $state<number | string | null>(null);
+	let isFetching = $state(false);
 
 	// Calculate total paying customers (excluding free price groups)
 	let totalPayingCustomers = /** @readonly */ $derived(
@@ -62,13 +64,21 @@
 	});
 
 	async function fetchPriceGroups(locationId: number | string) {
+		// Prevent concurrent fetches
+		if (isFetching) {
+			return;
+		}
+
 		try {
+			isFetching = true;
 			isLoading = true;
 			const response = await fetch(
 				`/api/price-groups?startLocationId=${locationId}&experienceId=${experienceId}`
 			);
 			if (!response.ok) throw new Error('Failed to fetch price groups');
-			priceGroups = await response.json();
+
+			const newPriceGroups = await response.json();
+			priceGroups = newPriceGroups;
 
 			// Only reset quantities when price groups change if not locked AND no initial quantities
 			if (!isLocked && Object.keys(initialQuantities).length === 0) {
@@ -84,15 +94,32 @@
 			}
 		} finally {
 			isLoading = false;
+			isFetching = false;
 		}
 	}
 
 	// Fetch price groups when startLocationId or experienceId changes
-	$effect(() => {
-		if (startLocationId !== undefined && experienceId) {
-			// Reset the last initialized quantities when location changes
-			lastInitializedQuantities = '';
-			fetchPriceGroups(startLocationId);
+	// Use $effect.pre to run before DOM updates and be more specific about dependencies
+	$effect.pre(() => {
+		// Only track the specific values that should trigger a fetch
+		const currentLocationId = startLocationId;
+		const currentExperienceId = experienceId;
+
+		if (currentLocationId !== undefined && currentExperienceId && !isFetching) {
+			// Only reset initialization tracking if the location actually changed or we don't have initial quantities
+			const locationChanged =
+				lastStartLocationId !== null && lastStartLocationId !== currentLocationId;
+			const hasInitialQuantities = Object.keys(initialQuantities).length > 0;
+
+			// Only fetch if the location actually changed or this is the first time
+			if (lastStartLocationId !== currentLocationId) {
+				if (locationChanged && !hasInitialQuantities) {
+					lastInitializedQuantities = '';
+				}
+
+				lastStartLocationId = currentLocationId;
+				fetchPriceGroups(currentLocationId);
+			}
 		}
 	});
 
@@ -107,12 +134,9 @@
 		) {
 			quantities = { ...initialQuantities };
 			lastInitializedQuantities = currentInitialQuantities;
-			onQuantityChange(quantities);
+			// Don't call onQuantityChange here to prevent circular updates during initialization
+			// The parent already has these quantities in initialQuantities
 		}
-	});
-
-	$effect(() => {
-		onQuantityChange(quantities);
 	});
 
 	function increment(groupId: number) {

@@ -21,7 +21,7 @@
 
 	// Sync internal value with selectedValue prop when provided
 	$effect(() => {
-		if (selectedValue !== undefined && selectedValue !== value) {
+		if (selectedValue !== undefined && selectedValue !== value && selectedValue !== '') {
 			value = selectedValue;
 		}
 	});
@@ -30,7 +30,10 @@
 	$effect(() => {
 		if (reset) {
 			value = '';
-			selectedValue = '';
+			// Only update selectedValue if it's different to avoid loops
+			if (selectedValue !== '') {
+				selectedValue = '';
+			}
 		}
 	});
 
@@ -44,21 +47,25 @@
 		});
 	});
 
+	// Auto-select if there's only one start location
 	$effect(() => {
-		// Auto-select if there's only one start location
-		if (startLocations.length === 1 && !value) {
+		if (startLocations.length === 1 && !value && !isLocked) {
 			handleSelect(startLocations[0].id.toString());
 		}
 	});
 
+	// Call onSelect when value changes (but only if it's not empty and not caused by reset)
 	$effect(() => {
-		if (value) {
+		if (value && !reset) {
 			onSelect(value);
 		}
 	});
 
 	function handleSelect(locationId: string) {
-		if (isLocked) return;
+		if (isLocked) {
+			return;
+		}
+
 		value = locationId;
 		selectedValue = locationId;
 
