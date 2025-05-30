@@ -52,6 +52,8 @@
 	let currentBookingNumber = $state<string | null>(null);
 	let reservationExpiry = $state<Date | null>(null);
 	let reservationCheckInterval: NodeJS.Timeout | null = null;
+	let countdownInterval: NodeJS.Timeout | null = null;
+	let timeRemaining = $state<{ minutes: number; seconds: number } | null>(null);
 	let editingBooking = $state<{
 		bookingNumber: string;
 		startTime: string;
@@ -105,46 +107,77 @@
 		})
 	);
 
-	// Simplified reservation monitoring - no countdown to prevent infinite loops
+	// Function to calculate time remaining
+	function calculateTimeRemaining(expiryDate: Date): { minutes: number; seconds: number } | null {
+		const now = new Date();
+		const diff = expiryDate.getTime() - now.getTime();
+
+		if (diff <= 0) {
+			return null;
+		}
+
+		const minutes = Math.floor(diff / (1000 * 60));
+		const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+
+		return { minutes, seconds };
+	}
+
+	// Function to start countdown timer
+	function startCountdownTimer() {
+		if (countdownInterval) {
+			clearInterval(countdownInterval);
+		}
+
+		if (!reservationExpiry) {
+			timeRemaining = null;
+			return;
+		}
+
+		// Update immediately
+		timeRemaining = calculateTimeRemaining(reservationExpiry);
+
+		// Update every second
+		countdownInterval = setInterval(() => {
+			if (!reservationExpiry) {
+				timeRemaining = null;
+				return;
+			}
+
+			timeRemaining = calculateTimeRemaining(reservationExpiry);
+
+			// If time expired, handle it
+			if (!timeRemaining) {
+				handleReservationExpired();
+			}
+		}, 1000);
+	}
+
+	// Simplified reservation monitoring with countdown
 	$effect(() => {
 		console.log('🔄 EFFECT 2 - Reservation Expiry Monitor:', {
 			hasReservationExpiry: !!reservationExpiry,
 			hasCurrentBookingNumber: !!currentBookingNumber,
-			willSetInterval: !!(reservationExpiry && currentBookingNumber),
 			timestamp: Date.now()
 		});
 
 		if (reservationExpiry && currentBookingNumber) {
-			// Clear any existing interval
-			if (reservationCheckInterval) {
-				clearInterval(reservationCheckInterval);
-				reservationCheckInterval = null;
-			}
-
-			// Simple check every 30 seconds to see if reservation expired
-			reservationCheckInterval = setInterval(() => {
-				if (!reservationExpiry) return;
-
-				const now = new Date();
-				if (now >= reservationExpiry) {
-					console.log('Reservation has expired, resetting UI');
-					handleReservationExpired();
-				}
-			}, 30000); // Check every 30 seconds
+			// Start the countdown timer
+			startCountdownTimer();
 
 			// Cleanup function
 			return () => {
-				if (reservationCheckInterval) {
-					clearInterval(reservationCheckInterval);
-					reservationCheckInterval = null;
+				if (countdownInterval) {
+					clearInterval(countdownInterval);
+					countdownInterval = null;
 				}
 			};
 		} else {
-			// Clear interval if no reservation
-			if (reservationCheckInterval) {
-				clearInterval(reservationCheckInterval);
-				reservationCheckInterval = null;
+			// Clear countdown if no reservation
+			if (countdownInterval) {
+				clearInterval(countdownInterval);
+				countdownInterval = null;
 			}
+			timeRemaining = null;
 		}
 	});
 
@@ -609,9 +642,9 @@
 		class="fixed right-4 top-4 z-50 rounded-lg border border-gray-200 bg-white px-3 py-2 shadow-lg sm:px-4 sm:py-3"
 	>
 		<div class="flex items-center gap-2 sm:gap-3">
-			<div class="flex h-6 w-6 items-center justify-center rounded-full bg-gray-100 sm:h-8 sm:w-8">
+			<div class="flex h-6 w-6 items-center justify-center rounded-full bg-green-100 sm:h-8 sm:w-8">
 				<svg
-					class="h-3 w-3 text-gray-600 sm:h-4 sm:w-4"
+					class="h-3 w-3 text-green-600 sm:h-4 sm:w-4"
 					fill="none"
 					stroke="currentColor"
 					viewBox="0 0 24 24"
@@ -633,7 +666,13 @@
 					{/if}
 				</p>
 				<p class="font-mono text-sm font-semibold text-gray-900 sm:text-base">
-					<span class="text-green-600">Reserverad</span>
+					{#if timeRemaining}
+						<span class="text-green-600"
+							>{timeRemaining.minutes}:{timeRemaining.seconds.toString().padStart(2, '0')}</span
+						>
+					{:else}
+						<span class="text-green-600">Reserverad</span>
+					{/if}
 				</p>
 			</div>
 		</div>

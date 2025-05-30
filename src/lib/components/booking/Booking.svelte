@@ -18,6 +18,7 @@
 	import type { SelectedProduct } from '$lib/types/product';
 	import type { SelectedAddon } from '$lib/types/addon';
 	import type { SelectedStartTime } from '$lib/types/availability';
+	import { cn } from '$lib/utils';
 
 	// Props
 	let {
@@ -177,7 +178,7 @@
 		scrollToElement(addonsSection);
 	}
 
-	// Multi-booking state
+	// Multi-booking state with comprehensive state management
 	let showAvailableTimesButton = $state(false);
 	let showContactForm = $state(false);
 	let selectedStartTime = $state<SelectedStartTime | null>(null);
@@ -190,6 +191,124 @@
 		getBookingNumber: () => string | null;
 		getReservationExpiry: () => Date | null;
 	} | null>(null);
+
+	// Enhanced booking state structure
+	interface BookingState {
+		// Form data
+		selectedLocationId: number | null;
+		selectedLocationValue: string;
+		selectedDuration: string;
+		durationType: 'hours' | 'overnights';
+		durationValue: number;
+		selectedDate: Date | null;
+		selectedProducts: SelectedProduct[];
+		selectedAddons: SelectedAddon[];
+		priceGroupQuantities: Record<number, number>;
+		selectedStartTime: SelectedStartTime | null;
+		totalPrice: number;
+
+		// UI state
+		showDurations: boolean;
+		productsLoaded: boolean;
+		showAvailableTimesButton: boolean;
+		autoFetchAddons: boolean;
+
+		// Booking metadata
+		bookingNumber?: string;
+		isCompleted: boolean;
+		lastModified: Date;
+	}
+
+	let allBookingsState = $state<BookingState[]>([
+		{
+			selectedLocationId: null,
+			selectedLocationValue: '',
+			selectedDuration: '',
+			durationType: 'hours',
+			durationValue: 0,
+			selectedDate: null,
+			selectedProducts: [],
+			selectedAddons: [],
+			priceGroupQuantities: {},
+			selectedStartTime: null,
+			totalPrice: 0,
+			showDurations: false,
+			productsLoaded: false,
+			showAvailableTimesButton: false,
+			autoFetchAddons: false,
+			isCompleted: false,
+			lastModified: new Date()
+		}
+	]);
+
+	// Function to save current state to the booking array
+	function saveCurrentBookingState() {
+		allBookingsState[currentBookingIndex] = {
+			selectedLocationId,
+			selectedLocationValue,
+			selectedDuration,
+			durationType,
+			durationValue,
+			selectedDate,
+			selectedProducts,
+			selectedAddons,
+			priceGroupQuantities,
+			selectedStartTime,
+			totalPrice: totalPrice(),
+			showDurations,
+			productsLoaded,
+			showAvailableTimesButton,
+			autoFetchAddons,
+			isCompleted: !!selectedStartTime,
+			lastModified: new Date(),
+			bookingNumber: allBookingsState[currentBookingIndex]?.bookingNumber
+		};
+	}
+
+	// Function to restore state from booking array
+	function restoreBookingState(index: number) {
+		if (index < 0 || index >= allBookingsState.length) return;
+
+		const booking = allBookingsState[index];
+
+		// Restore form data
+		selectedLocationId = booking.selectedLocationId;
+		selectedLocationValue = booking.selectedLocationValue;
+		selectedDuration = booking.selectedDuration;
+		durationType = booking.durationType;
+		durationValue = booking.durationValue;
+		selectedDate = booking.selectedDate;
+		selectedProducts = booking.selectedProducts;
+		selectedAddons = booking.selectedAddons;
+		priceGroupQuantities = booking.priceGroupQuantities;
+		selectedStartTime = booking.selectedStartTime;
+
+		// Restore UI state
+		showDurations = booking.showDurations;
+		productsLoaded = booking.productsLoaded;
+		showAvailableTimesButton = booking.showAvailableTimesButton;
+		autoFetchAddons = booking.autoFetchAddons;
+
+		// Reset some UI states that should be fresh
+		showMultipleBookingOption = booking.isCompleted;
+		resetStartLocations = false;
+		isBookingLocked = booking.isCompleted;
+	}
+
+	// Function to switch to a different booking
+	function switchToBooking(index: number) {
+		if (index === currentBookingIndex) return;
+
+		// Save current state first
+		saveCurrentBookingState();
+
+		// Switch to the selected booking
+		currentBookingIndex = index;
+		restoreBookingState(index);
+
+		// Scroll to top for better UX
+		window.scrollTo({ top: 0, behavior: 'smooth' });
+	}
 
 	// Derived booking data for reservation
 	let currentBookingData = /** @readonly */ $derived(() => {
@@ -253,34 +372,6 @@
 		return bookingData;
 	});
 
-	let allBookings = $state<
-		Array<{
-			selectedLocationId: number | null;
-			selectedDuration: string;
-			durationType: 'hours' | 'overnights';
-			durationValue: number;
-			selectedDate: Date | null;
-			selectedProducts: SelectedProduct[];
-			selectedAddons: SelectedAddon[];
-			priceGroupQuantities: Record<number, number>;
-			selectedStartTime: SelectedStartTime | null;
-			totalPrice: number;
-		}>
-	>([
-		{
-			selectedLocationId: null,
-			selectedDuration: '',
-			durationType: 'hours',
-			durationValue: 0,
-			selectedDate: null,
-			selectedProducts: [],
-			selectedAddons: [],
-			priceGroupQuantities: {},
-			selectedStartTime: null,
-			totalPrice: 0
-		}
-	]);
-
 	let bookingOptionsSection = $state<HTMLElement | null>(null);
 	let showCancelConfirmation = $state(false);
 	let autoFetchAddons = $state(false);
@@ -294,7 +385,6 @@
 		});
 
 		selectedStartTime = time;
-		showMultipleBookingOption = true;
 
 		// Get the current reservation group ID from the AvailableStartTimes component
 		const newReservationGroupId = availableStartTimesRef?.getReservationGroupId() || null;
@@ -306,25 +396,22 @@
 		});
 
 		// Always update to the latest reservation group ID from the component
-		// This ensures we have the correct ID for subsequent bookings
 		if (newReservationGroupId) {
 			currentReservationGroupId = newReservationGroupId;
 			console.log('Updated currentReservationGroupId to:', currentReservationGroupId);
 		}
 
-		allBookings[currentBookingIndex] = {
-			selectedLocationId,
-			selectedDuration,
-			durationType,
-			durationValue,
-			selectedDate,
-			selectedProducts,
-			selectedAddons,
-			priceGroupQuantities,
-			selectedStartTime: time,
-			totalPrice: totalPrice()
-		};
-		setTimeout(() => scrollToElement(bookingOptionsSection), 100);
+		// Mark this booking as completed and save the booking number
+		allBookingsState[currentBookingIndex].bookingNumber =
+			availableStartTimesRef?.getBookingNumber() || undefined;
+		allBookingsState[currentBookingIndex].isCompleted = true;
+		allBookingsState[currentBookingIndex].selectedStartTime = time;
+
+		// Save the updated state
+		saveCurrentBookingState();
+
+		// Since we have at least one completed booking, we can show options
+		showMultipleBookingOption = true;
 	}
 
 	function addAnotherBooking() {
@@ -342,18 +429,31 @@
 			return;
 		}
 
-		allBookings[currentBookingIndex] = {
-			selectedLocationId,
-			selectedDuration,
-			durationType,
-			durationValue,
-			selectedDate,
-			selectedProducts,
-			selectedAddons,
-			priceGroupQuantities,
-			selectedStartTime,
-			totalPrice: totalPrice()
-		};
+		// Save current booking state
+		saveCurrentBookingState();
+
+		// Add new booking to state array
+		allBookingsState.push({
+			selectedLocationId: null,
+			selectedLocationValue: '',
+			selectedDuration: '',
+			durationType: 'hours',
+			durationValue: 0,
+			selectedDate: null,
+			selectedProducts: [],
+			selectedAddons: [],
+			priceGroupQuantities: {},
+			selectedStartTime: null,
+			totalPrice: 0,
+			showDurations: false,
+			productsLoaded: false,
+			showAvailableTimesButton: false,
+			autoFetchAddons: false,
+			isCompleted: false,
+			lastModified: new Date()
+		});
+
+		// Update counters and reset UI state for new booking
 		totalBookings++;
 		currentBookingIndex++;
 		selectedLocationId = null;
@@ -373,25 +473,14 @@
 		showAvailableTimesButton = false;
 		showContactForm = false;
 		autoFetchAddons = false;
+
 		// DON'T reset currentReservationGroupId - we want to extend the existing reservation
-		allBookings.push({
-			selectedLocationId: null,
-			selectedDuration: '',
-			durationType: 'hours',
-			durationValue: 0,
-			selectedDate: null,
-			selectedProducts: [],
-			selectedAddons: [],
-			priceGroupQuantities: {},
-			selectedStartTime: null,
-			totalPrice: 0
-		});
 
 		console.log('After addAnotherBooking - state preserved:', {
 			currentReservationGroupId,
 			totalBookings,
 			currentBookingIndex,
-			allBookingsLength: allBookings.length
+			allBookingsStateLength: allBookingsState.length
 		});
 
 		window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -402,16 +491,14 @@
 		showCancelConfirmation = false;
 
 		// Remove the incomplete booking from the array
-		allBookings.pop();
+		allBookingsState.pop();
 		totalBookings--;
 		currentBookingIndex--;
 
 		// Restore state from the last completed booking
-		const lastBooking = allBookings[currentBookingIndex];
+		const lastBooking = allBookingsState[currentBookingIndex];
 		selectedLocationId = lastBooking.selectedLocationId;
-		selectedLocationValue = lastBooking.selectedLocationId
-			? lastBooking.selectedLocationId.toString()
-			: '';
+		selectedLocationValue = lastBooking.selectedLocationValue;
 		selectedDuration = lastBooking.selectedDuration;
 		durationType = lastBooking.durationType;
 		durationValue = lastBooking.durationValue;
@@ -444,7 +531,7 @@
 	}
 
 	let totalPriceForAllBookings = /** @readonly */ $derived(() =>
-		allBookings.reduce((sum, b) => sum + (b.totalPrice || 0), 0)
+		allBookingsState.reduce((sum, b) => sum + (b.totalPrice || 0), 0)
 	);
 	let displayTotalForAllBookings = /** @readonly */ $derived(() =>
 		getDisplayPrice(totalPriceForAllBookings(), experience.type)
@@ -455,6 +542,14 @@
 		totalBookings > 1 && !showContactForm && currentBookingIndex === totalBookings - 1
 	);
 
+	// Auto-save current state whenever reactive variables change
+	$effect(() => {
+		// Only save if we have at least started the booking process
+		if (selectedLocationId !== null || selectedDuration !== '' || selectedDate !== null) {
+			saveCurrentBookingState();
+		}
+	});
+
 	export function getTotalPrice(): number {
 		return totalPrice();
 	}
@@ -464,6 +559,96 @@
 	<header class="text-center">
 		<h1 class="text-4xl font-bold tracking-tight">{experience.name}</h1>
 	</header>
+
+	<!-- Booking Navigation UI -->
+	{#if totalBookings > 1 || allBookingsState.some((b) => b.isCompleted)}
+		<div class="mx-auto max-w-4xl">
+			<div class="rounded-lg border bg-card p-4">
+				<h2 class="mb-4 text-lg font-semibold">Dina bokningar</h2>
+				<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+					{#each allBookingsState as booking, index}
+						<button
+							class={cn(
+								'flex flex-col items-start rounded-lg border p-3 text-left transition-all hover:bg-accent',
+								currentBookingIndex === index && 'border-primary bg-primary/5',
+								booking.isCompleted && 'border-green-200 bg-green-50'
+							)}
+							onclick={() => switchToBooking(index)}
+						>
+							<div class="flex w-full items-center justify-between">
+								<span class="font-medium">Bokning {index + 1}</span>
+								<div class="flex items-center gap-2">
+									{#if booking.isCompleted}
+										<span
+											class="inline-flex items-center rounded-full bg-green-100 px-2 py-1 text-xs font-medium text-green-700"
+										>
+											Klar
+										</span>
+									{:else}
+										<span
+											class="inline-flex items-center rounded-full bg-yellow-100 px-2 py-1 text-xs font-medium text-yellow-700"
+										>
+											Pågår
+										</span>
+									{/if}
+									{#if currentBookingIndex === index}
+										<span
+											class="inline-flex items-center rounded-full bg-primary px-2 py-1 text-xs font-medium text-primary-foreground"
+										>
+											Aktuell
+										</span>
+									{/if}
+								</div>
+							</div>
+							<div class="mt-2 space-y-1 text-sm text-muted-foreground">
+								{#if booking.selectedDate && booking.selectedStartTime}
+									<p>
+										{booking.selectedDate.toLocaleDateString('sv-SE')} kl. {booking
+											.selectedStartTime.startTime}
+									</p>
+								{:else if booking.selectedDate}
+									<p>{booking.selectedDate.toLocaleDateString('sv-SE')}</p>
+								{:else}
+									<p>Datum ej valt</p>
+								{/if}
+								{#if booking.selectedProducts.length > 0}
+									<p>
+										{booking.selectedProducts.length} produkt{booking.selectedProducts.length === 1
+											? ''
+											: 'er'}
+									</p>
+								{/if}
+								{#if booking.totalPrice > 0}
+									<p class="font-medium text-foreground">
+										{formatPrice(getDisplayPrice(booking.totalPrice, experience.type))}
+									</p>
+								{/if}
+							</div>
+						</button>
+					{/each}
+				</div>
+				{#if !showContactForm}
+					<div class="mt-4 flex justify-center gap-4">
+						<button
+							class="rounded-lg border-2 border-primary px-4 py-2 text-primary transition-colors hover:bg-primary/10"
+							onclick={addAnotherBooking}
+							disabled={!allBookingsState[currentBookingIndex].isCompleted}
+						>
+							Lägg till en bokning till
+						</button>
+						{#if allBookingsState.some((b) => b.isCompleted)}
+							<button
+								class="rounded-lg bg-primary px-6 py-3 text-white shadow-md transition-colors hover:bg-primary/90"
+								onclick={proceedToContactForm}
+							>
+								Fortsätt till kontaktuppgifter
+							</button>
+						{/if}
+					</div>
+				{/if}
+			</div>
+		</div>
+	{/if}
 
 	{#if isOnIncompleteBooking}
 		<div class="flex justify-center">
@@ -636,28 +821,59 @@
 							</div>
 						{/if}
 					</div>
+
+					<!-- Booking Options Section (shown when booking is completed but navigation UI isn't showing) -->
+					{#if showMultipleBookingOption && totalBookings === 1 && !showContactForm}
+						<div class="mx-auto mt-8 max-w-2xl" bind:this={bookingOptionsSection}>
+							<div class="rounded-lg border bg-card p-6">
+								<div class="space-y-4 text-center">
+									<h3 class="text-lg font-semibold text-green-700">Bokning slutförd!</h3>
+									<p class="text-muted-foreground">
+										Din tid är nu reserverad. Vad vill du göra härnäst?
+									</p>
+									<div class="flex flex-col justify-center gap-4 sm:flex-row">
+										<button
+											class="rounded-lg border-2 border-primary px-6 py-3 text-primary transition-colors hover:bg-primary/10"
+											onclick={addAnotherBooking}
+										>
+											Lägg till en bokning till
+										</button>
+										<button
+											class="rounded-lg bg-primary px-6 py-3 text-white shadow-md transition-colors hover:bg-primary/90"
+											onclick={proceedToContactForm}
+										>
+											Fortsätt till kontaktuppgifter
+										</button>
+									</div>
+								</div>
+							</div>
+						</div>
+					{/if}
 				</section>
 			{/if}
 		{/if}
 	{/if}
 
-	{#if showMultipleBookingOption}
-		<div class="mt-8 flex flex-col items-center gap-4" bind:this={bookingOptionsSection}>
-			<button
-				class="rounded-lg bg-primary px-6 py-3 text-lg font-semibold text-white shadow-md transition-colors hover:bg-primary/90"
-				onclick={proceedToContactForm}>Fortsätt till kontaktuppgifter</button
-			>
-			<button
-				class="rounded-lg border-2 border-primary px-4 py-2 text-primary transition-colors hover:bg-primary/10"
-				onclick={addAnotherBooking}>Gör en bokning till</button
-			>
-		</div>
-	{/if}
-
-	{#if showContactForm && allBookings.some((b) => b.selectedStartTime)}
+	{#if showContactForm && allBookingsState.some((b) => b.selectedStartTime)}
 		<section class="space-y-4">
+			<div class="text-center">
+				<h2 class="text-2xl font-semibold">Sammanfattning</h2>
+				<p class="text-muted-foreground">
+					Du har {allBookingsState.filter((b) => b.isCompleted).length} klar{allBookingsState.filter(
+						(b) => b.isCompleted
+					).length === 1
+						? ''
+						: 'a'} bokning{allBookingsState.filter((b) => b.isCompleted).length === 1 ? '' : 'ar'}
+				</p>
+				<p class="mt-2 text-xl font-semibold">
+					Totalt: {formatPrice(displayTotalForAllBookings())}
+					<span class="text-sm text-muted-foreground">
+						({experience.type === 'private' ? 'inkl. moms' : 'exkl. moms'})
+					</span>
+				</p>
+			</div>
 			<ContactForm
-				bookings={allBookings}
+				bookings={allBookingsState}
 				experienceId={parseInt(experience.id)}
 				experienceType={experience.type}
 				products={selectedProducts}

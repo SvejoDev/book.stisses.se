@@ -42,17 +42,31 @@ export const POST: RequestHandler = async ({ request }) => {
       if (error) throw error;
       expiredBookings = data;
     } else {
-      // Clean up all expired reservations (but not those with session_id - they're in payment process)
-      // Only clean up bookings that have null session_id (not real Stripe session IDs)
-      const { data, error } = await supabase
-        .from('pending_bookings')
-        .select('*')
-        .eq('availability_reserved', true)
-        .lt('expires_at', new Date().toISOString())
-        .is('session_id', null); // Only clean up bookings that haven't started payment
-      
-      if (error) throw error;
-      expiredBookings = data;
+      // Clean up expired reservations AND processed bookings
+      const [expiredReservations, processedBookings] = await Promise.all([
+        // 1. Clean up expired reservations (but not those with session_id - they're in payment process)
+        supabase
+          .from('pending_bookings')
+          .select('*')
+          .eq('availability_reserved', true)
+          .lt('expires_at', new Date().toISOString())
+          .is('session_id', null),
+        
+        // 2. Clean up processed bookings older than 1 hour
+        supabase
+          .from('pending_bookings')
+          .select('*')
+          .eq('availability_reserved', false)
+          .lt('created_at', new Date(Date.now() - 60 * 60 * 1000).toISOString()) // 1 hour ago
+      ]);
+
+      if (expiredReservations.error) throw expiredReservations.error;
+      if (processedBookings.error) throw processedBookings.error;
+
+      expiredBookings = [
+        ...(expiredReservations.data || []),
+        ...(processedBookings.data || [])
+      ];
     }
 
     const cleanupResults = [];
@@ -185,17 +199,33 @@ export const GET: RequestHandler = async ({ url }) => {
     
     console.log('Running cleanup at:', now.toISOString());
     
-    // Clean up all expired reservations (but not those with session_id - they're in payment process)
-    const { data: expiredBookings, error } = await supabase
-      .from('pending_bookings')
-      .select('*')
-      .eq('availability_reserved', true)
-      .lt('expires_at', now.toISOString())
-      .is('session_id', null); // Only clean up bookings that haven't started payment
-    
-    if (error) throw error;
+    // Clean up expired reservations AND processed bookings
+    const [expiredReservations, processedBookings] = await Promise.all([
+      // 1. Clean up expired reservations (but not those with session_id - they're in payment process)
+      supabase
+        .from('pending_bookings')
+        .select('*')
+        .eq('availability_reserved', true)
+        .lt('expires_at', now.toISOString())
+        .is('session_id', null),
+      
+      // 2. Clean up processed bookings older than 1 hour
+      supabase
+        .from('pending_bookings')
+        .select('*')
+        .eq('availability_reserved', false)
+        .lt('created_at', new Date(now.getTime() - 60 * 60 * 1000).toISOString()) // 1 hour ago
+    ]);
 
-    console.log(`Found ${expiredBookings.length} expired bookings to clean up`);
+    if (expiredReservations.error) throw expiredReservations.error;
+    if (processedBookings.error) throw processedBookings.error;
+
+    const expiredBookings = [
+      ...(expiredReservations.data || []),
+      ...(processedBookings.data || [])
+    ];
+
+    console.log(`Found ${expiredBookings.length} expired/processed bookings to clean up (${expiredReservations.data?.length || 0} expired reservations, ${processedBookings.data?.length || 0} processed bookings)`);
 
     const cleanupResults = [];
 
