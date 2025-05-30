@@ -3,6 +3,9 @@
 	import type { SelectedStartTime } from '$lib/types/availability';
 	import { cn } from '$lib/utils';
 	import { addHours, addDays } from 'date-fns';
+	import { supabase } from '$lib/supabaseClient';
+	import * as Card from '$lib/components/ui/card';
+	import { Button } from '$lib/components/ui/button';
 
 	let {
 		experienceId,
@@ -39,6 +42,7 @@
 	}>();
 
 	let isLoading = $state(false);
+	let isSelectingTime = $state(false); // New loading state for time selection
 	let hasAttemptedLoad = $state(false);
 	let availableTimes = $state<AvailableTime[]>([]);
 	let error = $state<string | null>(null);
@@ -48,6 +52,21 @@
 	let currentBookingNumber = $state<string | null>(null);
 	let reservationExpiry = $state<Date | null>(null);
 	let reservationCheckInterval: NodeJS.Timeout | null = null;
+	let editingBooking = $state<{
+		bookingNumber: string;
+		startTime: string;
+		endTime: string;
+		startDate: string;
+	} | null>(null);
+	let currentBookingsInGroup = $state<
+		Array<{
+			bookingNumber: string;
+			startTime: string;
+			endTime: string;
+			startDate: string;
+			isCurrentBooking: boolean;
+		}>
+	>([]);
 
 	// Single effect to handle reservation group ID initialization and synchronization
 	$effect(() => {
@@ -159,28 +178,26 @@
 		}
 	});
 
-	// Periodic cleanup - runs every 1 minute (for development)
-	// DISABLED: This was causing bookings to be deleted too aggressively during development
-	/*
+	// Periodic cleanup - runs every 30 seconds to clean up expired reservations
 	$effect(() => {
 		if (typeof window !== 'undefined') {
 			const cleanupInterval = setInterval(
 				async () => {
 					try {
+						// Only clean up expired reservations, not those with session_id (in payment)
 						await fetch('/api/cleanup-expired', { method: 'GET' });
 					} catch (error) {
 						console.error('Periodic cleanup failed:', error);
 					}
 				},
-				1 * 60 * 1000
-			); // 1 minute for development
+				30 * 1000 // Every 30 seconds
+			);
 
 			return () => {
 				clearInterval(cleanupInterval);
 			};
 		}
 	});
-	*/
 
 	// Auto-load times and set selected time when restoring a previous booking
 	$effect(() => {
@@ -292,6 +309,14 @@
 	}
 
 	async function handleTimeSelect(time: AvailableTime) {
+		// Prevent spam clicking
+		if (isSelectingTime) {
+			console.log('Already selecting a time, ignoring click');
+			return;
+		}
+
+		isSelectingTime = true;
+
 		console.log('🎯 handleTimeSelect START:', {
 			time: time.startTime,
 			currentState: {
@@ -303,117 +328,157 @@
 			timestamp: Date.now()
 		});
 
-		console.log('handleTimeSelect called with:', {
-			time,
-			bookingData,
-			bookingDataType: typeof bookingData,
-			bookingDataKeys: bookingData ? Object.keys(bookingData) : 'null',
-			currentReservationGroupId,
-			existingReservationGroupId,
-			willExtendExisting: !!currentReservationGroupId
-		});
-
-		// Handle the case where bookingData is a derived function
-		const actualBookingData = typeof bookingData === 'function' ? bookingData() : bookingData;
-
-		console.log('Actual booking data:', {
-			actualBookingData,
-			type: typeof actualBookingData,
-			keys: actualBookingData ? Object.keys(actualBookingData) : 'null'
-		});
-
-		if (!actualBookingData) {
-			console.error('No booking data available for reservation');
-			return;
-		}
-
 		try {
-			console.log('🎯 Setting selectedTime to:', time.startTime);
-			selectedTime = time;
+			// Handle the case where bookingData is a derived function
+			const actualBookingData = typeof bookingData === 'function' ? bookingData() : bookingData;
 
-			// Prepare booking data with selected time
-			const reservationData = {
-				...actualBookingData,
-				startTime: time.startTime,
-				endTime: time.endTime
-			};
-
-			// Use existing reservation group ID if available, otherwise let API create new one
-			const reservationGroupIdToUse = currentReservationGroupId || existingReservationGroupId;
-
-			// Debug logging
-			console.log('Sending reservation data:', {
-				reservationGroupId: reservationGroupIdToUse,
-				bookingData: reservationData,
-				products: reservationData.products,
-				addons: reservationData.addons,
-				willExtendExisting: !!reservationGroupIdToUse,
-				source: currentReservationGroupId
-					? 'currentReservationGroupId'
-					: existingReservationGroupId
-						? 'existingReservationGroupId'
-						: 'new'
-			});
-
-			// Call reservation API
-			const response = await fetch('/api/reserve-availability', {
-				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json'
-				},
-				body: JSON.stringify({
-					reservationGroupId: reservationGroupIdToUse,
-					bookingData: reservationData
-				})
-			});
-
-			console.log('Reserve availability API call:', {
-				url: '/api/reserve-availability',
-				method: 'POST',
-				reservationGroupId: reservationGroupIdToUse,
-				existingReservationGroupId,
-				totalBookings,
-				isExtendingExisting: !!reservationGroupIdToUse
-			});
-
-			if (!response.ok) {
-				const errorData = await response.json();
-				throw new Error(errorData.error || 'Failed to reserve availability');
+			if (!actualBookingData) {
+				console.error('No booking data available for reservation');
+				return;
 			}
 
-			const result = await response.json();
-			console.log('🎯 Setting reservation state:', {
-				reservationGroupId: result.reservationGroupId,
-				bookingNumber: result.bookingNumber,
-				expiresAt: result.expiresAt
-			});
+			// Check if user is changing their existing selection (use atomic update)
+			const isEditingExistingBooking =
+				(currentBookingNumber && selectedTime && selectedTime.startTime !== time.startTime) ||
+				editingBooking;
 
-			currentReservationGroupId = result.reservationGroupId;
-			console.log('🎯 Set currentReservationGroupId to:', currentReservationGroupId);
+			if (isEditingExistingBooking) {
+				const bookingToUpdate = editingBooking || {
+					bookingNumber: currentBookingNumber!,
+					startTime: selectedTime!.startTime,
+					endTime: selectedTime!.endTime,
+					startDate: actualBookingData.startDate
+				};
 
-			currentBookingNumber = result.bookingNumber;
-			console.log('🎯 Set currentBookingNumber to:', currentBookingNumber);
+				console.log('🔄 User changing time selection, using atomic update:', {
+					oldTime: bookingToUpdate.startTime,
+					newTime: time.startTime,
+					bookingNumber: bookingToUpdate.bookingNumber,
+					reservationGroupId: currentReservationGroupId,
+					isEditingPreviousBooking: !!editingBooking
+				});
 
-			reservationExpiry = new Date(result.expiresAt);
-			console.log('🎯 Set reservationExpiry to:', reservationExpiry);
+				// Use atomic update endpoint
+				const response = await fetch('/api/update-reservation-time', {
+					method: 'POST',
+					headers: {
+						'Content-Type': 'application/json'
+					},
+					body: JSON.stringify({
+						reservationGroupId: currentReservationGroupId,
+						bookingNumber: bookingToUpdate.bookingNumber,
+						newStartTime: time.startTime,
+						newEndTime: time.endTime,
+						bookingData: {
+							experienceId: actualBookingData.experienceId,
+							startLocationId: actualBookingData.startLocationId,
+							durationId: actualBookingData.durationId,
+							startDate: bookingToUpdate.startDate,
+							products: actualBookingData.products,
+							addons: actualBookingData.addons
+						}
+					})
+				});
 
-			console.log('Reservation successful:', {
-				reservationGroupId: result.reservationGroupId,
-				bookingNumber: result.bookingNumber,
-				currentReservationGroupId,
-				currentBookingNumber,
-				expiresAt: result.expiresAt
-			});
+				if (!response.ok) {
+					const errorData = await response.json();
+					throw new Error(errorData.error || 'Failed to update reservation time');
+				}
 
-			// Call onStartTimeSelect directly after successful reservation
-			console.log('🎯 Calling onStartTimeSelect with:', selectedTime);
-			onStartTimeSelect(selectedTime);
-			console.log('🎯 onStartTimeSelect completed');
+				const result = await response.json();
+
+				console.log('✅ Atomic time update successful:', result);
+
+				// Update local state with new time and extended expiry
+				selectedTime = time;
+				reservationExpiry = new Date(result.expiresAt);
+
+				// If we were editing a previous booking, clear that state and refresh bookings
+				if (editingBooking) {
+					editingBooking = null;
+					await fetchCurrentBookings(); // Refresh the bookings list
+					console.log('🎯 Previous booking time updated successfully');
+				} else {
+					// If we were editing the current booking, update current booking state
+					console.log('🎯 Current booking time updated successfully');
+				}
+
+				// Notify parent of successful time change
+				onStartTimeSelect(selectedTime);
+				console.log('🎯 onStartTimeSelect completed for time change');
+			} else {
+				// First time selection or new booking - use regular reservation flow
+				console.log('🎯 Creating new reservation (first selection or new booking)');
+
+				// Set the selected time
+				selectedTime = time;
+
+				// Prepare booking data with selected time
+				const reservationData = {
+					...actualBookingData,
+					startTime: time.startTime,
+					endTime: time.endTime
+				};
+
+				// Use existing reservation group ID if available, otherwise let API create new one
+				const reservationGroupIdToUse = currentReservationGroupId || existingReservationGroupId;
+
+				console.log('🎯 Making reservation API call:', {
+					reservationGroupId: reservationGroupIdToUse,
+					willExtendExisting: !!reservationGroupIdToUse,
+					source: currentReservationGroupId
+						? 'currentReservationGroupId'
+						: existingReservationGroupId
+							? 'existingReservationGroupId'
+							: 'new'
+				});
+
+				// Call reservation API
+				const response = await fetch('/api/reserve-availability', {
+					method: 'POST',
+					headers: {
+						'Content-Type': 'application/json'
+					},
+					body: JSON.stringify({
+						reservationGroupId: reservationGroupIdToUse,
+						bookingData: reservationData
+					})
+				});
+
+				if (!response.ok) {
+					const errorData = await response.json();
+					throw new Error(errorData.error || 'Failed to reserve availability');
+				}
+
+				const result = await response.json();
+
+				console.log('🎯 Reservation successful, updating state:', {
+					reservationGroupId: result.reservationGroupId,
+					bookingNumber: result.bookingNumber,
+					expiresAt: result.expiresAt
+				});
+
+				// Update all state at once
+				currentReservationGroupId = result.reservationGroupId;
+				currentBookingNumber = result.bookingNumber;
+				reservationExpiry = new Date(result.expiresAt);
+
+				// Call onStartTimeSelect after successful reservation
+				console.log('🎯 Calling onStartTimeSelect with:', selectedTime);
+				onStartTimeSelect(selectedTime);
+				console.log('🎯 onStartTimeSelect completed successfully');
+			}
 		} catch (error) {
-			console.error('Error reserving availability:', error);
+			console.error('Error in handleTimeSelect:', error);
 			// Reset selected time on error
 			selectedTime = null;
-			alert('Failed to reserve this time slot. Please try again.');
+
+			// Show user-friendly error message
+			const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+			alert(`Failed to reserve this time slot: ${errorMessage}. Please try again.`);
+		} finally {
+			// Always reset loading state
+			isSelectingTime = false;
 		}
 	}
 
@@ -433,6 +498,95 @@
 		}
 
 		onLockStateChange(false);
+	}
+
+	// Function to fetch current bookings in the reservation group
+	async function fetchCurrentBookings() {
+		if (!currentReservationGroupId) {
+			currentBookingsInGroup = [];
+			return;
+		}
+
+		try {
+			const { data: bookings, error } = await supabase
+				.from('pending_bookings')
+				.select('booking_number, booking_data')
+				.eq('reservation_group_id', currentReservationGroupId)
+				.eq('availability_reserved', true);
+
+			if (error) {
+				console.error('Error fetching current bookings:', error);
+				return;
+			}
+
+			currentBookingsInGroup =
+				bookings?.map((booking) => ({
+					bookingNumber: booking.booking_number,
+					startTime: booking.booking_data[0].startTime,
+					endTime: booking.booking_data[0].endTime,
+					startDate: booking.booking_data[0].startDate,
+					isCurrentBooking: booking.booking_number === currentBookingNumber
+				})) || [];
+		} catch (error) {
+			console.error('Error fetching bookings:', error);
+			currentBookingsInGroup = [];
+		}
+	}
+
+	// Effect to fetch bookings when reservation group changes
+	$effect(() => {
+		if (currentReservationGroupId) {
+			fetchCurrentBookings();
+		} else {
+			currentBookingsInGroup = [];
+		}
+	});
+
+	// Function to handle changing time for a previous booking
+	async function handleChangeBookingTime(booking: {
+		bookingNumber: string;
+		startTime: string;
+		endTime: string;
+		startDate: string;
+		isCurrentBooking: boolean;
+	}) {
+		if (isSelectingTime) return;
+
+		console.log('🔄 Starting time change for previous booking:', booking);
+
+		// Set this booking as the one being edited
+		editingBooking = {
+			bookingNumber: booking.bookingNumber,
+			startTime: booking.startTime,
+			endTime: booking.endTime,
+			startDate: booking.startDate
+		};
+
+		// Clear current selection state to show available times
+		selectedTime = null;
+
+		// Regenerate available times for this booking's date
+		// Note: The date should already be selected, but we might need to refresh times
+		if (hasAttemptedLoad) {
+			try {
+				await generateStartTimes();
+			} catch (error) {
+				console.error('Error regenerating times for booking edit:', error);
+				alert('Kunde inte ladda tillgängliga tider. Försök igen.');
+				editingBooking = null;
+			}
+		}
+	}
+
+	// Function to cancel editing a previous booking
+	function cancelEditingBooking() {
+		editingBooking = null;
+		selectedTime = null;
+	}
+
+	// Export function to get the number of current bookings (useful for parent components)
+	export function getCurrentBookingCount() {
+		return currentBookingsInGroup.length;
 	}
 
 	// Expose reservation group ID for parent components
@@ -486,12 +640,85 @@
 	</div>
 {/if}
 
+<!-- Current bookings in reservation group -->
+{#if currentBookingsInGroup.length > 1}
+	<div class="mb-6 space-y-3">
+		<h3 class="text-center text-lg font-semibold">Dina nuvarande bokningar</h3>
+		{#if editingBooking}
+			<div class="rounded-lg border-2 border-blue-200 bg-blue-50 p-3">
+				<div class="flex items-center justify-between">
+					<div class="flex items-center gap-2">
+						<span class="text-sm font-medium text-blue-700">
+							Ändrar tid för: {editingBooking.startTime} - {editingBooking.endTime}
+						</span>
+					</div>
+					<Button variant="outline" size="sm" onclick={cancelEditingBooking}>Avbryt</Button>
+				</div>
+			</div>
+		{/if}
+		<div class="space-y-2">
+			{#each currentBookingsInGroup as booking}
+				<Card.Root
+					class={cn(
+						'p-4',
+						booking.isCurrentBooking && 'border-primary bg-primary/5',
+						editingBooking?.bookingNumber === booking.bookingNumber && 'border-blue-300 bg-blue-50'
+					)}
+				>
+					<Card.Content class="p-0">
+						<div class="flex items-center justify-between">
+							<div class="space-y-1">
+								<div class="flex items-center gap-2">
+									<p class="text-sm font-medium">
+										{booking.startTime} - {booking.endTime}
+									</p>
+									{#if booking.isCurrentBooking}
+										<span
+											class="inline-flex items-center rounded-full bg-primary px-2 py-1 text-xs font-medium text-primary-foreground"
+										>
+											Aktuell
+										</span>
+									{:else if editingBooking?.bookingNumber === booking.bookingNumber}
+										<span
+											class="inline-flex items-center rounded-full bg-blue-600 px-2 py-1 text-xs font-medium text-white"
+										>
+											Redigeras
+										</span>
+									{/if}
+								</div>
+								<p class="text-xs text-muted-foreground">
+									{new Date(booking.startDate).toLocaleDateString('sv-SE', {
+										weekday: 'short',
+										year: 'numeric',
+										month: 'short',
+										day: 'numeric'
+									})}
+								</p>
+							</div>
+							{#if !booking.isCurrentBooking && !editingBooking}
+								<Button
+									variant="outline"
+									size="sm"
+									onclick={() => handleChangeBookingTime(booking)}
+									disabled={isSelectingTime}
+								>
+									Ändra tid
+								</Button>
+							{/if}
+						</div>
+					</Card.Content>
+				</Card.Root>
+			{/each}
+		</div>
+	</div>
+{/if}
+
 <div class="space-y-4">
 	{#if !hasAttemptedLoad && showButton}
 		<button
 			class="h-10 w-full rounded-md bg-primary px-4 py-2 text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
 			onclick={generateStartTimes}
-			disabled={isLoading || !canGenerateTimes}
+			disabled={isLoading || !canGenerateTimes || isSelectingTime}
 		>
 			{#if isLoading}
 				Laddar...
@@ -503,8 +730,9 @@
 		</button>
 	{:else if hasAttemptedLoad && showButton}
 		<button
-			class="h-10 w-full rounded-md border border-primary bg-background px-4 py-2 text-primary hover:bg-primary/10"
+			class="h-10 w-full rounded-md border border-primary bg-background px-4 py-2 text-primary hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-50"
 			onclick={handleReset}
+			disabled={isSelectingTime}
 		>
 			Ändra din bokning
 		</button>
@@ -523,7 +751,26 @@
 						selectedTime === time && 'bg-primary text-primary-foreground hover:bg-primary/90'
 					)}
 					onclick={() => handleTimeSelect(time)}
+					disabled={isSelectingTime}
 				>
+					{#if isSelectingTime && selectedTime === time}
+						<svg class="mr-2 h-4 w-4 animate-spin" viewBox="0 0 24 24">
+							<circle
+								class="opacity-25"
+								cx="12"
+								cy="12"
+								r="10"
+								stroke="currentColor"
+								stroke-width="4"
+								fill="none"
+							></circle>
+							<path
+								class="opacity-75"
+								fill="currentColor"
+								d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+							></path>
+						</svg>
+					{/if}
 					{time.startTime}
 				</button>
 			{/each}
