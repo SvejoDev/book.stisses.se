@@ -352,6 +352,18 @@
 		currentBookingIndex = index;
 		restoreBookingState(index);
 
+		// Update currentReservationGroupId based on whether we have completed bookings
+		const hasCompletedBookings = allBookingsState.some((b) => b.isCompleted);
+		if (!hasCompletedBookings) {
+			currentReservationGroupId = null;
+		} else if (availableStartTimesRef) {
+			// Sync with the AvailableStartTimes component
+			const groupId = availableStartTimesRef.getReservationGroupId();
+			if (groupId) {
+				currentReservationGroupId = groupId;
+			}
+		}
+
 		// Scroll to top for better UX
 		window.scrollTo({ top: 0, behavior: 'smooth' });
 	}
@@ -541,6 +553,20 @@
 				if (!response.ok) {
 					throw new Error('Failed to cleanup booking from database');
 				}
+			}
+
+			// Check if this is the last completed booking in the current reservation group
+			const completedBookingsInGroup = allBookingsState.filter(
+				(booking, idx) => idx !== indexToRemove && booking.isCompleted
+			);
+
+			// If no more completed bookings remain, reset the reservation group ID
+			// so the next booking starts a fresh reservation group
+			if (completedBookingsInGroup.length === 0) {
+				console.log(
+					'No more completed bookings in reservation group, resetting currentReservationGroupId'
+				);
+				currentReservationGroupId = null;
 			}
 
 			// Remove the booking from the state array

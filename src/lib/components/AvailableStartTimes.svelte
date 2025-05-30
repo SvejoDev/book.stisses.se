@@ -75,6 +75,9 @@
 		// Only update if we have an existingReservationGroupId and it's different from current
 		if (existingReservationGroupId && existingReservationGroupId !== currentReservationGroupId) {
 			currentReservationGroupId = existingReservationGroupId;
+		} else if (existingReservationGroupId === null && currentReservationGroupId !== null) {
+			// Reset to null if parent component cleared the reservation group ID
+			currentReservationGroupId = null;
 		}
 	});
 
@@ -384,7 +387,14 @@
 				};
 
 				// Use existing reservation group ID if available, otherwise let API create new one
+				// If currentReservationGroupId is null, start fresh
 				const reservationGroupIdToUse = currentReservationGroupId || existingReservationGroupId;
+
+				console.log('Making reservation API call:', {
+					hasReservationGroupId: !!reservationGroupIdToUse,
+					reservationGroupId: reservationGroupIdToUse,
+					isExtendingExisting: !!reservationGroupIdToUse
+				});
 
 				// Call reservation API
 				const response = await fetch('/api/reserve-availability', {
@@ -399,8 +409,49 @@
 				});
 
 				if (!response.ok) {
-					const errorData = await response.json();
-					throw new Error(errorData.error || 'Failed to reserve availability');
+					const errorText = await response.text();
+					console.error('Reservation API error:', {
+						status: response.status,
+						statusText: response.statusText,
+						errorText
+					});
+
+					// If extending an existing reservation failed, try creating a new one
+					if (response.status === 404 && reservationGroupIdToUse) {
+						console.log('Existing reservation not found, creating new reservation group');
+
+						// Reset reservation group ID and try again without it
+						currentReservationGroupId = null;
+
+						const retryResponse = await fetch('/api/reserve-availability', {
+							method: 'POST',
+							headers: {
+								'Content-Type': 'application/json'
+							},
+							body: JSON.stringify({
+								reservationGroupId: null,
+								bookingData: reservationData
+							})
+						});
+
+						if (!retryResponse.ok) {
+							const retryErrorText = await retryResponse.text();
+							throw new Error(`Failed to create new reservation: ${retryErrorText}`);
+						}
+
+						const retryResult = await retryResponse.json();
+
+						// Update all state with the new reservation group
+						currentReservationGroupId = retryResult.reservationGroupId;
+						currentBookingNumber = retryResult.bookingNumber;
+						reservationExpiry = new Date(retryResult.expiresAt);
+
+						// Call onStartTimeSelect after successful reservation
+						onStartTimeSelect(selectedTime);
+						return;
+					}
+
+					throw new Error(`Failed to reserve availability: ${errorText}`);
 				}
 
 				const result = await response.json();
