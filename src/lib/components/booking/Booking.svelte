@@ -250,6 +250,11 @@
 		isResettingBooking: () => boolean;
 	} | null>(null);
 
+	// Timer state management at parent level to persist across component unmounts
+	let persistentTimerExpiry = $state<Date | null>(null);
+	let timerCountdown = $state<{ minutes: number; seconds: number } | null>(null);
+	let timerInterval: NodeJS.Timeout | null = null;
+
 	// Enhanced booking state structure
 	interface BookingState {
 		// Form data
@@ -446,6 +451,13 @@
 			currentReservationGroupId = newReservationGroupId;
 		}
 
+		// Set persistent timer if this is the first completed booking or if we don't have one yet
+		const reservationExpiry = availableStartTimesRef?.getReservationExpiry();
+		if (reservationExpiry && !persistentTimerExpiry) {
+			persistentTimerExpiry = reservationExpiry;
+			console.log('🕐 Set persistent timer expiry:', persistentTimerExpiry);
+		}
+
 		// Mark this booking as completed and save the booking number
 		allBookingsState[currentBookingIndex].bookingNumber =
 			availableStartTimesRef?.getBookingNumber() || undefined;
@@ -496,6 +508,9 @@
 		// Temporarily disable auto-save during reset
 		isInitializing = true;
 
+		// Get the current reservation expiry from AvailableStartTimes to maintain timer
+		const currentExpiry = availableStartTimesRef?.getReservationExpiry();
+
 		// Add new booking to state array
 		allBookingsState.push({
 			selectedLocationId: null,
@@ -539,6 +554,7 @@
 		autoFetchAddons = false;
 
 		// DON'T reset currentReservationGroupId - we want to extend the existing reservation
+		// The timer should continue running from the AvailableStartTimes component
 
 		window.scrollTo({ top: 0, behavior: 'smooth' });
 		setTimeout(() => {
@@ -609,13 +625,19 @@
 				(booking, idx) => idx !== indexToRemove && booking.isCompleted
 			);
 
-			// If no more completed bookings remain, reset the reservation group ID
+			// If no more completed bookings remain, reset the reservation group ID and timer
 			// so the next booking starts a fresh reservation group
 			if (completedBookingsInGroup.length === 0) {
 				console.log(
-					'No more completed bookings in reservation group, resetting currentReservationGroupId'
+					'No more completed bookings in reservation group, resetting currentReservationGroupId and timer'
 				);
 				currentReservationGroupId = null;
+				persistentTimerExpiry = null;
+				timerCountdown = null;
+				if (timerInterval) {
+					clearInterval(timerInterval);
+					timerInterval = null;
+				}
 			}
 
 			// Remove the booking from the state array
@@ -666,12 +688,143 @@
 		}
 	}
 
+	// Timer management functions
+	function calculateTimeRemaining(expiryDate: Date): { minutes: number; seconds: number } | null {
+		const now = new Date();
+		const diff = expiryDate.getTime() - now.getTime();
+
+		if (diff <= 0) {
+			return null;
+		}
+
+		const minutes = Math.floor(diff / (1000 * 60));
+		const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+
+		return { minutes, seconds };
+	}
+
+	function startPersistentTimer() {
+		if (timerInterval) {
+			clearInterval(timerInterval);
+		}
+
+		if (!persistentTimerExpiry) {
+			timerCountdown = null;
+			return;
+		}
+
+		// Update immediately
+		timerCountdown = calculateTimeRemaining(persistentTimerExpiry);
+
+		// Update every second
+		timerInterval = setInterval(() => {
+			if (!persistentTimerExpiry) {
+				timerCountdown = null;
+				return;
+			}
+
+			timerCountdown = calculateTimeRemaining(persistentTimerExpiry);
+
+			// If time expired, handle it
+			if (!timerCountdown) {
+				handleTimerExpired();
+			}
+		}, 1000);
+	}
+
+	function handleTimerExpired() {
+		console.log('⏰ Parent timer expired, cleaning up all bookings...');
+
+		// Clear timer state
+		persistentTimerExpiry = null;
+		timerCountdown = null;
+		if (timerInterval) {
+			clearInterval(timerInterval);
+			timerInterval = null;
+		}
+
+		// Show user-friendly notification
+		alert('Din reserverade tid har gått ut. Du omdirigeras till startsidan.');
+
+		// Redirect to start page
+		window.location.href = window.location.pathname;
+	}
+
+	// Effect to manage persistent timer
+	$effect(() => {
+		const hasCompletedBookings = allBookingsState.some((b) => b.isCompleted);
+
+		if (hasCompletedBookings && persistentTimerExpiry) {
+			startPersistentTimer();
+
+			// Cleanup function
+			return () => {
+				if (timerInterval) {
+					clearInterval(timerInterval);
+					timerInterval = null;
+				}
+			};
+		} else if (!hasCompletedBookings) {
+			// Clear timer if no completed bookings
+			if (timerInterval) {
+				clearInterval(timerInterval);
+				timerInterval = null;
+			}
+			timerCountdown = null;
+		}
+	});
+
 	export function getTotalPrice(): number {
 		return totalPrice();
 	}
 </script>
 
 <div class="space-y-16">
+	<!-- Persistent reservation timer -->
+	{#if persistentTimerExpiry && allBookingsState.some((b) => b.isCompleted)}
+		<div
+			class="fixed right-4 top-4 z-50 rounded-lg border border-gray-200 bg-white px-3 py-2 shadow-lg sm:px-4 sm:py-3"
+		>
+			<div class="flex items-center gap-2 sm:gap-3">
+				<div
+					class="flex h-6 w-6 items-center justify-center rounded-full bg-green-100 sm:h-8 sm:w-8"
+				>
+					<svg
+						class="h-3 w-3 text-green-600 sm:h-4 sm:w-4"
+						fill="none"
+						stroke="currentColor"
+						viewBox="0 0 24 24"
+					>
+						<path
+							stroke-linecap="round"
+							stroke-linejoin="round"
+							stroke-width="2"
+							d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+						></path>
+					</svg>
+				</div>
+				<div>
+					<p class="text-xs font-medium text-gray-600 sm:text-sm">
+						{#if allBookingsState.filter((b) => b.isCompleted).length > 1}
+							Reserverad tid ({allBookingsState.filter((b) => b.isCompleted).length} bokningar)
+						{:else}
+							Reserverad tid
+						{/if}
+					</p>
+					<p class="font-mono text-sm font-semibold text-gray-900 sm:text-base">
+						{#if timerCountdown}
+							<span class="text-green-600"
+								>{timerCountdown.minutes}:{timerCountdown.seconds.toString().padStart(2, '0')}</span
+							>
+						{:else}
+							<span class="text-green-600">Reserverad</span>
+						{/if}
+					</p>
+				</div>
+			</div>
+		</div>
+	{/if}
+
 	<header class="text-center">
 		<h1 class="text-4xl font-bold tracking-tight">{experience.name}</h1>
 	</header>
@@ -683,13 +836,16 @@
 				<h2 class="mb-4 text-lg font-semibold">Dina bokningar</h2>
 				<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
 					{#each allBookingsState as booking, index}
-						<button
+						<div
 							class={cn(
-								'flex flex-col items-start rounded-lg border p-3 text-left transition-all hover:bg-accent',
+								'flex cursor-pointer flex-col items-start rounded-lg border p-3 text-left transition-all hover:bg-accent',
 								currentBookingIndex === index && 'border-primary bg-primary/5',
 								booking.isCompleted && 'border-green-200 bg-green-50'
 							)}
 							onclick={() => switchToBooking(index)}
+							role="button"
+							tabindex="0"
+							onkeydown={(e) => e.key === 'Enter' && switchToBooking(index)}
 						>
 							<div class="flex w-full items-center justify-between">
 								<span class="font-medium">Bokning {index + 1}</span>
@@ -760,10 +916,12 @@
 									<p>Datum ej valt</p>
 								{/if}
 								{#if booking.selectedProducts.length > 0}
+									{@const totalProductQuantity = booking.selectedProducts.reduce(
+										(sum, p) => sum + p.quantity,
+										0
+									)}
 									<p>
-										{booking.selectedProducts.length} produkt{booking.selectedProducts.length === 1
-											? ''
-											: 'er'}
+										{totalProductQuantity} produkt{totalProductQuantity === 1 ? '' : 'er'}
 									</p>
 								{/if}
 								{#if booking.totalPrice > 0}
@@ -772,7 +930,7 @@
 									</p>
 								{/if}
 							</div>
-						</button>
+						</div>
 					{/each}
 				</div>
 				{#if !showContactForm}

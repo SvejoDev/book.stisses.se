@@ -54,6 +54,7 @@
 	let currentReservationGroupId = $state<string | null>(existingReservationGroupId);
 	let currentBookingNumber = $state<string | null>(null);
 	let reservationExpiry = $state<Date | null>(null);
+	let originalReservationExpiry = $state<Date | null>(null); // Track the original timer from first booking
 	let reservationCheckInterval: NodeJS.Timeout | null = null;
 	let countdownInterval: NodeJS.Timeout | null = null;
 	let timeRemaining = $state<{ minutes: number; seconds: number } | null>(null);
@@ -100,7 +101,7 @@
 		})
 	);
 
-	// Function to calculate time remaining
+	// Function to calculate time remaining - always use original timer
 	function calculateTimeRemaining(expiryDate: Date): { minutes: number; seconds: number } | null {
 		const now = new Date();
 		const diff = expiryDate.getTime() - now.getTime();
@@ -115,28 +116,32 @@
 		return { minutes, seconds };
 	}
 
-	// Function to start countdown timer
+	// Function to start countdown timer - always use original expiry
 	function startCountdownTimer() {
 		if (countdownInterval) {
 			clearInterval(countdownInterval);
 		}
 
-		if (!reservationExpiry) {
+		// Use original expiry for timer display, but fall back to current if not set
+		const timerExpiry = originalReservationExpiry || reservationExpiry;
+
+		if (!timerExpiry) {
 			timeRemaining = null;
 			return;
 		}
 
 		// Update immediately
-		timeRemaining = calculateTimeRemaining(reservationExpiry);
+		timeRemaining = calculateTimeRemaining(timerExpiry);
 
 		// Update every second
 		countdownInterval = setInterval(() => {
-			if (!reservationExpiry) {
+			const currentTimerExpiry = originalReservationExpiry || reservationExpiry;
+			if (!currentTimerExpiry) {
 				timeRemaining = null;
 				return;
 			}
 
-			timeRemaining = calculateTimeRemaining(reservationExpiry);
+			timeRemaining = calculateTimeRemaining(currentTimerExpiry);
 
 			// If time expired, handle it
 			if (!timeRemaining) {
@@ -145,9 +150,16 @@
 		}, 1000);
 	}
 
-	// Simplified reservation monitoring with countdown
+	// Simplified reservation monitoring with countdown - preserve original timer
 	$effect(() => {
-		if (reservationExpiry && currentBookingNumber) {
+		// Show timer if we have any reservation expiry, prioritizing original
+		// This allows timer to persist across multiple bookings in the same reservation group
+		const hasTimer =
+			originalReservationExpiry ||
+			(reservationExpiry &&
+				(currentBookingNumber || currentReservationGroupId || currentBookingsInGroup.length > 0));
+
+		if (hasTimer) {
 			// Start the countdown timer
 			startCountdownTimer();
 
@@ -226,10 +238,16 @@
 		}
 	});
 
-	function handleReservationExpired() {
-		// Reset all reservation-related state
+	async function handleReservationExpired() {
+		console.log('⏰ Reservation expired, cleaning up...');
+
+		// Store the booking number before clearing state
+		const bookingNumberToCleanup = currentBookingNumber;
+
+		// Reset all reservation-related state immediately
 		currentBookingNumber = null;
 		reservationExpiry = null;
+		originalReservationExpiry = null; // Clear original timer on expiry
 		selectedTime = null;
 
 		// Clear the interval
@@ -238,8 +256,71 @@
 			reservationCheckInterval = null;
 		}
 
-		// Redirect to start page to fully reset everything
-		window.location.href = window.location.pathname;
+		// Clear countdown timer
+		if (countdownInterval) {
+			clearInterval(countdownInterval);
+			countdownInterval = null;
+		}
+		timeRemaining = null;
+
+		// Call cleanup API directly instead of relying on page refresh
+		if (bookingNumberToCleanup) {
+			try {
+				console.log('🧹 Calling cleanup API for expired booking:', bookingNumberToCleanup);
+
+				const response = await fetch('/api/cleanup-expired', {
+					method: 'POST',
+					headers: {
+						'Content-Type': 'application/json'
+					},
+					body: JSON.stringify({
+						bookingNumber: bookingNumberToCleanup
+					})
+				});
+
+				if (response.ok) {
+					console.log('✅ Successfully cleaned up expired booking');
+				} else {
+					console.error('❌ Failed to cleanup expired booking:', response.status);
+				}
+			} catch (error) {
+				console.error('❌ Error during cleanup of expired booking:', error);
+				// Even if cleanup fails, continue with UI reset
+			}
+		}
+
+		// Show user-friendly notification
+		alert('Din reserverade tid har gått ut. Du kan nu göra en ny bokning.');
+
+		// Reset UI state gracefully without page refresh
+		onLockStateChange(false);
+		onBookingReset();
+
+		// Reset component state
+		hasAttemptedLoad = false;
+		availableTimes = [];
+		error = null;
+
+		// Clear reservation group if this was the only booking
+		if (currentReservationGroupId) {
+			try {
+				const { data: otherBookings } = await supabase
+					.from('pending_bookings')
+					.select('booking_number')
+					.eq('reservation_group_id', currentReservationGroupId)
+					.eq('availability_reserved', true);
+
+				if (!otherBookings || otherBookings.length === 0) {
+					currentReservationGroupId = null;
+					currentBookingsInGroup = [];
+				}
+			} catch (error) {
+				console.error('Error checking other bookings during expiry:', error);
+				// On error, clear everything to be safe
+				currentReservationGroupId = null;
+				currentBookingsInGroup = [];
+			}
+		}
 	}
 
 	function scrollToBottom() {
@@ -363,6 +444,11 @@
 				selectedTime = time;
 				reservationExpiry = new Date(result.expiresAt);
 
+				// Don't update original expiry when editing - preserve the original timer
+				if (!originalReservationExpiry) {
+					originalReservationExpiry = new Date(result.expiresAt);
+				}
+
 				// If we were editing a previous booking, clear that state and refresh bookings
 				if (editingBooking) {
 					editingBooking = null;
@@ -444,6 +530,11 @@
 						currentBookingNumber = retryResult.bookingNumber;
 						reservationExpiry = new Date(retryResult.expiresAt);
 
+						// Set original expiry only if this is the first booking
+						if (!originalReservationExpiry) {
+							originalReservationExpiry = new Date(retryResult.expiresAt);
+						}
+
 						// Call onStartTimeSelect after successful reservation
 						onStartTimeSelect(selectedTime);
 						return;
@@ -458,6 +549,11 @@
 				currentReservationGroupId = result.reservationGroupId;
 				currentBookingNumber = result.bookingNumber;
 				reservationExpiry = new Date(result.expiresAt);
+
+				// Set original expiry only if this is the first booking in the group
+				if (!originalReservationExpiry) {
+					originalReservationExpiry = new Date(result.expiresAt);
+				}
 
 				// Call onStartTimeSelect after successful reservation
 				onStartTimeSelect(selectedTime);
@@ -518,6 +614,7 @@
 			const hadReservationGroup = !!currentReservationGroupId;
 			currentBookingNumber = null;
 			reservationExpiry = null;
+			// Keep originalReservationExpiry to maintain timer across bookings
 
 			// Clear timers
 			if (reservationCheckInterval) {
@@ -539,14 +636,15 @@
 						.eq('reservation_group_id', currentReservationGroupId)
 						.eq('availability_reserved', true);
 
-					// If no other bookings exist, clear the reservation group
+					// If no other bookings exist, clear the reservation group and timer
 					if (!otherBookings || otherBookings.length === 0) {
-						console.log('🔄 No other bookings in group, clearing reservation group ID');
+						console.log('🔄 No other bookings in group, clearing reservation group ID and timer');
 						currentReservationGroupId = null;
 						currentBookingsInGroup = [];
+						originalReservationExpiry = null; // Clear original timer when no bookings remain
 					} else {
 						console.log(
-							`🔄 ${otherBookings.length} other bookings remain in group, keeping reservation group ID`
+							`🔄 ${otherBookings.length} other bookings remain in group, keeping reservation group ID and timer`
 						);
 						// Refresh the bookings list
 						await fetchCurrentBookings();
@@ -556,11 +654,13 @@
 					// On error, clear everything to be safe
 					currentReservationGroupId = null;
 					currentBookingsInGroup = [];
+					originalReservationExpiry = null;
 				}
 			} else {
-				// Single booking scenario - clear everything
+				// Single booking scenario - clear everything including timer
 				currentReservationGroupId = null;
 				currentBookingsInGroup = [];
+				originalReservationExpiry = null;
 			}
 
 			onLockStateChange(false);
@@ -581,13 +681,28 @@
 		try {
 			const { data: bookings, error } = await supabase
 				.from('pending_bookings')
-				.select('booking_number, booking_data')
+				.select('booking_number, booking_data, expires_at')
 				.eq('reservation_group_id', currentReservationGroupId)
 				.eq('availability_reserved', true);
 
 			if (error) {
 				console.error('Error fetching current bookings:', error);
 				return;
+			}
+
+			// If we don't have a current reservation expiry, get it from any booking in the group
+			if (!reservationExpiry && bookings && bookings.length > 0) {
+				reservationExpiry = new Date(bookings[0].expires_at);
+				console.log('📅 Restored reservation expiry from existing booking:', reservationExpiry);
+			}
+
+			// If we don't have an original expiry but have bookings, set it to preserve timer
+			if (!originalReservationExpiry && bookings && bookings.length > 0) {
+				originalReservationExpiry = new Date(bookings[0].expires_at);
+				console.log(
+					'📅 Set original reservation expiry from existing booking:',
+					originalReservationExpiry
+				);
 			}
 
 			currentBookingsInGroup =
@@ -610,6 +725,14 @@
 			fetchCurrentBookings();
 		} else {
 			currentBookingsInGroup = [];
+			// Clear reservation expiry if no reservation group, but keep original timer
+			if (!currentBookingNumber) {
+				reservationExpiry = null;
+				// Only clear original timer if no reservation group exists
+				if (!currentReservationGroupId) {
+					originalReservationExpiry = null;
+				}
+			}
 		}
 	});
 
@@ -670,7 +793,7 @@
 	}
 
 	export function getReservationExpiry() {
-		return reservationExpiry;
+		return originalReservationExpiry || reservationExpiry;
 	}
 
 	// Export function to check if component is resetting
@@ -679,48 +802,7 @@
 	}
 </script>
 
-<!-- Fixed reservation timer -->
-{#if reservationExpiry}
-	<div
-		class="fixed right-4 top-4 z-50 rounded-lg border border-gray-200 bg-white px-3 py-2 shadow-lg sm:px-4 sm:py-3"
-	>
-		<div class="flex items-center gap-2 sm:gap-3">
-			<div class="flex h-6 w-6 items-center justify-center rounded-full bg-green-100 sm:h-8 sm:w-8">
-				<svg
-					class="h-3 w-3 text-green-600 sm:h-4 sm:w-4"
-					fill="none"
-					stroke="currentColor"
-					viewBox="0 0 24 24"
-				>
-					<path
-						stroke-linecap="round"
-						stroke-linejoin="round"
-						stroke-width="2"
-						d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
-					></path>
-				</svg>
-			</div>
-			<div>
-				<p class="text-xs font-medium text-gray-600 sm:text-sm">
-					{#if totalBookings > 1}
-						Reserverad tid ({totalBookings} bokningar)
-					{:else}
-						Reserverad tid
-					{/if}
-				</p>
-				<p class="font-mono text-sm font-semibold text-gray-900 sm:text-base">
-					{#if timeRemaining}
-						<span class="text-green-600"
-							>{timeRemaining.minutes}:{timeRemaining.seconds.toString().padStart(2, '0')}</span
-						>
-					{:else}
-						<span class="text-green-600">Reserverad</span>
-					{/if}
-				</p>
-			</div>
-		</div>
-	</div>
-{/if}
+<!-- Timer is now managed by parent component, so we hide it here to avoid duplication -->
 
 <!-- Current bookings in reservation group -->
 {#if currentBookingsInGroup.length > 1}
