@@ -435,9 +435,6 @@ export const POST: RequestHandler = async ({ request }) => {
       console.error('Error processing webhook:', error);
       return json({ error: 'Internal server error' }, { status: 500 });
     }
-  } catch (generalError) {
-    console.error('❌ General webhook error:', generalError);
-    return json({ error: 'Webhook processing failed' }, { status: 500 });
   }
 
   return json({ received: true });
