@@ -19,8 +19,6 @@ export default defineConfig({
 	},
 	ssr: {
 		noExternal: ['@lucide/svelte']
-	},
-	server: {
-		allowedHosts: ['72ce-217-9-214-199.ngrok-free.app']
 	}
+	
 });
