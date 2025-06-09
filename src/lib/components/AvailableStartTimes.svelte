@@ -808,95 +808,232 @@
 
 <!-- Timer is now managed by parent component, so we hide it here to avoid duplication -->
 
-<!-- Current bookings in reservation group -->
-{#if currentBookingsInGroup.length > 1}
-	<div class="mb-6 space-y-3">
-		<h3 class="text-center text-lg font-semibold">Dina nuvarande bokningar</h3>
-		{#if editingBooking}
-			<div class="rounded-lg border-2 border-blue-200 bg-blue-50 p-3">
-				<div class="flex items-center justify-between">
-					<div class="flex items-center gap-2">
-						<span class="text-sm font-medium text-blue-700">
-							Ändrar tid för: {editingBooking.startTime} - {editingBooking.endTime}
-						</span>
+<!-- Only show the component if no time is selected OR if we're editing a booking -->
+{#if !selectedTime || editingBooking}
+	<!-- Current bookings in reservation group -->
+	{#if currentBookingsInGroup.length > 1}
+		<div class="mb-6 space-y-3">
+			<h3 class="text-center text-lg font-semibold">Dina nuvarande bokningar</h3>
+			{#if editingBooking}
+				<div class="rounded-lg border-2 border-blue-200 bg-blue-50 p-3">
+					<div class="flex items-center justify-between">
+						<div class="flex items-center gap-2">
+							<span class="text-sm font-medium text-blue-700">
+								Ändrar tid för: {editingBooking.startTime} - {editingBooking.endTime}
+							</span>
+						</div>
+						<Button variant="outline" size="sm" onclick={cancelEditingBooking}>Avbryt</Button>
 					</div>
-					<Button variant="outline" size="sm" onclick={cancelEditingBooking}>Avbryt</Button>
 				</div>
+			{/if}
+			<div class="space-y-2">
+				{#each currentBookingsInGroup as booking}
+					<Card.Root
+						class={cn(
+							'p-4',
+							booking.isCurrentBooking && 'border-primary bg-primary/5',
+							editingBooking?.bookingNumber === booking.bookingNumber &&
+								'border-blue-300 bg-blue-50'
+						)}
+					>
+						<Card.Content class="p-0">
+							<div class="flex items-center justify-between">
+								<div class="space-y-1">
+									<div class="flex items-center gap-2">
+										<p class="text-sm font-medium">
+											{booking.startTime} - {booking.endTime}
+										</p>
+										{#if booking.isCurrentBooking}
+											<span
+												class="inline-flex items-center rounded-full bg-primary px-2 py-1 text-xs font-medium text-primary-foreground"
+											>
+												Aktuell
+											</span>
+										{:else if editingBooking?.bookingNumber === booking.bookingNumber}
+											<span
+												class="inline-flex items-center rounded-full bg-blue-600 px-2 py-1 text-xs font-medium text-white"
+											>
+												Redigeras
+											</span>
+										{/if}
+									</div>
+									<p class="text-xs text-muted-foreground">
+										{new Date(booking.startDate).toLocaleDateString('sv-SE', {
+											weekday: 'short',
+											year: 'numeric',
+											month: 'short',
+											day: 'numeric'
+										})}
+									</p>
+								</div>
+								{#if !booking.isCurrentBooking && !editingBooking}
+									<Button
+										variant="outline"
+										size="sm"
+										onclick={() => handleChangeBookingTime(booking)}
+										disabled={isSelectingTime}
+									>
+										Ändra tid
+									</Button>
+								{/if}
+							</div>
+						</Card.Content>
+					</Card.Root>
+				{/each}
+			</div>
+		</div>
+	{/if}
+
+	<div class="space-y-4">
+		{#if !hasAttemptedLoad && showButton}
+			<button
+				class="h-10 w-full rounded-md bg-primary px-4 py-2 text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+				onclick={generateStartTimes}
+				disabled={isLoading || !canGenerateTimes || isSelectingTime || isResetting}
+			>
+				{#if isLoading}
+					Laddar...
+				{:else if !canGenerateTimes}
+					Välj minst en produkt
+				{:else}
+					Nästa steg
+				{/if}
+			</button>
+		{:else if hasAttemptedLoad && showButton}
+			<button
+				class="h-10 w-full rounded-md border border-primary bg-background px-4 py-2 text-primary hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-50"
+				onclick={handleReset}
+				disabled={isSelectingTime || isResetting}
+			>
+				{#if isResetting}
+					<div class="flex items-center justify-center gap-2">
+						<svg class="h-4 w-4 animate-spin" viewBox="0 0 24 24">
+							<circle
+								class="opacity-25"
+								cx="12"
+								cy="12"
+								r="10"
+								stroke="currentColor"
+								stroke-width="4"
+								fill="none"
+							></circle>
+							<path
+								class="opacity-75"
+								fill="currentColor"
+								d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+							></path>
+						</svg>
+						Återställer...
+					</div>
+				{:else}
+					Ändra din bokning
+				{/if}
+			</button>
+		{/if}
+
+		{#if error && hasAttemptedLoad}
+			<p class="text-sm text-destructive">{error}</p>
+		{/if}
+
+		{#if availableTimes.length > 0}
+			<div class="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-5">
+				{#each displayTimes as time}
+					<button
+						class={cn(
+							'inline-flex h-10 items-center justify-center whitespace-nowrap rounded-md border border-input bg-background px-4 py-2 text-sm font-medium ring-offset-background transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50',
+							selectedTime === time && 'bg-primary text-primary-foreground hover:bg-primary/90'
+						)}
+						onclick={() => handleTimeSelect(time)}
+						disabled={isSelectingTime}
+					>
+						{#if isSelectingTime && selectedTime === time}
+							<svg class="mr-2 h-4 w-4 animate-spin" viewBox="0 0 24 24">
+								<circle
+									class="opacity-25"
+									cx="12"
+									cy="12"
+									r="10"
+									stroke="currentColor"
+									stroke-width="4"
+									fill="none"
+								></circle>
+								<path
+									class="opacity-75"
+									fill="currentColor"
+									d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+								></path>
+							</svg>
+						{/if}
+						{time.startTime}
+					</button>
+				{/each}
+			</div>
+		{:else if !isLoading && !error && hasAttemptedLoad && !selectedTime}
+			<div class="space-y-2 text-center">
+				<p class="font-medium text-destructive">Inga tillgängliga tider hittades</p>
+				<p class="text-sm text-muted-foreground">Vänligen prova att:</p>
+				<ul class="list-inside list-disc text-sm text-muted-foreground">
+					<li>Välja ett annat datum</li>
+					<li>Ändra antalet produkter</li>
+					<li>Justera bokningslängden</li>
+				</ul>
 			</div>
 		{/if}
-		<div class="space-y-2">
-			{#each currentBookingsInGroup as booking}
-				<Card.Root
-					class={cn(
-						'p-4',
-						booking.isCurrentBooking && 'border-primary bg-primary/5',
-						editingBooking?.bookingNumber === booking.bookingNumber && 'border-blue-300 bg-blue-50'
-					)}
-				>
-					<Card.Content class="p-0">
-						<div class="flex items-center justify-between">
-							<div class="space-y-1">
-								<div class="flex items-center gap-2">
-									<p class="text-sm font-medium">
-										{booking.startTime} - {booking.endTime}
-									</p>
-									{#if booking.isCurrentBooking}
-										<span
-											class="inline-flex items-center rounded-full bg-primary px-2 py-1 text-xs font-medium text-primary-foreground"
-										>
-											Aktuell
-										</span>
-									{:else if editingBooking?.bookingNumber === booking.bookingNumber}
-										<span
-											class="inline-flex items-center rounded-full bg-blue-600 px-2 py-1 text-xs font-medium text-white"
-										>
-											Redigeras
-										</span>
-									{/if}
-								</div>
-								<p class="text-xs text-muted-foreground">
-									{new Date(booking.startDate).toLocaleDateString('sv-SE', {
-										weekday: 'short',
-										year: 'numeric',
-										month: 'short',
-										day: 'numeric'
-									})}
-								</p>
-							</div>
-							{#if !booking.isCurrentBooking && !editingBooking}
-								<Button
-									variant="outline"
-									size="sm"
-									onclick={() => handleChangeBookingTime(booking)}
-									disabled={isSelectingTime}
-								>
-									Ändra tid
-								</Button>
-							{/if}
-						</div>
-					</Card.Content>
-				</Card.Root>
-			{/each}
-		</div>
 	</div>
-{/if}
+{:else if selectedTime}
+	<!-- Show only the selected time display when a time is selected and we're not editing -->
+	<div class="space-y-4">
+		<div class="rounded-lg border-2 border-green-200 bg-green-50 p-4">
+			<div class="flex items-center justify-center gap-3">
+				<div class="flex h-8 w-8 items-center justify-center rounded-full bg-green-100">
+					<svg class="h-4 w-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"
+						></path>
+					</svg>
+				</div>
+				<div class="text-center">
+					<p class="text-sm font-medium text-green-700">Vald tid</p>
+					{#if durationType === 'overnights'}
+						<!-- Multi-day booking: show start date + time and end date + time -->
+						{@const startDate = selectedDate}
+						{@const endDate = addDays(startDate, durationValue)}
+						<div class="space-y-1">
+							<p class="text-lg font-semibold text-green-900">
+								{startDate.toLocaleDateString('sv-SE', {
+									weekday: 'short',
+									day: 'numeric',
+									month: 'short'
+								})} kl. {selectedTime.startTime}
+							</p>
+							<p class="text-sm text-green-700">till</p>
+							<p class="text-lg font-semibold text-green-900">
+								{endDate.toLocaleDateString('sv-SE', {
+									weekday: 'short',
+									day: 'numeric',
+									month: 'short'
+								})} kl. {selectedTime.endTime}
+							</p>
+						</div>
+					{:else}
+						<!-- Same-day booking: show date with start and end time -->
+						<div class="space-y-1">
+							<p class="text-lg font-semibold text-green-900">
+								{selectedDate.toLocaleDateString('sv-SE', {
+									weekday: 'short',
+									day: 'numeric',
+									month: 'short'
+								})}
+							</p>
+							<p class="text-lg font-semibold text-green-900">
+								{selectedTime.startTime} - {selectedTime.endTime}
+							</p>
+						</div>
+					{/if}
+				</div>
+			</div>
+		</div>
 
-<div class="space-y-4">
-	{#if !hasAttemptedLoad && showButton}
-		<button
-			class="h-10 w-full rounded-md bg-primary px-4 py-2 text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
-			onclick={generateStartTimes}
-			disabled={isLoading || !canGenerateTimes || isSelectingTime || isResetting}
-		>
-			{#if isLoading}
-				Laddar...
-			{:else if !canGenerateTimes}
-				Välj minst en produkt
-			{:else}
-				Nästa steg
-			{/if}
-		</button>
-	{:else if hasAttemptedLoad && showButton}
+		<!-- Show "Ändra din bokning" button when time is selected -->
 		<button
 			class="h-10 w-full rounded-md border border-primary bg-background px-4 py-2 text-primary hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-50"
 			onclick={handleReset}
@@ -926,119 +1063,8 @@
 				Ändra din bokning
 			{/if}
 		</button>
-	{/if}
-
-	{#if error && hasAttemptedLoad}
-		<p class="text-sm text-destructive">{error}</p>
-	{/if}
-
-	{#if availableTimes.length > 0}
-		<div class="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-5">
-			{#each displayTimes as time}
-				<button
-					class={cn(
-						'inline-flex h-10 items-center justify-center whitespace-nowrap rounded-md border border-input bg-background px-4 py-2 text-sm font-medium ring-offset-background transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50',
-						selectedTime === time && 'bg-primary text-primary-foreground hover:bg-primary/90'
-					)}
-					onclick={() => handleTimeSelect(time)}
-					disabled={isSelectingTime}
-				>
-					{#if isSelectingTime && selectedTime === time}
-						<svg class="mr-2 h-4 w-4 animate-spin" viewBox="0 0 24 24">
-							<circle
-								class="opacity-25"
-								cx="12"
-								cy="12"
-								r="10"
-								stroke="currentColor"
-								stroke-width="4"
-								fill="none"
-							></circle>
-							<path
-								class="opacity-75"
-								fill="currentColor"
-								d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-							></path>
-						</svg>
-					{/if}
-					{time.startTime}
-				</button>
-			{/each}
-		</div>
-	{:else if selectedTime && hasAttemptedLoad}
-		<!-- Show selected time when no available times are displayed -->
-		<div class="space-y-4">
-			<div class="rounded-lg border-2 border-green-200 bg-green-50 p-4">
-				<div class="flex items-center justify-center gap-3">
-					<div class="flex h-8 w-8 items-center justify-center rounded-full bg-green-100">
-						<svg
-							class="h-4 w-4 text-green-600"
-							fill="none"
-							stroke="currentColor"
-							viewBox="0 0 24 24"
-						>
-							<path
-								stroke-linecap="round"
-								stroke-linejoin="round"
-								stroke-width="2"
-								d="M5 13l4 4L19 7"
-							></path>
-						</svg>
-					</div>
-					<div class="text-center">
-						<p class="text-sm font-medium text-green-700">Vald tid</p>
-						{#if durationType === 'overnights'}
-							<!-- Multi-day booking: show start date + time and end date + time -->
-							{@const startDate = selectedDate}
-							{@const endDate = addDays(startDate, durationValue)}
-							<div class="space-y-1">
-								<p class="text-lg font-semibold text-green-900">
-									{startDate.toLocaleDateString('sv-SE', {
-										weekday: 'short',
-										day: 'numeric',
-										month: 'short'
-									})} kl. {selectedTime.startTime}
-								</p>
-								<p class="text-sm text-green-700">till</p>
-								<p class="text-lg font-semibold text-green-900">
-									{endDate.toLocaleDateString('sv-SE', {
-										weekday: 'short',
-										day: 'numeric',
-										month: 'short'
-									})} kl. {selectedTime.endTime}
-								</p>
-							</div>
-						{:else}
-							<!-- Same-day booking: show date with start and end time -->
-							<div class="space-y-1">
-								<p class="text-lg font-semibold text-green-900">
-									{selectedDate.toLocaleDateString('sv-SE', {
-										weekday: 'short',
-										day: 'numeric',
-										month: 'short'
-									})}
-								</p>
-								<p class="text-lg font-semibold text-green-900">
-									{selectedTime.startTime} - {selectedTime.endTime}
-								</p>
-							</div>
-						{/if}
-					</div>
-				</div>
-			</div>
-		</div>
-	{:else if !isLoading && !error && hasAttemptedLoad && !selectedTime}
-		<div class="space-y-2 text-center">
-			<p class="font-medium text-destructive">Inga tillgängliga tider hittades</p>
-			<p class="text-sm text-muted-foreground">Vänligen prova att:</p>
-			<ul class="list-inside list-disc text-sm text-muted-foreground">
-				<li>Välja ett annat datum</li>
-				<li>Ändra antalet produkter</li>
-				<li>Justera bokningslängden</li>
-			</ul>
-		</div>
-	{/if}
-</div>
+	</div>
+{/if}
 
 <style>
 	button {
