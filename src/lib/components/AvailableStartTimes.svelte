@@ -23,7 +23,8 @@
 		// New props for reservation system
 		bookingData = null,
 		existingReservationGroupId = null,
-		totalBookings = 1
+		totalBookings = 1,
+		isReschedule = false
 	} = $props<{
 		experienceId: number;
 		selectedDate: Date;
@@ -41,6 +42,7 @@
 		bookingData?: any;
 		existingReservationGroupId?: string | null;
 		totalBookings?: number;
+		isReschedule?: boolean;
 	}>();
 
 	let isLoading = $state(false);
@@ -394,6 +396,13 @@
 		isSelectingTime = true;
 
 		try {
+			// For reschedule scenarios, just set the time and call the callback
+			if (isReschedule) {
+				selectedTime = time;
+				onStartTimeSelect({ startTime: time.startTime, endTime: time.endTime });
+				return;
+			}
+
 			// Handle the case where bookingData is a derived function
 			const actualBookingData = typeof bookingData === 'function' ? bookingData() : bookingData;
 

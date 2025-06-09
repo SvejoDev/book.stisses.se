@@ -24,6 +24,28 @@
 
 	let rescheduleSection = $state(null as HTMLElement | null);
 
+	// Create booking data for the AvailableStartTimes component
+	let bookingData = $derived(() => {
+		if (!booking || !selectedDate) return null;
+
+		return {
+			experienceId: booking.experienceId,
+			startLocationId: booking.startLocationId,
+			durationId: booking.durationId,
+			startDate: selectedDate.toISOString().split('T')[0],
+			products: booking.products.map((p: any) => ({
+				productId: p.productId,
+				quantity: p.quantity,
+				price: 0 // Not needed for reschedule
+			})),
+			addons: booking.addons.map((a: any) => ({
+				addonId: a.addonId,
+				quantity: a.quantity,
+				price: 0 // Not needed for reschedule
+			}))
+		};
+	});
+
 	$effect(() => {
 		if (bookingId) {
 			loadBooking();
@@ -166,6 +188,8 @@
 						selectedAddons={booking.addons}
 						onStartTimeSelect={handleStartTimeSelect}
 						showButton={true}
+						{bookingData}
+						isReschedule={true}
 					/>
 				</section>
 			{/if}
