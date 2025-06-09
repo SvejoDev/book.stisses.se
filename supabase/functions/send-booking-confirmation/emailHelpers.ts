@@ -126,7 +126,10 @@ export function generateEmailHtml(booking: any): string {
         `;
     }
 
-    const siteUrl = Deno.env.get('PUBLIC_SITE_URL') || 'http://localhost:5173';
+    const siteUrl = Deno.env.get('PUBLIC_SITE_URL') || 
+                    (Deno.env.get('VERCEL_ENV') === 'production' 
+                        ? 'https://book-stisses-se.vercel.app' 
+                        : 'http://localhost:5173');
     const bookingGuaranteeHtml = booking.has_booking_guarantee ? `
         <div class="section">
             <h2>Ombokningsgaranti</h2>
