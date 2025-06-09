@@ -51,14 +51,134 @@ function minutesToTime(minutes: number): string {
     return `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`;
 }
 
-async function loadProductData(productId: number, dates: string[]) {
+// Get reserved quantities from pending bookings
+async function getReservedQuantities(
+    itemId: number, 
+    itemType: 'product' | 'addon',
+    dates: string[],
+    excludeBookingNumber?: string
+) {
+    // Get all active reservations that haven't expired
+    const { data: reservations, error } = await supabase
+        .from('pending_bookings')
+        .select('booking_number, booking_data, expires_at')
+        .eq('availability_reserved', true)
+        .gt('expires_at', new Date().toISOString());
+
+    if (error) {
+        console.error('Error fetching reservations:', error);
+        return {};
+    }
+
+    const reservedQuantities: { [date: string]: { [minute: string]: number } } = {};
+
+    // Initialize reserved quantities for all dates
+    dates.forEach(date => {
+        reservedQuantities[date] = {};
+    });
+
+    for (const reservation of reservations) {
+        // Skip current user's own reservations
+        if (excludeBookingNumber && reservation.booking_number === excludeBookingNumber) {
+            continue;
+        }
+
+        // Check if reservation has expired (failsafe)
+        if (new Date(reservation.expires_at) <= new Date()) {
+            continue;
+        }
+
+        for (const bookingData of reservation.booking_data) {
+            // Check if this booking affects our item
+            let itemQuantity = 0;
+            
+            if (itemType === 'product') {
+                const product = bookingData.products?.find((p: any) => p.productId === itemId);
+                itemQuantity = product?.quantity || 0;
+            } else {
+                const addon = bookingData.addons?.find((a: any) => a.addonId === itemId);
+                itemQuantity = addon?.quantity || 0;
+            }
+
+            if (itemQuantity === 0) continue;
+
+            // Get duration details to calculate affected dates
+            const { data: durationData } = await supabase
+                .from('durations')
+                .select('duration_type, duration_value')
+                .eq('id', bookingData.durationId)
+                .single();
+
+            const isOvernight = durationData?.duration_type === 'overnights';
+            const startDate = bookingData.startDate;
+            const startTime = bookingData.startTime;
+            const endTime = bookingData.endTime;
+            
+            // Calculate affected dates
+            let affectedDates = [startDate];
+            if (isOvernight && durationData) {
+                const endDate = format(addDays(parseISO(startDate), durationData.duration_value), 'yyyy-MM-dd');
+                const current = parseISO(startDate);
+                const end = parseISO(endDate);
+                affectedDates = [];
+                let currentDate = current;
+                while (currentDate <= end) {
+                    affectedDates.push(format(currentDate, 'yyyy-MM-dd'));
+                    currentDate = addDays(currentDate, 1);
+                }
+            }
+
+            // Add reserved quantities to affected time slots
+            affectedDates.forEach((date, index) => {
+                if (!dates.includes(date)) return; // Only process dates we're checking
+
+                if (!reservedQuantities[date]) {
+                    reservedQuantities[date] = {};
+                }
+
+                let dayStartMinutes, dayEndMinutes;
+                
+                if (isOvernight) {
+                    if (index === 0) {
+                        // First day: from start time to midnight
+                        dayStartMinutes = timeToMinutes(startTime);
+                        dayEndMinutes = 24 * 60;
+                    } else if (index === affectedDates.length - 1) {
+                        // Last day: from midnight to end time
+                        dayStartMinutes = 0;
+                        dayEndMinutes = timeToMinutes(endTime);
+                    } else {
+                        // Middle days: full day
+                        dayStartMinutes = 0;
+                        dayEndMinutes = 24 * 60;
+                    }
+                } else {
+                    // Regular booking: from start time to end time
+                    dayStartMinutes = timeToMinutes(startTime);
+                    dayEndMinutes = timeToMinutes(endTime);
+                }
+
+                // Add to each 15-minute slot
+                for (let minute = dayStartMinutes; minute < dayEndMinutes; minute += 15) {
+                    const slotKey = minute.toString();
+                    reservedQuantities[date][slotKey] = (reservedQuantities[date][slotKey] || 0) + itemQuantity;
+                }
+            });
+        }
+    }
+
+    return reservedQuantities;
+}
+
+async function loadProductData(productId: number, dates: string[], excludeBookingNumber?: string) {
     // Get max quantity and availability data in parallel
-    const [maxQuantityResult, ...availabilityResults] = await Promise.all([
+    const [maxQuantityResult, reservedQuantities, ...availabilityResults] = await Promise.all([
         supabase
             .from('products')
             .select('total_quantity')
             .eq('id', productId)
             .single(),
+        getReservedQuantities(productId, 'product', dates, excludeBookingNumber),
         ...dates.map(date => supabase
             .from(`availability_product_${productId}`)
             .select('*')
@@ -69,10 +189,12 @@ async function loadProductData(productId: number, dates: string[]) {
     const maxQuantity = maxQuantityResult.data?.total_quantity || 0;
     const availability: { [date: string]: { [minute: string]: number | null } } = {};
 
-    // Process availability data
+    // Process availability data and add reserved quantities
     dates.forEach((date, index) => {
         const result = availabilityResults[index];
         availability[date] = {};
+        
+        // Start with existing availability data
         if (result.data) {
             Object.entries(result.data).forEach(([key, value]) => {
                 if (key !== 'datum') {
@@ -80,12 +202,19 @@ async function loadProductData(productId: number, dates: string[]) {
                 }
             });
         }
+
+        // Add reserved quantities
+        const dateReserved = reservedQuantities[date] || {};
+        Object.entries(dateReserved).forEach(([minute, reservedQty]) => {
+            const currentValue = availability[date][minute] || 0;
+            availability[date][minute] = currentValue + reservedQty;
+        });
     });
 
     return { maxQuantity, availability, type: 'product' as const, trackAvailability: true };
 }
 
-async function loadAddonData(addonId: number, dates: string[]) {
+async function loadAddonData(addonId: number, dates: string[], excludeBookingNumber?: string) {
     // First check if addon needs availability tracking
     const { data: addon, error: addonError } = await supabase
         .from('addons')
@@ -105,20 +234,23 @@ async function loadAddonData(addonId: number, dates: string[]) {
         };
     }
 
-    // Rest of your existing loadAddonData code for tracked addons
-    const availabilityResults = await Promise.all(
-        dates.map(date => supabase
+    // Get reserved quantities and availability data
+    const [reservedQuantities, ...availabilityResults] = await Promise.all([
+        getReservedQuantities(addonId, 'addon', dates, excludeBookingNumber),
+        ...dates.map(date => supabase
             .from(`availability_addon_${addonId}`)
             .select('*')
             .eq('datum', date)
             .single())
-    );
+    ]);
 
-    // Process availability data as before
+    // Process availability data and add reserved quantities
     const availability: { [date: string]: { [minute: string]: number | null } } = {};
     dates.forEach((date, index) => {
         const result = availabilityResults[index];
         availability[date] = {};
+        
+        // Start with existing availability data
         if (result.data) {
             Object.entries(result.data).forEach(([key, value]) => {
                 if (key !== 'datum') {
@@ -126,6 +258,13 @@ async function loadAddonData(addonId: number, dates: string[]) {
                 }
             });
         }
+
+        // Add reserved quantities
+        const dateReserved = reservedQuantities[date] || {};
+        Object.entries(dateReserved).forEach(([minute, reservedQty]) => {
+            const currentValue = availability[date][minute] || 0;
+            availability[date][minute] = currentValue + reservedQty;
+        });
     });
 
     return {
@@ -242,8 +381,8 @@ async function checkOvernightAvailability(
 
 export const POST: RequestHandler = async ({ request }) => {
     try {
-        const requestData: AvailabilityRequest = await request.json();
-        const { date, durationType, durationValue, products, addons = [], experienceId } = requestData;
+        const requestData: AvailabilityRequest & { excludeBookingNumber?: string } = await request.json();
+        const { date, durationType, durationValue, products, addons = [], experienceId, excludeBookingNumber } = requestData;
                 
         // Get experience details including booking foresight
         const { data: experience, error: experienceError } = await supabase
@@ -298,16 +437,16 @@ export const POST: RequestHandler = async ({ request }) => {
             dates.push(format(addDays(startDateObj, i), 'yyyy-MM-dd'));
         }
 
-        // Load all product and addon data in parallel
+        // Load all product and addon data in parallel (including reserved quantities)
         const cache: AvailabilityCache = {};
         
         const loadPromises = [
             ...products.map(async ({ productId }) => {
-                const data = await loadProductData(productId, dates);
+                const data = await loadProductData(productId, dates, excludeBookingNumber);
                 cache[productId] = data;
             }),
             ...addons.map(async ({ addonId }) => {
-                const data = await loadAddonData(addonId, dates);
+                const data = await loadAddonData(addonId, dates, excludeBookingNumber);
                 cache[addonId] = data;
             })
         ];

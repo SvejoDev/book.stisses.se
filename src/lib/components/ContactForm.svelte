@@ -10,7 +10,9 @@
 	import { formatPrice, getPaymentPrice } from '$lib/utils/price';
 	import { format } from 'date-fns';
 	import { sv } from 'date-fns/locale';
-	import type { SelectedProduct, SelectedAddon, SelectedStartTime } from '$lib/types/booking';
+	import type { SelectedProduct } from '$lib/types/product';
+	import type { SelectedAddon } from '$lib/types/addon';
+	import type { SelectedStartTime } from '$lib/types/availability';
 	import { formSchema, type FormSchema } from '$lib/schemas/contact-form';
 
 	type Booking = {
@@ -26,16 +28,18 @@
 		totalPrice: number;
 	};
 
-	let { data, bookings, experienceId, experienceType, products, addons } = $props<{
-		data?: {
-			form: SuperValidated<FormSchema>;
-		};
-		bookings: Array<Booking>;
-		experienceId: number;
-		experienceType: string;
-		products: SelectedProduct[];
-		addons: SelectedAddon[];
-	}>();
+	let { data, bookings, experienceId, experienceType, products, addons, reservationGroupId } =
+		$props<{
+			data?: {
+				form: SuperValidated<FormSchema>;
+			};
+			bookings: Array<Booking>;
+			experienceId: number;
+			experienceType: string;
+			products: SelectedProduct[];
+			addons: SelectedAddon[];
+			reservationGroupId?: string | null;
+		}>();
 
 	const defaultData = {
 		firstName: '',
@@ -81,7 +85,8 @@
 						'Content-Type': 'application/json'
 					},
 					body: JSON.stringify({
-						bookings: bookingData
+						bookings: bookingData,
+						reservationGroupId
 					})
 				});
 
@@ -127,7 +132,7 @@
 	let addonNames = $state<Record<number, string>>({});
 	let startLocationNames = $state<Record<number, string>>({});
 
-	// Fetch product, addon, and start location names when component mounts
+	// Fetch product names when products change
 	$effect(() => {
 		if (products.length > 0) {
 			const productIds = products.map((p: SelectedProduct) => p.productId).join(',');
@@ -146,7 +151,10 @@
 				})
 				.catch(console.error);
 		}
+	});
 
+	// Fetch addon names when addons change
+	$effect(() => {
 		if (addons.length > 0) {
 			const addonIds = addons.map((a: SelectedAddon) => a.addonId).join(',');
 			fetch(`/api/addons/${addonIds}`)
@@ -164,24 +172,31 @@
 				})
 				.catch(console.error);
 		}
+	});
 
-		// Fetch start location names for all bookings
+	// Fetch start location names when bookings change
+	$effect(() => {
 		const uniqueStartLocationIds = new Set<number>(
 			bookings
 				.map((booking: Booking) => booking.selectedLocationId)
 				.filter((id: number | null): id is number => id !== null)
 		);
 
-		uniqueStartLocationIds.forEach((id: number) => {
-			fetch(`/api/start-locations/${id}`)
-				.then((res) => res.json())
-				.then((data: { startLocation: { id: number; name: string } }) => {
-					if (data.startLocation) {
-						startLocationNames[id] = data.startLocation.name;
-					}
-				})
-				.catch(console.error);
-		});
+		if (uniqueStartLocationIds.size > 0) {
+			uniqueStartLocationIds.forEach((id: number) => {
+				fetch(`/api/start-locations/${id}`)
+					.then((res) => res.json())
+					.then((data: { startLocation: { id: number; name: string } }) => {
+						if (data.startLocation) {
+							startLocationNames = {
+								...startLocationNames,
+								[id]: data.startLocation.name
+							};
+						}
+					})
+					.catch(console.error);
+			});
+		}
 	});
 
 	// Add helper functions for formatting

@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { cn } from '$lib/utils';
 	import { formatPrice, getDisplayPrice } from '$lib/utils/price';
-	import type { PriceGroup } from '$lib/types/booking';
+	import type { PriceGroup } from '$lib/types/price';
 
 	let {
 		priceGroups = $bindable<PriceGroup[]>([]),
@@ -14,7 +14,8 @@
 		extraPrice = $bindable(0),
 		pricingType = $bindable('per_person'),
 		experienceType = $bindable<string>('private'),
-		isLoading = $bindable(false)
+		isLoading = $bindable(false),
+		initialQuantities = {}
 	} = $props<{
 		priceGroups?: PriceGroup[];
 		startLocationId: number | string;
@@ -27,9 +28,13 @@
 		pricingType: 'per_person' | 'per_product' | 'hybrid';
 		experienceType: string;
 		isLoading?: boolean;
+		initialQuantities?: Record<number, number>;
 	}>();
 
 	let quantities = $state<Record<number, number>>({});
+	let lastInitializedQuantities = $state('');
+	let lastStartLocationId = $state<number | string | null>(null);
+	let isFetching = $state(false);
 
 	// Calculate total paying customers (excluding free price groups)
 	let totalPayingCustomers = /** @readonly */ $derived(
@@ -59,36 +64,79 @@
 	});
 
 	async function fetchPriceGroups(locationId: number | string) {
+		// Prevent concurrent fetches
+		if (isFetching) {
+			return;
+		}
+
 		try {
+			isFetching = true;
 			isLoading = true;
 			const response = await fetch(
 				`/api/price-groups?startLocationId=${locationId}&experienceId=${experienceId}`
 			);
 			if (!response.ok) throw new Error('Failed to fetch price groups');
-			priceGroups = await response.json();
 
-			// Reset quantities when price groups change
-			quantities = {};
-			onQuantityChange({});
+			const newPriceGroups = await response.json();
+			priceGroups = newPriceGroups;
+
+			// Only reset quantities when price groups change if not locked AND no initial quantities
+			if (!isLocked && Object.keys(initialQuantities).length === 0) {
+				quantities = {};
+				onQuantityChange({});
+			}
 		} catch (error) {
 			console.error('Error fetching price groups:', error);
 			priceGroups = [];
-			quantities = {};
-			onQuantityChange({});
+			if (!isLocked && Object.keys(initialQuantities).length === 0) {
+				quantities = {};
+				onQuantityChange({});
+			}
 		} finally {
 			isLoading = false;
+			isFetching = false;
 		}
 	}
 
 	// Fetch price groups when startLocationId or experienceId changes
-	$effect(() => {
-		if (startLocationId !== undefined && experienceId) {
-			fetchPriceGroups(startLocationId);
+	// Use $effect.pre to run before DOM updates and be more specific about dependencies
+	$effect.pre(() => {
+		// Only track the specific values that should trigger a fetch
+		const currentLocationId = startLocationId;
+		const currentExperienceId = experienceId;
+
+		if (currentLocationId !== undefined && currentExperienceId && !isFetching) {
+			// Only reset initialization tracking if the location actually changed or we don't have initial quantities
+			const locationChanged =
+				lastStartLocationId !== null && lastStartLocationId !== currentLocationId;
+			const hasInitialQuantities = Object.keys(initialQuantities).length > 0;
+
+			// Only fetch if the location actually changed or this is the first time
+			if (lastStartLocationId !== currentLocationId) {
+				if (locationChanged && !hasInitialQuantities) {
+					lastInitializedQuantities = '';
+				}
+
+				lastStartLocationId = currentLocationId;
+				fetchPriceGroups(currentLocationId);
+			}
 		}
 	});
 
+	// Initialize quantities from initialQuantities when provided
 	$effect(() => {
-		onQuantityChange(quantities);
+		const currentInitialQuantities = JSON.stringify(initialQuantities);
+
+		if (
+			Object.keys(initialQuantities).length > 0 &&
+			priceGroups.length > 0 &&
+			lastInitializedQuantities !== currentInitialQuantities
+		) {
+			quantities = { ...initialQuantities };
+			lastInitializedQuantities = currentInitialQuantities;
+			// Don't call onQuantityChange here to prevent circular updates during initialization
+			// The parent already has these quantities in initialQuantities
+		}
 	});
 
 	function increment(groupId: number) {

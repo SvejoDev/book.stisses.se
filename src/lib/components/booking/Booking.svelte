@@ -13,12 +13,12 @@
 		StartLocation,
 		Duration,
 		OpenDate,
-		BlockedDate,
-		PriceGroup,
-		SelectedProduct,
-		SelectedAddon,
-		SelectedStartTime
-	} from '$lib/types/booking';
+		BlockedDate
+	} from '$lib/types/experience';
+	import type { SelectedProduct } from '$lib/types/product';
+	import type { SelectedAddon } from '$lib/types/addon';
+	import type { SelectedStartTime } from '$lib/types/availability';
+	import { cn } from '$lib/utils';
 
 	// Props
 	let {
@@ -37,6 +37,7 @@
 
 	// Reactive state
 	let selectedLocationId = $state<number | null>(null);
+	let selectedLocationValue = $state('');
 	let selectedDuration = $state('');
 	let durationType = $state<'hours' | 'overnights'>('hours');
 	let durationValue = $state(0);
@@ -87,6 +88,18 @@
 		if (!hasStartLocations) selectedLocationId = null;
 	});
 
+	// Keep selectedLocationValue in sync with selectedLocationId
+	$effect(() => {
+		if (selectedLocationId !== null) {
+			const newValue = selectedLocationId.toString();
+			if (selectedLocationValue !== newValue) {
+				selectedLocationValue = newValue;
+			}
+		} else if (selectedLocationValue !== '') {
+			selectedLocationValue = '';
+		}
+	});
+
 	let productsLoaded = $state(false);
 	$effect(() => {
 		if (selectedDate && shouldShowProducts && productsLoaded) {
@@ -106,10 +119,51 @@
 		window.scrollTo({ top: scrollPos, behavior: 'smooth' });
 	}
 
+	let autoFetchAddons = $state(false);
+	let isInitializing = $state(true);
+	let isSaving = $state(false);
+	let isResettingBooking = $state(false); // Track reset loading state
+
+	// Set initialization to false after the component has mounted
+	$effect(() => {
+		// Use a timeout to ensure all initial effects have run
+		const timeout = setTimeout(() => {
+			isInitializing = false;
+		}, 100);
+
+		return () => clearTimeout(timeout);
+	});
+
+	// Track reset state from AvailableStartTimes component
+	$effect(() => {
+		if (availableStartTimesRef) {
+			const checkResetState = () => {
+				try {
+					const isComponentResetting = availableStartTimesRef?.isResettingBooking?.() || false;
+					if (isComponentResetting !== isResettingBooking) {
+						isResettingBooking = isComponentResetting;
+					}
+				} catch (error) {
+					// Method might not be available yet, ignore error
+				}
+			};
+
+			// Check immediately and then periodically
+			checkResetState();
+			const interval = setInterval(checkResetState, 100);
+
+			return () => clearInterval(interval);
+		}
+	});
+
 	function handleLocationSelect(loc: string) {
 		const newId = parseInt(loc);
 		if (selectedLocationId !== newId) {
+			// Temporarily disable auto-save during reset
+			isInitializing = true;
+
 			selectedLocationId = newId;
+			selectedLocationValue = loc;
 			priceGroupQuantities = {};
 			selectedDuration = '';
 			durationType = 'hours';
@@ -119,7 +173,12 @@
 			selectedAddons = [];
 			showDurations = false;
 			isBookingLocked = false;
-			setTimeout(() => scrollToElement(priceGroupSection), 100);
+
+			// Re-enable auto-save after reset is complete
+			setTimeout(() => {
+				isInitializing = false;
+				scrollToElement(priceGroupSection);
+			}, 100);
 		}
 	}
 
@@ -128,6 +187,8 @@
 		durationValue = d.value;
 		extraPrice = d.extraPrice;
 		scrollToElement(calendarSection);
+		// Save state after duration selection
+		setTimeout(() => saveStateIfNeeded(), 0);
 	}
 
 	function handleDateSelect(date: Date | null) {
@@ -136,14 +197,20 @@
 			setTimeout(() => {
 				if (shouldShowProducts && window.innerWidth < 768) scrollToElement(productsSection);
 			}, 300);
+		// Save state after date selection
+		setTimeout(() => saveStateIfNeeded(), 0);
 	}
 
 	function handleProductSelection(prods: SelectedProduct[]) {
 		selectedProducts = prods;
+		// Save state after product selection
+		setTimeout(() => saveStateIfNeeded(), 0);
 	}
 
 	function handleAddonSelection(adds: SelectedAddon[]) {
 		selectedAddons = adds;
+		// Save state after addon selection
+		setTimeout(() => saveStateIfNeeded(), 0);
 	}
 
 	// Handle locking state from child components
@@ -153,6 +220,8 @@
 
 	function handlePriceGroupQuantityChange(q: Record<number, number>) {
 		priceGroupQuantities = q;
+		// Save state after price group changes
+		setTimeout(() => saveStateIfNeeded(), 0);
 	}
 
 	function handleNextStep() {
@@ -164,29 +233,59 @@
 		scrollToElement(addonsSection);
 	}
 
-	// Multi-booking state
+	// Multi-booking state with comprehensive state management
 	let showAvailableTimesButton = $state(false);
 	let showContactForm = $state(false);
 	let selectedStartTime = $state<SelectedStartTime | null>(null);
 	let showMultipleBookingOption = $state(false);
 	let currentBookingIndex = $state(0);
 	let totalBookings = $state(1);
-	let allBookings = $state<
-		Array<{
-			selectedLocationId: number | null;
-			selectedDuration: string;
-			durationType: 'hours' | 'overnights';
-			durationValue: number;
-			selectedDate: Date | null;
-			selectedProducts: SelectedProduct[];
-			selectedAddons: SelectedAddon[];
-			priceGroupQuantities: Record<number, number>;
-			selectedStartTime: SelectedStartTime | null;
-			totalPrice: number;
-		}>
-	>([
+	let currentReservationGroupId = $state<string | null>(null);
+	let removingBookingIndex = $state<number | null>(null); // Track which booking is being removed
+	let showRemoveConfirmation = $state<{ index: number; booking: any } | null>(null);
+	let availableStartTimesRef = $state<{
+		getReservationGroupId: () => string | null;
+		getBookingNumber: () => string | null;
+		getReservationExpiry: () => Date | null;
+		isResettingBooking: () => boolean;
+	} | null>(null);
+
+	// Timer state management at parent level to persist across component unmounts
+	let persistentTimerExpiry = $state<Date | null>(null);
+	let timerCountdown = $state<{ minutes: number; seconds: number } | null>(null);
+	let timerInterval: NodeJS.Timeout | null = null;
+
+	// Enhanced booking state structure
+	interface BookingState {
+		// Form data
+		selectedLocationId: number | null;
+		selectedLocationValue: string;
+		selectedDuration: string;
+		durationType: 'hours' | 'overnights';
+		durationValue: number;
+		selectedDate: Date | null;
+		selectedProducts: SelectedProduct[];
+		selectedAddons: SelectedAddon[];
+		priceGroupQuantities: Record<number, number>;
+		selectedStartTime: SelectedStartTime | null;
+		totalPrice: number;
+
+		// UI state
+		showDurations: boolean;
+		productsLoaded: boolean;
+		showAvailableTimesButton: boolean;
+		autoFetchAddons: boolean;
+
+		// Booking metadata
+		bookingNumber?: string;
+		isCompleted: boolean;
+		lastModified: Date;
+	}
+
+	let allBookingsState = $state<BookingState[]>([
 		{
 			selectedLocationId: null,
+			selectedLocationValue: '',
 			selectedDuration: '',
 			durationType: 'hours',
 			durationValue: 0,
@@ -195,33 +294,24 @@
 			selectedAddons: [],
 			priceGroupQuantities: {},
 			selectedStartTime: null,
-			totalPrice: 0
+			totalPrice: 0,
+			showDurations: false,
+			productsLoaded: false,
+			showAvailableTimesButton: false,
+			autoFetchAddons: false,
+			isCompleted: false,
+			lastModified: new Date()
 		}
 	]);
 
-	let bookingOptionsSection = $state<HTMLElement | null>(null);
+	// Function to save current state to the booking array
+	function saveCurrentBookingState() {
+		if (isSaving) return; // Prevent recursive saves
 
-	function handleStartTimeSelect(time: SelectedStartTime) {
-		selectedStartTime = time;
-		showMultipleBookingOption = true;
-		allBookings[currentBookingIndex] = {
+		isSaving = true;
+		allBookingsState[currentBookingIndex] = {
 			selectedLocationId,
-			selectedDuration,
-			durationType,
-			durationValue,
-			selectedDate,
-			selectedProducts,
-			selectedAddons,
-			priceGroupQuantities,
-			selectedStartTime: time,
-			totalPrice: totalPrice()
-		};
-		setTimeout(() => scrollToElement(bookingOptionsSection), 100);
-	}
-
-	function addAnotherBooking() {
-		allBookings[currentBookingIndex] = {
-			selectedLocationId,
+			selectedLocationValue,
 			selectedDuration,
 			durationType,
 			durationValue,
@@ -230,11 +320,223 @@
 			selectedAddons,
 			priceGroupQuantities,
 			selectedStartTime,
-			totalPrice: totalPrice()
+			totalPrice: totalPrice(),
+			showDurations,
+			productsLoaded,
+			showAvailableTimesButton,
+			autoFetchAddons,
+			isCompleted: !!selectedStartTime,
+			lastModified: new Date(),
+			bookingNumber: allBookingsState[currentBookingIndex]?.bookingNumber
 		};
+		isSaving = false;
+	}
+
+	// Function to restore state from booking array
+	function restoreBookingState(index: number) {
+		if (index < 0 || index >= allBookingsState.length) return;
+
+		// Temporarily set initializing to prevent auto-save during restoration
+		isInitializing = true;
+
+		const booking = allBookingsState[index];
+
+		// Restore form data
+		selectedLocationId = booking.selectedLocationId;
+		selectedLocationValue = booking.selectedLocationValue;
+		selectedDuration = booking.selectedDuration;
+		durationType = booking.durationType;
+		durationValue = booking.durationValue;
+		selectedDate = booking.selectedDate;
+		selectedProducts = booking.selectedProducts;
+		selectedAddons = booking.selectedAddons;
+		priceGroupQuantities = booking.priceGroupQuantities;
+		selectedStartTime = booking.selectedStartTime;
+
+		// Restore UI state
+		showDurations = booking.showDurations;
+		productsLoaded = booking.productsLoaded;
+		showAvailableTimesButton = booking.showAvailableTimesButton;
+		autoFetchAddons = booking.autoFetchAddons || booking.isCompleted; // Auto-fetch addons for completed bookings
+
+		// Reset some UI states that should be fresh
+		showMultipleBookingOption = booking.isCompleted;
+		resetStartLocations = false;
+		isBookingLocked = booking.isCompleted;
+
+		// Re-enable auto-save after a short delay
+		setTimeout(() => {
+			isInitializing = false;
+		}, 100);
+	}
+
+	// Function to switch to a different booking
+	function switchToBooking(index: number) {
+		if (index === currentBookingIndex) return;
+
+		// Save current state first
+		saveCurrentBookingState();
+
+		// Switch to the selected booking
+		currentBookingIndex = index;
+		restoreBookingState(index);
+
+		// Update currentReservationGroupId based on whether we have completed bookings
+		const hasCompletedBookings = allBookingsState.some((b) => b.isCompleted);
+		if (!hasCompletedBookings) {
+			currentReservationGroupId = null;
+		} else if (availableStartTimesRef) {
+			// Sync with the AvailableStartTimes component
+			const groupId = availableStartTimesRef.getReservationGroupId();
+			if (groupId) {
+				currentReservationGroupId = groupId;
+			}
+		}
+
+		// Scroll to top for better UX
+		window.scrollTo({ top: 0, behavior: 'smooth' });
+	}
+
+	// Derived booking data for reservation
+	let currentBookingData = /** @readonly */ $derived(() => {
+		// For experiences without start locations, selectedLocationId can be null
+		const locationId = hasStartLocations ? selectedLocationId : 0;
+
+		if (!selectedDate || (hasStartLocations && !selectedLocationId) || !selectedDuration) {
+			return null;
+		}
+
+		const durationId = parseInt(selectedDuration);
+		if (isNaN(durationId)) {
+			console.error('Invalid duration ID:', selectedDuration);
+			return null;
+		}
+
+		const bookingData = {
+			firstName: '', // Will be filled in ContactForm
+			lastName: '',
+			email: '',
+			phone: '',
+			comment: '',
+			experienceId: parseInt(experience.id),
+			experienceType: experience.type,
+			startLocationId: locationId,
+			durationId: durationId,
+			startDate: selectedDate.toISOString().split('T')[0],
+			startTime: '', // Will be set when time is selected
+			endTime: '', // Will be set when time is selected
+			hasBookingGuarantee: true,
+			totalPrice: totalPrice(),
+			priceGroups: Object.entries(priceGroupQuantities).map(([id, quantity]) => ({
+				id: parseInt(id),
+				quantity
+			})),
+			products: selectedProducts || [],
+			addons: selectedAddons || []
+		};
+
+		return bookingData;
+	});
+
+	let bookingOptionsSection = $state<HTMLElement | null>(null);
+
+	function handleStartTimeSelect(time: SelectedStartTime) {
+		selectedStartTime = time;
+
+		// Get the current reservation group ID from the AvailableStartTimes component
+		const newReservationGroupId = availableStartTimesRef?.getReservationGroupId() || null;
+
+		// Always update to the latest reservation group ID from the component
+		if (newReservationGroupId) {
+			currentReservationGroupId = newReservationGroupId;
+		}
+
+		// Set persistent timer if this is the first completed booking or if we don't have one yet
+		const reservationExpiry = availableStartTimesRef?.getReservationExpiry();
+		if (reservationExpiry && !persistentTimerExpiry) {
+			persistentTimerExpiry = reservationExpiry;
+			console.log('🕐 Set persistent timer expiry:', persistentTimerExpiry);
+		}
+
+		// Mark this booking as completed and save the booking number
+		allBookingsState[currentBookingIndex].bookingNumber =
+			availableStartTimesRef?.getBookingNumber() || undefined;
+		allBookingsState[currentBookingIndex].isCompleted = true;
+		allBookingsState[currentBookingIndex].selectedStartTime = time;
+
+		// Save the updated state
+		saveCurrentBookingState();
+
+		// Since we have at least one completed booking, we can show options
+		showMultipleBookingOption = true;
+	}
+
+	function handleBookingReset() {
+		// Set loading state
+		isResettingBooking = true;
+
+		// Clear the selected start time when the AvailableStartTimes component resets
+		selectedStartTime = null;
+
+		// Update the current booking state to reflect the reset
+		allBookingsState[currentBookingIndex].selectedStartTime = null;
+		allBookingsState[currentBookingIndex].isCompleted = false;
+
+		// Hide the booking options since the booking is no longer completed
+		showMultipleBookingOption = false;
+
+		// Save the updated state
+		saveCurrentBookingState();
+
+		// Clear loading state after a short delay to allow UI to update
+		setTimeout(() => {
+			isResettingBooking = false;
+		}, 500);
+	}
+
+	function addAnotherBooking() {
+		// Validate that we have a reservation group ID before proceeding
+		if (!currentReservationGroupId) {
+			console.error('No currentReservationGroupId available for extending reservation!');
+			alert('Error: No reservation group found. Please try again.');
+			return;
+		}
+
+		// Save current booking state
+		saveCurrentBookingState();
+
+		// Temporarily disable auto-save during reset
+		isInitializing = true;
+
+		// Get the current reservation expiry from AvailableStartTimes to maintain timer
+		const currentExpiry = availableStartTimesRef?.getReservationExpiry();
+
+		// Add new booking to state array
+		allBookingsState.push({
+			selectedLocationId: null,
+			selectedLocationValue: '',
+			selectedDuration: '',
+			durationType: 'hours',
+			durationValue: 0,
+			selectedDate: null,
+			selectedProducts: [],
+			selectedAddons: [],
+			priceGroupQuantities: {},
+			selectedStartTime: null,
+			totalPrice: 0,
+			showDurations: false,
+			productsLoaded: false,
+			showAvailableTimesButton: false,
+			autoFetchAddons: false,
+			isCompleted: false,
+			lastModified: new Date()
+		});
+
+		// Update counters and reset UI state for new booking
 		totalBookings++;
 		currentBookingIndex++;
 		selectedLocationId = null;
+		selectedLocationValue = '';
 		selectedDuration = '';
 		durationType = 'hours';
 		durationValue = 0;
@@ -249,20 +551,16 @@
 		isBookingLocked = false;
 		showAvailableTimesButton = false;
 		showContactForm = false;
-		allBookings.push({
-			selectedLocationId: null,
-			selectedDuration: '',
-			durationType: 'hours',
-			durationValue: 0,
-			selectedDate: null,
-			selectedProducts: [],
-			selectedAddons: [],
-			priceGroupQuantities: {},
-			selectedStartTime: null,
-			totalPrice: 0
-		});
+		autoFetchAddons = false;
+
+		// DON'T reset currentReservationGroupId - we want to extend the existing reservation
+		// The timer should continue running from the AvailableStartTimes component
+
 		window.scrollTo({ top: 0, behavior: 'smooth' });
-		setTimeout(() => (resetStartLocations = false), 100);
+		setTimeout(() => {
+			resetStartLocations = false;
+			isInitializing = false; // Re-enable auto-save
+		}, 100);
 	}
 
 	function proceedToContactForm() {
@@ -273,12 +571,208 @@
 		);
 	}
 
+	function confirmRemoveBooking(index: number) {
+		const booking = allBookingsState[index];
+		if (booking.isCompleted) {
+			// Show confirmation for completed bookings
+			showRemoveConfirmation = { index, booking };
+		} else {
+			// Remove incomplete bookings immediately without confirmation
+			removeBooking(index);
+		}
+	}
+
+	async function removeBooking(indexToRemove: number) {
+		// Prevent removing the last remaining booking
+		if (allBookingsState.length <= 1) {
+			return;
+		}
+
+		// Prevent spam clicking
+		if (removingBookingIndex !== null) {
+			return;
+		}
+
+		// Close confirmation dialog
+		showRemoveConfirmation = null;
+		removingBookingIndex = indexToRemove;
+
+		try {
+			const bookingToRemove = allBookingsState[indexToRemove];
+
+			// Only clean up from database if the booking is completed (has a booking number)
+			if (bookingToRemove.isCompleted && bookingToRemove.bookingNumber) {
+				// Call cleanup API to remove from database and restore availability
+				const response = await fetch('/api/cleanup-expired', {
+					method: 'POST',
+					headers: {
+						'Content-Type': 'application/json'
+					},
+					body: JSON.stringify({
+						bookingNumber: bookingToRemove.bookingNumber
+					})
+				});
+
+				if (!response.ok) {
+					throw new Error('Failed to cleanup booking from database');
+				}
+
+				console.log('✅ Immediate cleanup successful for booking:', bookingToRemove.bookingNumber);
+			}
+
+			// Check if this is the last completed booking in the current reservation group
+			const completedBookingsInGroup = allBookingsState.filter(
+				(booking, idx) => idx !== indexToRemove && booking.isCompleted
+			);
+
+			// If no more completed bookings remain, reset the reservation group ID and timer
+			// so the next booking starts a fresh reservation group
+			if (completedBookingsInGroup.length === 0) {
+				console.log(
+					'No more completed bookings in reservation group, resetting currentReservationGroupId and timer'
+				);
+				currentReservationGroupId = null;
+				persistentTimerExpiry = null;
+				timerCountdown = null;
+				if (timerInterval) {
+					clearInterval(timerInterval);
+					timerInterval = null;
+				}
+			}
+
+			// Remove the booking from the state array
+			allBookingsState.splice(indexToRemove, 1);
+			totalBookings--;
+
+			// Adjust currentBookingIndex if necessary
+			if (indexToRemove < currentBookingIndex) {
+				// If we removed a booking before the current one, shift down
+				currentBookingIndex--;
+			} else if (indexToRemove === currentBookingIndex) {
+				// If we removed the current booking, switch to a valid one
+				if (currentBookingIndex >= allBookingsState.length) {
+					currentBookingIndex = allBookingsState.length - 1;
+				}
+				// Restore the state of the new current booking
+				restoreBookingState(currentBookingIndex);
+			}
+
+			// If no bookings are left, reset everything
+			if (allBookingsState.length === 0) {
+				window.location.href = window.location.pathname;
+			}
+		} catch (error) {
+			console.error('Failed to remove booking:', error);
+			alert('Det gick inte att ta bort bokningen. Försök igen.');
+		} finally {
+			removingBookingIndex = null;
+		}
+	}
+
 	let totalPriceForAllBookings = /** @readonly */ $derived(() =>
-		allBookings.reduce((sum, b) => sum + (b.totalPrice || 0), 0)
+		allBookingsState.reduce((sum, b) => sum + (b.totalPrice || 0), 0)
 	);
 	let displayTotalForAllBookings = /** @readonly */ $derived(() =>
 		getDisplayPrice(totalPriceForAllBookings(), experience.type)
 	);
+
+	// Manual save function that can be called at specific interaction points
+	function saveStateIfNeeded() {
+		if (
+			(selectedLocationId !== null || selectedDuration !== '' || selectedDate !== null) &&
+			!resetStartLocations &&
+			!isInitializing &&
+			!isSaving
+		) {
+			saveCurrentBookingState();
+		}
+	}
+
+	// Timer management functions
+	function calculateTimeRemaining(expiryDate: Date): { minutes: number; seconds: number } | null {
+		const now = new Date();
+		const diff = expiryDate.getTime() - now.getTime();
+
+		if (diff <= 0) {
+			return null;
+		}
+
+		const minutes = Math.floor(diff / (1000 * 60));
+		const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+
+		return { minutes, seconds };
+	}
+
+	function startPersistentTimer() {
+		if (timerInterval) {
+			clearInterval(timerInterval);
+		}
+
+		if (!persistentTimerExpiry) {
+			timerCountdown = null;
+			return;
+		}
+
+		// Update immediately
+		timerCountdown = calculateTimeRemaining(persistentTimerExpiry);
+
+		// Update every second
+		timerInterval = setInterval(() => {
+			if (!persistentTimerExpiry) {
+				timerCountdown = null;
+				return;
+			}
+
+			timerCountdown = calculateTimeRemaining(persistentTimerExpiry);
+
+			// If time expired, handle it
+			if (!timerCountdown) {
+				handleTimerExpired();
+			}
+		}, 1000);
+	}
+
+	function handleTimerExpired() {
+		console.log('⏰ Parent timer expired, cleaning up all bookings...');
+
+		// Clear timer state
+		persistentTimerExpiry = null;
+		timerCountdown = null;
+		if (timerInterval) {
+			clearInterval(timerInterval);
+			timerInterval = null;
+		}
+
+		// Show user-friendly notification
+		alert('Din reserverade tid har gått ut. Du omdirigeras till startsidan.');
+
+		// Redirect to start page
+		window.location.href = window.location.pathname;
+	}
+
+	// Effect to manage persistent timer
+	$effect(() => {
+		const hasCompletedBookings = allBookingsState.some((b) => b.isCompleted);
+
+		if (hasCompletedBookings && persistentTimerExpiry) {
+			startPersistentTimer();
+
+			// Cleanup function
+			return () => {
+				if (timerInterval) {
+					clearInterval(timerInterval);
+					timerInterval = null;
+				}
+			};
+		} else if (!hasCompletedBookings) {
+			// Clear timer if no completed bookings
+			if (timerInterval) {
+				clearInterval(timerInterval);
+				timerInterval = null;
+			}
+			timerCountdown = null;
+		}
+	});
 
 	export function getTotalPrice(): number {
 		return totalPrice();
@@ -286,15 +780,179 @@
 </script>
 
 <div class="space-y-16">
+	<!-- Persistent reservation timer -->
+	{#if persistentTimerExpiry && allBookingsState.some((b) => b.isCompleted)}
+		<div
+			class="fixed right-4 top-4 z-50 rounded-lg border border-gray-200 bg-white px-3 py-2 shadow-lg sm:px-4 sm:py-3"
+		>
+			<div class="flex items-center gap-2 sm:gap-3">
+				<div
+					class="flex h-6 w-6 items-center justify-center rounded-full bg-green-100 sm:h-8 sm:w-8"
+				>
+					<svg
+						class="h-3 w-3 text-green-600 sm:h-4 sm:w-4"
+						fill="none"
+						stroke="currentColor"
+						viewBox="0 0 24 24"
+					>
+						<path
+							stroke-linecap="round"
+							stroke-linejoin="round"
+							stroke-width="2"
+							d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+						></path>
+					</svg>
+				</div>
+				<div>
+					<p class="text-xs font-medium text-gray-600 sm:text-sm">
+						{#if allBookingsState.filter((b) => b.isCompleted).length > 1}
+							Reserverad tid ({allBookingsState.filter((b) => b.isCompleted).length} bokningar)
+						{:else}
+							Reserverad tid
+						{/if}
+					</p>
+					<p class="font-mono text-sm font-semibold text-gray-900 sm:text-base">
+						{#if timerCountdown}
+							<span class="text-green-600"
+								>{timerCountdown.minutes}:{timerCountdown.seconds.toString().padStart(2, '0')}</span
+							>
+						{:else}
+							<span class="text-green-600">Reserverad</span>
+						{/if}
+					</p>
+				</div>
+			</div>
+		</div>
+	{/if}
+
 	<header class="text-center">
 		<h1 class="text-4xl font-bold tracking-tight">{experience.name}</h1>
 	</header>
 
-	{#if totalBookings > 1}
-		<div
-			class="fixed left-4 top-4 z-10 rounded-lg bg-primary/10 px-3 py-2 text-sm font-medium text-primary shadow-sm"
-		>
-			Du har {totalBookings - 1} bokning{totalBookings - 1 === 1 ? '' : 'ar'} i din kundvagn
+	<!-- Booking Navigation UI -->
+	{#if totalBookings > 1 || allBookingsState.some((b) => b.isCompleted)}
+		<div class="mx-auto max-w-4xl">
+			<div class="rounded-lg border bg-card p-4">
+				<h2 class="mb-4 text-lg font-semibold">Dina bokningar</h2>
+				<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+					{#each allBookingsState as booking, index}
+						<div
+							class={cn(
+								'flex cursor-pointer flex-col items-start rounded-lg border p-3 text-left transition-all hover:bg-accent',
+								currentBookingIndex === index && 'border-primary bg-primary/5',
+								booking.isCompleted && 'border-green-200 bg-green-50'
+							)}
+							onclick={() => switchToBooking(index)}
+							role="button"
+							tabindex="0"
+							onkeydown={(e) => e.key === 'Enter' && switchToBooking(index)}
+						>
+							<div class="flex w-full items-center justify-between">
+								<span class="font-medium">Bokning {index + 1}</span>
+								<div class="flex items-center gap-2">
+									{#if booking.isCompleted}
+										<span
+											class="inline-flex items-center rounded-full bg-green-100 px-2 py-1 text-xs font-medium text-green-700"
+										>
+											Klar
+										</span>
+									{:else}
+										<span
+											class="inline-flex items-center rounded-full bg-yellow-100 px-2 py-1 text-xs font-medium text-yellow-700"
+										>
+											Pågår
+										</span>
+									{/if}
+									{#if currentBookingIndex === index}
+										<span
+											class="inline-flex items-center rounded-full bg-primary px-2 py-1 text-xs font-medium text-primary-foreground"
+										>
+											Aktuell
+										</span>
+									{/if}
+									{#if allBookingsState.length > 1}
+										<button
+											class="ml-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-xs text-white hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-50"
+											onclick={(e) => {
+												e.stopPropagation();
+												confirmRemoveBooking(index);
+											}}
+											disabled={removingBookingIndex === index}
+											title="Ta bort denna bokning"
+										>
+											{#if removingBookingIndex === index}
+												<svg class="h-3 w-3 animate-spin" viewBox="0 0 24 24">
+													<circle
+														class="opacity-25"
+														cx="12"
+														cy="12"
+														r="10"
+														stroke="currentColor"
+														stroke-width="4"
+														fill="none"
+													></circle>
+													<path
+														class="opacity-75"
+														fill="currentColor"
+														d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+													></path>
+												</svg>
+											{:else}
+												×
+											{/if}
+										</button>
+									{/if}
+								</div>
+							</div>
+							<div class="mt-2 space-y-1 text-sm text-muted-foreground">
+								{#if booking.selectedDate && booking.selectedStartTime}
+									<p>
+										{booking.selectedDate.toLocaleDateString('sv-SE')} kl. {booking
+											.selectedStartTime.startTime}
+									</p>
+								{:else if booking.selectedDate}
+									<p>{booking.selectedDate.toLocaleDateString('sv-SE')}</p>
+								{:else}
+									<p>Datum ej valt</p>
+								{/if}
+								{#if booking.selectedProducts.length > 0}
+									{@const totalProductQuantity = booking.selectedProducts.reduce(
+										(sum, p) => sum + p.quantity,
+										0
+									)}
+									<p>
+										{totalProductQuantity} produkt{totalProductQuantity === 1 ? '' : 'er'}
+									</p>
+								{/if}
+								{#if booking.totalPrice > 0}
+									<p class="font-medium text-foreground">
+										{formatPrice(getDisplayPrice(booking.totalPrice, experience.type))}
+									</p>
+								{/if}
+							</div>
+						</div>
+					{/each}
+				</div>
+				{#if !showContactForm}
+					<div class="mt-4 flex justify-center gap-4">
+						<button
+							class="rounded-lg border-2 border-primary px-4 py-2 text-primary transition-colors hover:bg-primary/10"
+							onclick={addAnotherBooking}
+							disabled={!allBookingsState[currentBookingIndex].isCompleted}
+						>
+							Lägg till en bokning till
+						</button>
+						{#if allBookingsState.some((b) => b.isCompleted)}
+							<button
+								class="rounded-lg bg-primary px-6 py-3 text-white shadow-md transition-colors hover:bg-primary/90"
+								onclick={proceedToContactForm}
+							>
+								Fortsätt till kontaktuppgifter
+							</button>
+						{/if}
+					</div>
+				{/if}
+			</div>
 		</div>
 	{/if}
 
@@ -308,6 +966,7 @@
 				onSelect={handleLocationSelect}
 				isLocked={isBookingLocked}
 				reset={resetStartLocations}
+				bind:selectedValue={selectedLocationValue}
 			/>
 		</section>
 	{/if}
@@ -325,6 +984,7 @@
 				includeVat={experience.type === 'private'}
 				{extraPrice}
 				experienceType={experience.type}
+				initialQuantities={priceGroupQuantities}
 			/>
 		</section>
 	{/if}
@@ -344,6 +1004,7 @@
 					onDurationSelect={handleDurationSelect}
 					isLocked={isBookingLocked}
 					experienceType={experience.type}
+					initialSelectedDuration={selectedDuration}
 				/>
 			</div>
 		</section>
@@ -360,6 +1021,7 @@
 						onDateSelect={handleDateSelect}
 						isLocked={isBookingLocked}
 						bookingForesightHours={experience.booking_foresight_hours}
+						bind:selectedDate
 					/>
 				</div>
 			</section>
@@ -376,6 +1038,7 @@
 						{pricingType}
 						experienceType={experience.type}
 						includeVat={experience.type === 'private'}
+						initialSelectedProducts={selectedProducts}
 					/>
 				</section>
 
@@ -393,6 +1056,8 @@
 						onAddonsFetched={() => (showAvailableTimesButton = true)}
 						includeVat={experience.type === 'private'}
 						experienceType={experience.type}
+						initialSelectedAddons={selectedAddons}
+						autoFetch={autoFetchAddons}
 					/>
 
 					{#if pricingType !== 'per_person' && totalPrice() > 0}
@@ -405,47 +1070,238 @@
 					{/if}
 
 					<div class="mx-auto mt-4 max-w-2xl">
-						<AvailableStartTimes
-							{...{
-								experienceId: parseInt(experience.id),
-								selectedDate,
-								durationType,
-								durationValue,
-								selectedProducts,
-								selectedAddons,
-								onLockStateChange: handleLockStateChange,
-								onStartTimeSelect: handleStartTimeSelect
-							}}
-							showButton={showMultipleBookingOption || showAvailableTimesButton}
-						/>
+						{#if currentBookingData}
+							<AvailableStartTimes
+								bind:this={availableStartTimesRef}
+								{...{
+									experienceId: parseInt(experience.id),
+									selectedDate,
+									durationType,
+									durationValue,
+									selectedProducts,
+									selectedAddons,
+									onLockStateChange: handleLockStateChange,
+									onStartTimeSelect: handleStartTimeSelect,
+									onBookingReset: handleBookingReset
+								}}
+								showButton={showMultipleBookingOption || showAvailableTimesButton}
+								initialSelectedStartTime={selectedStartTime}
+								isLocked={isBookingLocked}
+								bookingData={currentBookingData}
+								existingReservationGroupId={currentReservationGroupId}
+								{totalBookings}
+							/>
+						{:else}
+							<div class="text-center text-sm text-muted-foreground">
+								Fyll i alla obligatoriska fält för att se tillgängliga tider
+							</div>
+						{/if}
 					</div>
+
+					<!-- Booking Options Section (shown when booking is completed but navigation UI isn't showing) -->
+					{#if showMultipleBookingOption && totalBookings === 1 && !showContactForm && selectedStartTime}
+						<div class="mx-auto mt-8 max-w-2xl" bind:this={bookingOptionsSection}>
+							<div class="relative rounded-lg border bg-card p-6">
+								{#if isResettingBooking}
+									<!-- Loading overlay -->
+									<div
+										class="absolute inset-0 z-10 flex items-center justify-center rounded-lg bg-white/80 backdrop-blur-sm"
+									>
+										<div class="flex items-center gap-3">
+											<svg class="h-6 w-6 animate-spin text-primary" viewBox="0 0 24 24">
+												<circle
+													class="opacity-25"
+													cx="12"
+													cy="12"
+													r="10"
+													stroke="currentColor"
+													stroke-width="4"
+													fill="none"
+												></circle>
+												<path
+													class="opacity-75"
+													fill="currentColor"
+													d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+												></path>
+											</svg>
+											<span class="text-sm font-medium text-gray-700">Återställer bokning...</span>
+										</div>
+									</div>
+								{/if}
+								<div class="space-y-4 text-center">
+									<h3 class="text-lg font-semibold text-green-700">Bokning slutförd!</h3>
+									<p class="text-muted-foreground">
+										Din tid är nu reserverad. Vad vill du göra härnäst?
+									</p>
+									<div class="flex flex-col justify-center gap-4 sm:flex-row">
+										<button
+											class="rounded-lg border-2 border-primary px-6 py-3 text-primary transition-colors hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-50"
+											onclick={addAnotherBooking}
+											disabled={isResettingBooking}
+										>
+											Lägg till en bokning till
+										</button>
+										<button
+											class="rounded-lg bg-primary px-6 py-3 text-white shadow-md transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+											onclick={proceedToContactForm}
+											disabled={isResettingBooking}
+										>
+											Fortsätt till kontaktuppgifter
+										</button>
+									</div>
+								</div>
+							</div>
+						</div>
+					{/if}
+
+					<!-- Booking Options Section for Multiple Bookings (shown at bottom for clean flow) -->
+					{#if showMultipleBookingOption && totalBookings > 1 && allBookingsState[currentBookingIndex].isCompleted && allBookingsState[currentBookingIndex].selectedStartTime && !showContactForm}
+						<div class="mx-auto mt-8 max-w-2xl">
+							<div class="relative rounded-lg border bg-card p-6">
+								{#if isResettingBooking}
+									<!-- Loading overlay -->
+									<div
+										class="absolute inset-0 z-10 flex items-center justify-center rounded-lg bg-white/80 backdrop-blur-sm"
+									>
+										<div class="flex items-center gap-3">
+											<svg class="h-6 w-6 animate-spin text-primary" viewBox="0 0 24 24">
+												<circle
+													class="opacity-25"
+													cx="12"
+													cy="12"
+													r="10"
+													stroke="currentColor"
+													stroke-width="4"
+													fill="none"
+												></circle>
+												<path
+													class="opacity-75"
+													fill="currentColor"
+													d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+												></path>
+											</svg>
+											<span class="text-sm font-medium text-gray-700">Återställer bokning...</span>
+										</div>
+									</div>
+								{/if}
+								<div class="space-y-4 text-center">
+									<h3 class="text-lg font-semibold text-green-700">Bokning slutförd!</h3>
+									<p class="text-muted-foreground">
+										Du har nu {allBookingsState.filter((b) => b.isCompleted).length} slutförda bokning{allBookingsState.filter(
+											(b) => b.isCompleted
+										).length === 1
+											? ''
+											: 'ar'}. Vill du lägga till fler eller fortsätta?
+									</p>
+									<div class="flex flex-col justify-center gap-4 sm:flex-row">
+										<button
+											class="rounded-lg border-2 border-primary px-6 py-3 text-primary transition-colors hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-50"
+											onclick={addAnotherBooking}
+											disabled={isResettingBooking}
+										>
+											Lägg till en bokning till
+										</button>
+										<button
+											class="rounded-lg bg-primary px-6 py-3 text-white shadow-md transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+											onclick={proceedToContactForm}
+											disabled={isResettingBooking}
+										>
+											Fortsätt till kontaktuppgifter
+										</button>
+									</div>
+								</div>
+							</div>
+						</div>
+					{/if}
 				</section>
 			{/if}
 		{/if}
 	{/if}
 
-	{#if showMultipleBookingOption}
-		<div class="mt-8 flex flex-col items-center gap-4" bind:this={bookingOptionsSection}>
-			<button
-				class="rounded-lg bg-primary px-6 py-3 text-lg font-semibold text-white shadow-md transition-colors hover:bg-primary/90"
-				onclick={proceedToContactForm}>Fortsätt till kontaktuppgifter</button
-			>
-			<button
-				class="rounded-lg border-2 border-primary px-4 py-2 text-primary transition-colors hover:bg-primary/10"
-				onclick={addAnotherBooking}>Gör en bokning till</button
-			>
-		</div>
-	{/if}
-
-	{#if showContactForm && allBookings.some((b) => b.selectedStartTime)}
+	{#if showContactForm && allBookingsState.some((b) => b.selectedStartTime)}
 		<section class="space-y-4">
+			<div class="text-center">
+				<h2 class="text-2xl font-semibold">Sammanfattning</h2>
+				<p class="text-muted-foreground">
+					Du har {allBookingsState.filter((b) => b.isCompleted).length} klar{allBookingsState.filter(
+						(b) => b.isCompleted
+					).length === 1
+						? ''
+						: 'a'} bokning{allBookingsState.filter((b) => b.isCompleted).length === 1 ? '' : 'ar'}
+				</p>
+				<p class="mt-2 text-xl font-semibold">
+					Totalt: {formatPrice(displayTotalForAllBookings())}
+					<span class="text-sm text-muted-foreground">
+						({experience.type === 'private' ? 'inkl. moms' : 'exkl. moms'})
+					</span>
+				</p>
+			</div>
 			<ContactForm
-				bookings={allBookings}
+				bookings={allBookingsState.filter((b) => b.isCompleted)}
 				experienceId={parseInt(experience.id)}
 				experienceType={experience.type}
 				products={selectedProducts}
 				addons={selectedAddons}
+				reservationGroupId={currentReservationGroupId}
 			/>
 		</section>
 	{/if}
 </div>
+
+<!-- Remove Booking Confirmation Dialog -->
+{#if showRemoveConfirmation}
+	<div class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+		<div class="mx-4 max-w-md rounded-lg bg-white p-6 shadow-xl">
+			<h3 class="mb-4 text-lg font-semibold text-gray-900">Ta bort bokning?</h3>
+			<p class="mb-6 text-gray-600">
+				Är du säker på att du vill ta bort denna bokning?
+				{#if showRemoveConfirmation.booking.selectedDate && showRemoveConfirmation.booking.selectedStartTime}
+					<br /><strong
+						>{showRemoveConfirmation.booking.selectedDate.toLocaleDateString('sv-SE')} kl. {showRemoveConfirmation
+							.booking.selectedStartTime.startTime}</strong
+					>
+				{/if}
+				<br /><br />
+				Denna åtgärd kan inte ångras och tiden kommer att bli tillgänglig för andra att boka.
+			</p>
+			<div class="flex gap-3">
+				<button
+					class="flex-1 rounded-lg bg-red-500 px-4 py-2 text-white transition-colors hover:bg-red-600 disabled:opacity-50"
+					onclick={() => removeBooking(showRemoveConfirmation!.index)}
+					disabled={removingBookingIndex !== null}
+				>
+					{#if removingBookingIndex === showRemoveConfirmation.index}
+						<div class="flex items-center justify-center gap-2">
+							<svg class="h-4 w-4 animate-spin" viewBox="0 0 24 24">
+								<circle
+									class="opacity-25"
+									cx="12"
+									cy="12"
+									r="10"
+									stroke="currentColor"
+									stroke-width="4"
+									fill="none"
+								></circle>
+								<path
+									class="opacity-75"
+									fill="currentColor"
+									d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+								></path>
+							</svg>
+							Tar bort...
+						</div>
+					{:else}
+						Ja, ta bort
+					{/if}
+				</button>
+				<button
+					class="flex-1 rounded-lg border border-gray-300 px-4 py-2 text-gray-700 transition-colors hover:bg-gray-50 disabled:opacity-50"
+					onclick={() => (showRemoveConfirmation = null)}
+					disabled={removingBookingIndex !== null}
+				>
+					Avbryt
+				</button>
+			</div>
+		</div>
+	</div>
+{/if}

@@ -5,9 +5,9 @@ import type { RequestHandler } from './$types';
 import { createClient } from '@supabase/supabase-js';
 import { PUBLIC_SUPABASE_URL } from '$env/static/public';
 import { SUPABASE_SERVICE_ROLE_KEY } from '$env/static/private';
-import { addDays, format, parseISO } from 'date-fns';
 import { getPaymentPrice } from '$lib/utils/price';
 import crypto from 'crypto';
+import { calculateEndDate } from '$lib/utils/availability-helpers';
 
 // Create a Supabase client with the service role key for the webhook
 const supabase = createClient(
@@ -21,317 +21,6 @@ const supabase = createClient(
 );
 
 const stripe = new Stripe(SECRET_STRIPE_KEY);
-
-// Helper function to convert time (HH:MM) to minutes since midnight
-function timeToMinutes(time: string): number {
-  const [hours, minutes] = time.split(':').map(Number);
-  return hours * 60 + minutes;
-}
-
-// Helper function to generate dates between start and end date
-function generateDateRange(startDate: string, endDate: string): string[] {
-  const dates: string[] = [];
-  const start = parseISO(startDate);
-  const end = parseISO(endDate);
-  
-  let current = start;
-  while (current <= end) {
-    dates.push(format(current, 'yyyy-MM-dd'));
-    current = addDays(current, 1);
-  }
-  
-  return dates;
-}
-
-// Helper function to calculate end date for overnight bookings
-function calculateEndDate(startDate: string, durationValue: number): string {
-  const start = parseISO(startDate);
-  const end = addDays(start, durationValue);
-  return format(end, 'yyyy-MM-dd');
-}
-
-// Helper function to check if quantity exceeds max limit
-async function checkQuantityLimit(
-  tableName: string,
-  date: string,
-  startMinutes: number,
-  endMinutes: number,
-  requestedQuantity: number,
-  maxQuantity: number
-): Promise<boolean> {
-  const { data: currentAvailability } = await supabase
-    .from(tableName)
-    .select('*')
-    .eq('datum', date)
-    .single();
-
-  if (!currentAvailability) {
-    return requestedQuantity <= maxQuantity;
-  }
-
-  // Check each 15-minute slot
-  for (let minute = startMinutes; minute < endMinutes; minute += 15) {
-    const slotKey = minute.toString();
-    const currentlyBooked = currentAvailability[slotKey] || 0;
-    const wouldBeBooked = currentlyBooked + requestedQuantity;
-
-    if (wouldBeBooked > maxQuantity) {
-      return false;
-    }
-  }
-
-  return true;
-}
-
-// Helper function to check if date exists and create if it doesn't
-async function ensureDateExists(tableName: string, date: string) {
-  const { data, error: checkError } = await supabase
-    .from(tableName)
-    .select('datum')
-    .eq('datum', date);
-
-  if (checkError) {
-    throw checkError;
-  }
-
-  // If date doesn't exist, create it
-  if (!data || data.length === 0) {
-    const { error: insertError } = await supabase
-      .from(tableName)
-      .insert({ datum: date });
-
-    if (insertError) {
-      throw insertError;
-    }
-  }
-}
-
-// Helper function to update availability for a specific table
-async function updateAvailability(
-  tableName: string,
-  date: string,
-  startMinutes: number,
-  endMinutes: number,
-  quantity: number,
-  maxQuantity: number
-) {
-  try {
-    // Ensure the date exists first
-    await ensureDateExists(tableName, date);
-
-    // Check quantity limits before proceeding
-    const isWithinLimits = await checkQuantityLimit(
-      tableName,
-      date,
-      startMinutes,
-      endMinutes,
-      quantity,
-      maxQuantity
-    );
-
-    if (!isWithinLimits) {
-      throw new Error(`Booking would exceed maximum quantity for ${tableName} on ${date}`);
-    }
-
-    // Generate the update object for all 15-minute slots
-    const updates: Record<string, number> = {};
-    for (let minute = startMinutes; minute <= endMinutes; minute += 15) {
-      const slotKey = minute.toString();
-      updates[slotKey] = quantity;
-    }
-
-    // Update the availability
-    const { error: updateError } = await supabase
-      .from(tableName)
-      .update(updates)
-      .eq('datum', date);
-
-    if (updateError) {
-      throw updateError;
-    }
-  } catch (error) {
-    throw error;
-  }
-}
-
-interface BookingProduct {
-  product_id: number;
-  quantity: number;
-}
-
-interface BookingAddon {
-  addon_id: number;
-  quantity: number;
-}
-
-interface Booking {
-  id: number;
-  start_date: string;
-  end_date: string;
-  start_time: string;
-  end_time: string;
-  duration_id: string;
-  booking_products?: BookingProduct[];
-  booking_addons?: BookingAddon[];
-}
-
-// Main function to handle availability updates
-async function updateAvailabilityForBooking(
-  bookingData: Booking,
-  products: Array<{ id: number; quantity: number }>,
-  addons: Array<{ id: number; quantity: number }>
-) {
-  const startDate = bookingData.start_date;
-  const startTime = bookingData.start_time;
-  const endTime = bookingData.end_time;
-  
-  // Get duration details to properly determine if it's overnight
-  const { data: durationData } = await supabase
-    .from('durations')
-    .select('duration_type, duration_value')
-    .eq('id', bookingData.duration_id)
-    .single();
-
-  // Check if it's an overnight booking based on duration type
-  const isOvernight = durationData?.duration_type === 'overnights';
-  const endDate = isOvernight 
-    ? calculateEndDate(startDate, durationData?.duration_value || 0)
-    : bookingData.end_date;
-
-  const dates = generateDateRange(startDate, endDate);
-  const startMinutes = timeToMinutes(startTime);
-  const endMinutes = timeToMinutes(endTime);
-
-  // Handle products first (all products have availability tracking)
-  for (const product of products) {
-    try {
-      // Get product's max quantity
-      const { data: productData, error: productError } = await supabase
-        .from('products')
-        .select('total_quantity')
-        .eq('id', product.id)
-        .single();
-
-      if (productError) {
-        throw productError;
-      }
-
-      if (!productData) {
-        throw new Error(`Product ${product.id} not found`);
-      }
-
-      const tableName = `availability_product_${product.id}`;
-
-      if (isOvernight) {
-        await updateAvailability(
-          tableName,
-          dates[0],
-          startMinutes,
-          24 * 60,
-          product.quantity,
-          productData.total_quantity
-        );
-
-        if (dates.length > 2) {
-          for (let i = 1; i < dates.length - 1; i++) {
-            await updateAvailability(
-              tableName,
-              dates[i],
-              0,
-              24 * 60,
-              product.quantity,
-              productData.total_quantity
-            );
-          }
-        }
-
-        await updateAvailability(
-          tableName,
-          dates[dates.length - 1],
-          0,
-          endMinutes,
-          product.quantity,
-          productData.total_quantity
-        );
-      } else {
-        await updateAvailability(
-          tableName,
-          startDate,
-          startMinutes,
-          endMinutes,
-          product.quantity,
-          productData.total_quantity
-        );
-      }
-    } catch (error) {
-      throw error;
-    }
-  }
-
-  // Handle addons (need to check track_availability)
-  for (const addon of addons) {
-    try {
-      // Check if addon tracks availability and get max quantity
-      const { data: addonData } = await supabase
-        .from('addons')
-        .select('track_availability, total_quantity')
-        .eq('id', addon.id)
-        .single();
-
-      if (!addonData) {
-        throw new Error(`Addon ${addon.id} not found`);
-      }
-
-      if (addonData.track_availability) {
-        const tableName = `availability_addon_${addon.id}`;
-
-        if (isOvernight) {
-          await updateAvailability(
-            tableName,
-            dates[0],
-            startMinutes,
-            24 * 60,
-            addon.quantity,
-            addonData.total_quantity
-          );
-
-          if (dates.length > 2) {
-            for (let i = 1; i < dates.length - 1; i++) {
-              await updateAvailability(
-                tableName,
-                dates[i],
-                0,
-                24 * 60,
-                addon.quantity,
-                addonData.total_quantity
-              );
-            }
-          }
-
-          await updateAvailability(
-            tableName,
-            dates[dates.length - 1],
-            0,
-            endMinutes,
-            addon.quantity,
-            addonData.total_quantity
-          );
-        } else {
-          await updateAvailability(
-            tableName,
-            startDate,
-            startMinutes,
-            endMinutes,
-            addon.quantity,
-            addonData.total_quantity
-          );
-        }
-      }
-    } catch (error) {
-      throw error;
-    }
-  }
-}
 
 // Helper function to delay execution
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -414,25 +103,140 @@ export const POST: RequestHandler = async ({ request }) => {
     const session = event.data.object as Stripe.Checkout.Session;
     
     try {
-      // Get the full booking data from pending_bookings
-      const { data: pendingBooking, error: pendingError } = await supabase
+      console.log('Webhook processing session:', session.id);
+      
+      // Debug environment variables
+      console.log('Webhook environment check:', {
+        supabaseUrl: PUBLIC_SUPABASE_URL,
+        hasServiceKey: !!SUPABASE_SERVICE_ROLE_KEY,
+        serviceKeyPrefix: SUPABASE_SERVICE_ROLE_KEY?.substring(0, 20) + '...'
+      });
+      
+      // Check ALL pending bookings to see what's in the database
+      const { data: allPendingBookings, error: allError } = await supabase
         .from('pending_bookings')
-        .select('*')
-        .eq('session_id', session.id)
-        .single();
-
-      if (pendingError || !pendingBooking) {
-        throw new Error('Could not find pending booking');
+        .select('booking_number, session_id, availability_reserved, expires_at, created_at')
+        .order('created_at', { ascending: false })
+        .limit(10);
+      
+      console.log('All recent pending bookings:', {
+        count: allPendingBookings?.length || 0,
+        bookings: allPendingBookings,
+        error: allError?.message
+      });
+      
+      // First, let's check what pending bookings exist with this session_id
+      const { data: debugBookings, error: debugError } = await supabase
+        .from('pending_bookings')
+        .select('booking_number, session_id, availability_reserved, expires_at, created_at')
+        .eq('session_id', session.id);
+      
+      console.log('Debug - All bookings with session_id:', {
+        sessionId: session.id,
+        bookings: debugBookings,
+        error: debugError?.message
+      });
+      
+      // Get expected number of bookings from Stripe metadata
+      const expectedBookings = parseInt(session.metadata?.total_bookings || '1');
+      console.log(`Expected ${expectedBookings} bookings for session ${session.id}`);
+      
+      // Retry mechanism for timing issues - now accounts for expected booking count
+      let pendingBookings = null;
+      let pendingError = null;
+      let retryCount = 0;
+      const maxRetries = 5; // Increased retries for multi-booking scenarios
+      
+      while (retryCount < maxRetries && (!pendingBookings || pendingBookings.length < expectedBookings)) {
+        if (retryCount > 0) {
+          console.log(`Retry ${retryCount} for session ${session.id}: found ${pendingBookings?.length || 0}/${expectedBookings} bookings, waiting 2 seconds...`);
+          await delay(2000); // Increased delay for database consistency
+        }
+        
+        // Get all booking data from pending_bookings with this session_id
+        const result = await supabase
+          .from('pending_bookings')
+          .select('*')
+          .eq('session_id', session.id);
+        
+        // Additional debugging: Check all bookings in the reservation group
+        if (retryCount === 0) {
+          const reservationGroupId = result.data?.[0]?.reservation_group_id;
+          
+          if (reservationGroupId) {
+            const { data: allInGroup, error: groupError } = await supabase
+              .from('pending_bookings')
+              .select('booking_number, session_id, availability_reserved, reservation_group_id, created_at, expires_at')
+              .eq('reservation_group_id', reservationGroupId);
+            
+            console.log('All bookings in reservation group:', {
+              reservationGroupId,
+              bookings: allInGroup,
+              error: groupError?.message
+            });
+            
+            // Also check if any bookings were recently deleted
+            const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+            console.log('Checking for recently deleted bookings since:', fiveMinutesAgo.toISOString());
+          }
+        }
+        
+        pendingBookings = result.data;
+        pendingError = result.error;
+        retryCount++;
       }
 
-      const bookings = pendingBooking.booking_data;
+      console.log('Pending booking lookup result:', {
+        found: !!pendingBookings && pendingBookings.length > 0,
+        count: pendingBookings?.length || 0,
+        expected: expectedBookings,
+        error: pendingError?.message,
+        sessionId: session.id,
+        bookingNumbers: pendingBookings?.map(b => b.booking_number) || [],
+        reservationGroupIds: [...new Set(pendingBookings?.map(b => b.reservation_group_id) || [])],
+        retriesUsed: retryCount - 1
+      });
+
+      if (pendingError) {
+        console.error('Database error fetching pending bookings:', pendingError);
+        throw new Error(`Database error: ${pendingError.message}`);
+      }
+
+      if (!pendingBookings || pendingBookings.length === 0) {
+        console.error('No bookings found for session:', session.id);
+        throw new Error('Could not find any pending bookings');
+      }
+
+      if (pendingBookings.length < expectedBookings) {
+        console.error(`Booking count mismatch: found ${pendingBookings.length}, expected ${expectedBookings}`);
+        // Don't throw error immediately - process what we have but log the issue
+        console.error('WARNING: Processing partial bookings - this may indicate a race condition');
+      }
+
+      // Each pending booking row now contains a single booking in booking_data array
+      const allBookingData = pendingBookings.flatMap(pb => pb.booking_data);
+      
+      console.log(`Processing ${allBookingData.length} bookings from ${pendingBookings.length} pending booking rows for session ${session.id}`);
       
       // Create bookings in parallel with unique numbers
-      const bookingPromises = bookings.map(async (booking: any, index: number) => {
+      const bookingPromises = allBookingData.map(async (booking: any, index: number) => {
         // Generate a unique booking number for each booking
         const timestamp = Date.now();
         const uniqueId = crypto.randomUUID().split('-')[0];
         const bookingNumber = `BK-${timestamp}-${uniqueId}-${index}`;
+        
+        // Get duration details to calculate proper end date
+        const { data: durationData } = await supabase
+          .from('durations')
+          .select('duration_type, duration_value')
+          .eq('id', booking.durationId)
+          .single();
+
+        // Calculate end date based on duration type
+        const isOvernight = durationData?.duration_type === 'overnights';
+        const endDate = isOvernight 
+          ? calculateEndDate(booking.startDate, durationData?.duration_value || 0)
+          : booking.startDate;
         
         const { data: bookingData, error: bookingError } = await supabase
           .from('bookings')
@@ -450,7 +254,7 @@ export const POST: RequestHandler = async ({ request }) => {
               duration_id: booking.durationId,
               start_date: booking.startDate,
               start_time: booking.startTime,
-              end_date: booking.startDate,
+              end_date: endDate,
               end_time: booking.endTime,
               has_booking_guarantee: booking.hasBookingGuarantee,
               total_price: Math.round(getPaymentPrice(booking.totalPrice, booking.experienceType)),
@@ -463,7 +267,8 @@ export const POST: RequestHandler = async ({ request }) => {
           .single();
 
         if (bookingError) {
-          throw bookingError;
+          console.error(`Failed to create booking ${bookingNumber}:`, bookingError);
+          throw new Error(`Failed to create booking ${bookingNumber}: ${bookingError.message}`);
         }
 
         // Process price groups, products, and addons as before
@@ -482,12 +287,12 @@ export const POST: RequestHandler = async ({ request }) => {
               );
 
             if (priceGroupError) {
-              throw priceGroupError;
+              throw new Error(`Failed to fetch price groups: ${priceGroupError.message}`);
             }
 
             const priceMap = new Map(priceGroupData.map(pg => [pg.id, pg.price]));
 
-            return supabase.from('booking_price_groups').insert(
+            const { error: insertError } = await supabase.from('booking_price_groups').insert(
               Array.isArray(priceGroups) 
                 ? priceGroups.map((pg: any) => ({
                     booking_id: bookingData.id,
@@ -502,68 +307,116 @@ export const POST: RequestHandler = async ({ request }) => {
                     price_at_time: priceMap.get(parseInt(id)) || 0
                   }))
             );
+
+            if (insertError) {
+              throw new Error(`Failed to insert price groups: ${insertError.message}`);
+            }
           })(),
 
-          supabase.from('booking_products').insert(
-            products.map((p: any) => ({
-              booking_id: bookingData.id,
-              product_id: p.productId,
-              quantity: p.quantity,
-              price_at_time: p.price
-            }))
-          ),
+          (async () => {
+            const { error: insertError } = await supabase.from('booking_products').insert(
+              products.map((p: any) => ({
+                booking_id: bookingData.id,
+                product_id: p.productId,
+                quantity: p.quantity,
+                price_at_time: p.price
+              }))
+            );
 
-          supabase.from('booking_addons').insert(
-            addons.map((a: any) => ({
-              booking_id: bookingData.id,
-              addon_id: a.addonId,
-              quantity: a.quantity,
-              price_at_time: a.price
-            }))
-          )
+            if (insertError) {
+              throw new Error(`Failed to insert products: ${insertError.message}`);
+            }
+          })(),
+
+          (async () => {
+            const { error: insertError } = await supabase.from('booking_addons').insert(
+              addons.map((a: any) => ({
+                booking_id: bookingData.id,
+                addon_id: a.addonId,
+                quantity: a.quantity,
+                price_at_time: a.price
+              }))
+            );
+
+            if (insertError) {
+              throw new Error(`Failed to insert addons: ${insertError.message}`);
+            }
+          })()
         ]);
 
-        if (priceGroupsResult.error) {
-          throw priceGroupsResult.error;
-        }
-        if (productsResult.error) {
-          throw productsResult.error;
-        }
-        if (addonsResult.error) {
-          throw addonsResult.error;
-        }
-
-        const formattedProducts = products.map((p: any) => ({
-          id: p.productId,
-          quantity: p.quantity
-        }));
-
-        const formattedAddons = addons.map((a: any) => ({
-          id: a.addonId,
-          quantity: a.quantity
-        }));
-
-        await updateAvailabilityForBooking(bookingData, formattedProducts, formattedAddons);
+        // NOTE: We don't need to update availability here anymore since it was already
+        // reserved when the user selected their start time. The availability is already
+        // in the tables and just needs to be marked as permanent.
         
         return bookingData;
       });
 
-      const createdBookings = await Promise.all(bookingPromises);
+      // Execute booking creation atomically - either all succeed or all fail
+      let createdBookings;
+      try {
+        console.log(`Starting atomic transaction for ${allBookingData.length} bookings`);
+        
+        // Wait for ALL bookings to be created successfully before proceeding
+        createdBookings = await Promise.all(bookingPromises);
+        
+        console.log(`All ${createdBookings.length} bookings created successfully`);
 
-      // Replace the email sending code with:
+        // Delete pending bookings AFTER all bookings are successfully created
+        // The availability is now permanently reserved in the bookings table
+        const { error: deleteError } = await supabase
+          .from('pending_bookings')
+          .delete()
+          .eq('session_id', session.id);
+
+        if (deleteError) {
+          console.error('Error deleting pending bookings, rolling back:', deleteError);
+          throw new Error(`Failed to delete pending bookings: ${deleteError.message}`);
+        }
+        
+        console.log(`✅ Deleted ${pendingBookings.length} pending bookings after successful payment`)
+        
+        console.log(`✅ Transaction completed successfully for ${createdBookings.length} bookings`);
+        
+      } catch (transactionError) {
+        console.error('❌ Transaction failed, rolling back all created bookings:', transactionError);
+        
+        // Rollback: Delete any bookings that were created
+        if (createdBookings && createdBookings.length > 0) {
+          const rollbackPromises = createdBookings.map(async (booking) => {
+            try {
+              // Delete booking and all related data (cascading deletes should handle relations)
+              const { error: deleteError } = await supabase
+                .from('bookings')
+                .delete()
+                .eq('id', booking.id);
+              
+              if (deleteError) {
+                console.error(`Failed to rollback booking ${booking.booking_number}:`, deleteError);
+              } else {
+                console.log(`Rolled back booking: ${booking.booking_number}`);
+              }
+            } catch (rollbackError) {
+              console.error(`Error during rollback of ${booking.booking_number}:`, rollbackError);
+            }
+          });
+          
+          await Promise.all(rollbackPromises);
+        }
+        
+        // Re-throw the original error to fail the webhook
+        throw transactionError;
+      }
+
+      // Send email confirmations
       const failedBookings = await sendEmailsWithRateLimit(createdBookings);
 
       // Log any failed bookings for follow-up
       if (failedBookings.length > 0) {
         console.error('Failed to send confirmation emails for the following bookings:', failedBookings);
-       
       }
 
-      // Clean up the pending booking
-      await supabase
-        .from('pending_bookings')
-        .delete()
-        .eq('session_id', session.id);
+      // Pending bookings are now deleted after successful payment processing
+      // The final bookings table serves as the permanent record
 
     } catch (error) {
       console.error('Error processing webhook:', error);

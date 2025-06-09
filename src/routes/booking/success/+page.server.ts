@@ -16,15 +16,17 @@ export const load: PageServerLoad = async ({ url }) => {
   }
 
   try {
-    // Fetch the Stripe session to get the booking_number
+    // Fetch the Stripe session to get the reservation_group_id or booking_number
     const session = await stripe.checkout.sessions.retrieve(sessionId);
 
-    if (!session || !session.metadata?.booking_number) {
+    // For multiple bookings, check for reservation_group_id
+    // For single bookings, check for booking_number (backward compatibility)
+    if (!session || (!session.metadata?.reservation_group_id && !session.metadata?.booking_number)) {
       console.error('Invalid or incomplete Stripe session:', session?.id);
       throw error(400, 'Ogiltig bokningssession.');
     }
 
-    // Fetch all bookings associated with this session
+    // Fetch all bookings associated with this session using stripe_payment_id
     const { data: bookings, error: bookingError } = await supabase
       .from('bookings')
       .select(`

@@ -1,26 +1,39 @@
 <script lang="ts">
 	import * as Card from '$lib/components/ui/card';
 	import { cn } from '$lib/utils';
-	import type { StartLocation } from '$lib/types/booking';
+	import type { StartLocation } from '$lib/types/experience';
 
 	let {
 		startLocations,
 		onSelect,
 		isLocked = $bindable(false),
-		reset = $bindable(false)
+		reset = $bindable(false),
+		selectedValue = $bindable('')
 	} = $props<{
 		startLocations: StartLocation[];
 		onSelect: (locationId: string) => void;
 		isLocked?: boolean;
 		reset?: boolean;
+		selectedValue?: string;
 	}>();
 	let value = $state('');
 	let isSingleLocation = $derived(startLocations.length === 1);
+
+	// Sync internal value with selectedValue prop when provided
+	$effect(() => {
+		if (selectedValue !== undefined && selectedValue !== value && selectedValue !== '') {
+			value = selectedValue;
+		}
+	});
 
 	// Reset value when reset prop changes
 	$effect(() => {
 		if (reset) {
 			value = '';
+			// Only update selectedValue if it's different to avoid loops
+			if (selectedValue !== '') {
+				selectedValue = '';
+			}
 		}
 	});
 
@@ -34,22 +47,27 @@
 		});
 	});
 
+	// Auto-select if there's only one start location
 	$effect(() => {
-		// Auto-select if there's only one start location
-		if (startLocations.length === 1 && !value) {
+		if (startLocations.length === 1 && !value && !isLocked) {
 			handleSelect(startLocations[0].id.toString());
 		}
 	});
 
+	// Call onSelect when value changes (but only if it's not empty and not caused by reset)
 	$effect(() => {
-		if (value) {
+		if (value && !reset) {
 			onSelect(value);
 		}
 	});
 
 	function handleSelect(locationId: string) {
-		if (isLocked) return;
+		if (isLocked) {
+			return;
+		}
+
 		value = locationId;
+		selectedValue = locationId;
 
 		// Add a small delay before calling onSelect to allow the page to settle
 		setTimeout(() => {

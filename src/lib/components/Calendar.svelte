@@ -2,7 +2,7 @@
 	import { format, addDays, isWithinInterval, parseISO, isAfter } from 'date-fns';
 	import { sv } from 'date-fns/locale';
 	import { cn } from '$lib/utils';
-	import type { BlockedDate, OpenDate } from '$lib/types/booking';
+	import type { BlockedDate, OpenDate } from '$lib/types/experience';
 
 	let {
 		durationType,
@@ -11,7 +11,8 @@
 		openDates = [],
 		onDateSelect = (date: Date) => {},
 		isLocked = $bindable(false),
-		bookingForesightHours
+		bookingForesightHours,
+		selectedDate = $bindable<Date | null>(null)
 	} = $props<{
 		durationType: string;
 		durationValue: number;
@@ -20,17 +21,33 @@
 		onDateSelect?: (date: Date) => void;
 		isLocked?: boolean;
 		bookingForesightHours: number;
+		selectedDate?: Date | null;
 	}>();
 
-	let selectedDate = $state<Date | null>(null);
+	let internalSelectedDate = $state<Date | null>(null);
 	let hoveredDate = $state<Date | null>(null);
 	let hasFutureOpenDates = $state(false);
 	let hasAvailableDatesInCurrentMonth = $state(false);
 
+	// Sync internal selectedDate with prop
+	$effect(() => {
+		if (selectedDate !== internalSelectedDate) {
+			// If selectedDate is provided from parent, ensure it's properly set
+			if (selectedDate) {
+				// Ensure we're working with a proper Date object
+				const dateToUse = selectedDate instanceof Date ? selectedDate : new Date(selectedDate);
+				internalSelectedDate = dateToUse;
+			} else {
+				internalSelectedDate = null;
+			}
+		}
+	});
+
 	// Add effect to reset selected date when duration changes
 	$effect(() => {
 		// This will run whenever durationType or durationValue changes
-		if (selectedDate && isDateDisabled(selectedDate)) {
+		if (internalSelectedDate && isDateDisabled(internalSelectedDate)) {
+			internalSelectedDate = null;
 			selectedDate = null;
 			onDateSelect(null); // Notify parent that date was reset
 		}
@@ -200,29 +217,45 @@
 
 	// Check if a date is part of the selected range
 	function isInSelectedRange(date: Date) {
-		if (!selectedDate) return false;
+		if (!internalSelectedDate) return false;
+
+		// Normalize both dates to the same representation for comparison
+		const normalizeDate = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+		const normalizedClickedDate = normalizeDate(date);
+		const normalizedSelectedDate = normalizeDate(internalSelectedDate);
+
 		const durationDays = getDurationDays();
-		const endDate = addDays(selectedDate, durationDays - 1);
-		return isWithinInterval(date, { start: selectedDate, end: endDate });
+		const endDate = addDays(normalizedSelectedDate, durationDays - 1);
+
+		return isWithinInterval(normalizedClickedDate, { start: normalizedSelectedDate, end: endDate });
 	}
 
 	// Check if a date is part of the hovered range
 	function isInHoveredRange(date: Date) {
 		if (!hoveredDate) return false;
+
+		// Normalize both dates to the same representation for comparison
+		const normalizeDate = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+		const normalizedClickedDate = normalizeDate(date);
+		const normalizedHoveredDate = normalizeDate(hoveredDate);
+
 		const durationDays = getDurationDays();
-		const endDate = addDays(hoveredDate, durationDays - 1);
-		return isWithinInterval(date, { start: hoveredDate, end: endDate });
+		const endDate = addDays(normalizedHoveredDate, durationDays - 1);
+
+		return isWithinInterval(normalizedClickedDate, { start: normalizedHoveredDate, end: endDate });
 	}
 
 	function handleDateSelect(date: Date) {
 		if (isDateDisabled(date) || isLocked) return;
-		selectedDate = date;
 
 		// Create UTC date at noon to avoid timezone issues
 		const utcDate = new Date(
 			Date.UTC(date.getFullYear(), date.getMonth(), date.getDate(), 12, 0, 0)
 		);
 
+		// Use the same UTC date for both internal state and parent prop
+		internalSelectedDate = utcDate;
+		selectedDate = utcDate;
 		onDateSelect(utcDate);
 	}
 

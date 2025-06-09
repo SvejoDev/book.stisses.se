@@ -9,7 +9,8 @@
 	} from '$lib/components/ui/card';
 	import { cn } from '$lib/utils';
 	import { formatPrice, getDisplayPrice } from '$lib/utils/price';
-	import type { SelectedAddon, Addon } from '$lib/types/booking';
+	import type { SelectedAddon } from '$lib/types/addon';
+	import type { Addon } from '$lib/types/addon';
 
 	let {
 		startLocationId = $bindable(''),
@@ -22,7 +23,9 @@
 		payingCustomers = $bindable(0),
 		onAddonsFetched = () => {},
 		includeVat = $bindable(true),
-		experienceType = $bindable<string>('private')
+		experienceType = $bindable<string>('private'),
+		initialSelectedAddons = [],
+		autoFetch = $bindable(false)
 	} = $props<{
 		startLocationId: string;
 		experienceId: string;
@@ -35,6 +38,8 @@
 		onAddonsFetched?: () => void;
 		includeVat?: boolean;
 		experienceType: string;
+		initialSelectedAddons?: SelectedAddon[];
+		autoFetch?: boolean;
 	}>();
 
 	let selectedQuantities = $state<Record<number, number>>({});
@@ -45,6 +50,49 @@
 	let addons = $state<Addon[]>([]);
 	let error = $state<string | null>(null);
 	let hasAttemptedFetch = $state(false);
+	let lastInitializedAddons = $state<string>('');
+
+	// Initialize selected addons from initialSelectedAddons - prevent infinite loops
+	$effect(() => {
+		if (initialSelectedAddons.length > 0) {
+			const initialAddonsKey = JSON.stringify(initialSelectedAddons);
+			// Only initialize if we haven't already initialized with these exact addons
+			if (lastInitializedAddons !== initialAddonsKey) {
+				const quantities: Record<number, number> = {};
+				const perPersonAddons: Record<number, boolean> = {};
+
+				initialSelectedAddons.forEach((addon: SelectedAddon) => {
+					// Check if this is a per-person addon by looking at the quantity vs payingCustomers
+					if (addon.quantity === payingCustomers && payingCustomers > 0) {
+						perPersonAddons[addon.addonId] = true;
+					} else {
+						quantities[addon.addonId] = addon.quantity;
+					}
+				});
+
+				selectedQuantities = quantities;
+				selectedPerPersonAddons = perPersonAddons;
+				lastInitializedAddons = initialAddonsKey;
+			}
+		} else if (lastInitializedAddons !== '') {
+			// Reset quantities if no initial addons and we had some before
+			selectedQuantities = {};
+			selectedPerPersonAddons = {};
+			lastInitializedAddons = '';
+		}
+	});
+
+	// Auto-fetch addons when autoFetch is true
+	$effect(() => {
+		if (
+			autoFetch &&
+			!hasAttemptedFetch &&
+			selectedProducts.length > 0 &&
+			selectedProducts.some((p: { quantity: number }) => p.quantity > 0)
+		) {
+			fetchAddons();
+		}
+	});
 
 	async function fetchAddons() {
 		try {

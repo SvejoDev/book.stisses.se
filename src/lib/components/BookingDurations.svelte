@@ -2,7 +2,7 @@
 	import * as Select from '$lib/components/ui/select';
 	import { cn } from '$lib/utils';
 	import { getDisplayPrice, formatPrice } from '$lib/utils/price';
-	import type { Duration } from '$lib/types/booking';
+	import type { Duration } from '$lib/types/experience';
 
 	let {
 		startLocationId,
@@ -13,7 +13,8 @@
 		isLocked = $bindable(false),
 		onDurationSelect = () => {},
 		extraPrice = $bindable(0),
-		experienceType = $bindable<'private' | 'company' | 'school'>('private')
+		experienceType = $bindable<'private' | 'company' | 'school'>('private'),
+		initialSelectedDuration = ''
 	} = $props<{
 		startLocationId: string;
 		experienceId: string;
@@ -23,9 +24,11 @@
 		isLocked?: boolean;
 		onDurationSelect?: (duration: { type: string; value: number; extraPrice: number }) => void;
 		experienceType?: 'private' | 'company' | 'school';
+		initialSelectedDuration?: string;
 	}>();
 
 	let displayText = $state('Välj längd på bokning');
+	let hasInitialized = $state(false);
 
 	async function fetchDurations(locationId: string) {
 		try {
@@ -39,11 +42,15 @@
 			// Add a small delay if there's only one duration for better UX
 			if (durations.length === 1) {
 				await new Promise((resolve) => setTimeout(resolve, 500));
-				// Auto-select if there's only one duration
-				handleValueChange(durations[0].id.toString());
+				// Auto-select if there's only one duration (only if not locked)
+				if (!isLocked) {
+					handleValueChange(durations[0].id.toString());
+				}
 			} else {
-				// Reset selection when changing to a location with multiple durations
-				selectedDuration = '';
+				// Reset selection when changing to a location with multiple durations (only if not locked)
+				if (!isLocked) {
+					selectedDuration = '';
+				}
 			}
 		} catch (error) {
 			console.error('Error fetching durations:', error);
@@ -55,6 +62,7 @@
 
 	$effect(() => {
 		if (startLocationId) {
+			hasInitialized = false; // Reset initialization flag when location changes
 			fetchDurations(startLocationId);
 		}
 	});
@@ -72,6 +80,24 @@
 				value: selected.duration_value,
 				extraPrice: selected.extra_price
 			});
+		}
+	});
+
+	// Initialize selectedDuration from initialSelectedDuration when provided
+	$effect(() => {
+		if (initialSelectedDuration && durations.length > 0 && !hasInitialized) {
+			selectedDuration = initialSelectedDuration;
+			hasInitialized = true;
+			// Also trigger the duration select callback to ensure parent gets the duration details
+			const selected = durations.find((d: Duration) => d.id.toString() === initialSelectedDuration);
+			if (selected) {
+				extraPrice = selected.extra_price;
+				onDurationSelect({
+					type: selected.duration_type,
+					value: selected.duration_value,
+					extraPrice: selected.extra_price
+				});
+			}
 		}
 	});
 

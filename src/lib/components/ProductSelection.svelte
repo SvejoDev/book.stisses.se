@@ -9,7 +9,8 @@
 	} from '$lib/components/ui/card';
 	import { cn } from '$lib/utils';
 	import { getDisplayPrice, formatPrice } from '$lib/utils/price';
-	import type { SelectedProduct, Product } from '$lib/types/booking';
+	import type { SelectedProduct } from '$lib/types/product';
+	import type { Product } from '$lib/types/product';
 
 	let {
 		startLocationId = $bindable(''),
@@ -19,7 +20,8 @@
 		onProductsLoaded = () => {},
 		pricingType = $bindable<'per_person' | 'per_product' | 'hybrid'>('per_person'),
 		experienceType = $bindable<string>('private'),
-		includeVat = $bindable(true)
+		includeVat = $bindable(true),
+		initialSelectedProducts = []
 	} = $props<{
 		startLocationId: string;
 		experienceId: string;
@@ -29,6 +31,7 @@
 		pricingType?: 'per_person' | 'per_product' | 'hybrid';
 		experienceType: string;
 		includeVat?: boolean;
+		initialSelectedProducts?: SelectedProduct[];
 	}>();
 
 	let selectedQuantities = $state<Record<number, number>>({});
@@ -37,6 +40,27 @@
 	let isLoading = $state(true);
 	let products = $state<Product[]>([]);
 	let error = $state<string | null>(null);
+	let lastInitializedProducts = $state<string>('');
+
+	// Initialize selectedQuantities from initialSelectedProducts - prevent infinite loops
+	$effect(() => {
+		if (initialSelectedProducts.length > 0) {
+			const initialProductsKey = JSON.stringify(initialSelectedProducts);
+			// Only initialize if we haven't already initialized with these exact products
+			if (lastInitializedProducts !== initialProductsKey) {
+				const quantities: Record<number, number> = {};
+				initialSelectedProducts.forEach((product: SelectedProduct) => {
+					quantities[product.productId] = product.quantity;
+				});
+				selectedQuantities = quantities;
+				lastInitializedProducts = initialProductsKey;
+			}
+		} else if (lastInitializedProducts !== '') {
+			// Reset quantities if no initial products and we had some before
+			selectedQuantities = {};
+			lastInitializedProducts = '';
+		}
+	});
 
 	async function fetchProducts() {
 		try {
@@ -67,6 +91,8 @@
 	// Fetch products when startLocationId or experienceId changes
 	$effect(() => {
 		if (experienceId) {
+			// Reset initialization flag when location changes
+			lastInitializedProducts = '';
 			// Only require experienceId
 			fetchProducts();
 		}
