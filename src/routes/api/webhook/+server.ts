@@ -84,13 +84,19 @@ const sendEmailsWithRateLimit = async (bookings: any[]) => {
 };
 
 export const POST: RequestHandler = async ({ request }) => {
-  // Get the raw body as an ArrayBuffer, then convert to Buffer for Stripe
-  const arrayBuffer = await request.arrayBuffer();
-  const body = Buffer.from(arrayBuffer);
+  // Debug logging for production troubleshooting
+  console.log('🔧 Webhook received');
   
-  // Alternative: If Buffer doesn't work, try Uint8Array
-  // const body = new Uint8Array(arrayBuffer);
+  const body = await request.text();
   const signature = request.headers.get('stripe-signature');
+
+  // Basic debug info
+  console.log('📊 Debug:', {
+    bodyLength: body?.length || 0,
+    hasSignature: !!signature,
+    hasSecret: !!STRIPE_WEBHOOK_SECRET,
+    userAgent: request.headers.get('user-agent')
+  });
 
   let event: Stripe.Event;
 
@@ -100,13 +106,14 @@ export const POST: RequestHandler = async ({ request }) => {
       signature!,
       STRIPE_WEBHOOK_SECRET
     );
+    console.log('✅ Signature verified:', event.type);
   } catch (err) {
-    console.error('Webhook signature verification failed:', err);
+    console.error('❌ Signature failed:', err);
     return json({ error: 'Invalid signature' }, { status: 400 });
   }
 
   if (event.type === 'checkout.session.completed') {
-    const session = event.data.object as Stripe.Checkout.Session;
+      const session = event.data.object as Stripe.Checkout.Session;
     
     try {
       console.log('Webhook processing session:', session.id);
