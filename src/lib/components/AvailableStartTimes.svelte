@@ -181,6 +181,9 @@
 	});
 
 	// Browser close detection for cleanup - Enhanced with multiple strategies
+	// DISABLED: This was causing bookings to be deleted during Stripe payment redirect
+	// The cleanup will be handled by the cron job instead
+	/*
 	$effect(() => {
 		if (typeof window !== 'undefined' && currentBookingNumber) {
 			const cleanup = () => {
@@ -218,6 +221,7 @@
 			};
 		}
 	});
+	*/
 
 	// Auto-load times and set selected time when restoring a previous booking
 	$effect(() => {

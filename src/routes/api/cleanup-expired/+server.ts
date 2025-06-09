@@ -24,12 +24,28 @@ export const POST: RequestHandler = async ({ request }) => {
     
     if (bookingNumber) {
       // Clean up specific booking by booking number (for user-initiated removal)
+      // But NEVER delete bookings that have session_id (they're in payment process)
       const { data, error } = await supabase
         .from('pending_bookings')
         .select('*')
-        .eq('booking_number', bookingNumber);
+        .eq('booking_number', bookingNumber)
+        .is('session_id', null); // Only clean up bookings without session_id
       
       if (error) throw error;
+      
+      if (!data || data.length === 0) {
+        console.log(`Booking ${bookingNumber} not found or has session_id (in payment) - skipping cleanup`);
+        return json({
+          success: true,
+          cleanedUp: 0,
+          results: [{
+            bookingNumber,
+            success: false,
+            error: 'Booking not found or in payment process'
+          }]
+        });
+      }
+      
       expiredBookings = data;
     } else if (sessionId) {
       // Clean up specific session (for failed payments)
@@ -54,12 +70,14 @@ export const POST: RequestHandler = async ({ request }) => {
       // Clean up expired reservations AND processed bookings
       const [expiredReservations, processedBookings] = await Promise.all([
         // 1. Clean up expired reservations (but not those with session_id - they're in payment process)
+        // Also exclude very recently created bookings (within last 5 minutes) to avoid race conditions
         supabase
         .from('pending_bookings')
         .select('*')
         .eq('availability_reserved', true)
         .lt('expires_at', new Date().toISOString())
-          .is('session_id', null),
+        .lt('created_at', new Date(Date.now() - 5 * 60 * 1000).toISOString()) // At least 5 minutes old
+        .is('session_id', null),
         
         // 2. Clean up processed bookings older than 1 hour
         supabase
@@ -207,16 +225,19 @@ export const GET: RequestHandler = async ({ url }) => {
     }
     
     console.log('Running cleanup at:', now.toISOString());
+    console.log('Cleanup safety buffer: excluding bookings created within last 5 minutes (since', new Date(now.getTime() - 5 * 60 * 1000).toISOString(), ')');
     
     // Clean up expired reservations AND processed bookings
     const [expiredReservations, processedBookings] = await Promise.all([
       // 1. Clean up expired reservations (but not those with session_id - they're in payment process)
+      // Also exclude very recently created bookings (within last 5 minutes) to avoid race conditions
       supabase
       .from('pending_bookings')
       .select('*')
       .eq('availability_reserved', true)
       .lt('expires_at', now.toISOString())
-        .is('session_id', null),
+      .lt('created_at', new Date(now.getTime() - 5 * 60 * 1000).toISOString()) // At least 5 minutes old
+      .is('session_id', null),
       
       // 2. Clean up processed bookings older than 1 hour
       supabase

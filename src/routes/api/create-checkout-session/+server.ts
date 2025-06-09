@@ -121,9 +121,12 @@ export const POST: RequestHandler = async (args: { request: Request }) => {
       }
 
       // Update each pending booking with session_id and contact information
-      const updatePromises = pendingBookings.map(async (booking, index) => {
-        // Get the corresponding booking data from the request
-        const requestBookingData = bookings[index] || bookings[0]; // Fallback to first booking's contact info
+      const updatePromises = pendingBookings.map(async (booking) => {
+        // Find the matching booking data from the request based on booking content
+        // Since all bookings share the same contact info, we can use the first booking's contact info
+        const requestBookingData = bookings[0];
+        
+        console.log(`Updating pending booking ${booking.booking_number} with session_id ${session.id}`);
         
         // Update the booking_data with contact information
         const updatedBookingData = booking.booking_data.map((bd: any) => ({
@@ -135,39 +138,100 @@ export const POST: RequestHandler = async (args: { request: Request }) => {
           comment: requestBookingData.comment || bd.comment
         }));
 
-        return supabase
+        const result = await supabase
           .from('pending_bookings')
           .update({
             session_id: session.id,
             booking_data: updatedBookingData
           })
           .eq('id', booking.id);
+        
+        if (result.error) {
+          console.error(`Failed to update booking ${booking.booking_number}:`, result.error);
+        } else {
+          console.log(`Successfully updated booking ${booking.booking_number}`);
+          
+          // Immediately verify the update by reading it back
+          const { data: verifyData, error: verifyError } = await supabase
+            .from('pending_bookings')
+            .select('booking_number, session_id, expires_at')
+            .eq('id', booking.id)
+            .single();
+          
+          if (verifyError) {
+            console.error(`Verification failed for booking ${booking.booking_number}:`, verifyError);
+          } else if (!verifyData) {
+            console.error(`WARNING: Booking ${booking.booking_number} disappeared immediately after update!`);
+          } else if (verifyData.session_id !== session.id) {
+            console.error(`WARNING: Session ID mismatch for booking ${booking.booking_number}:`, {
+              expected: session.id,
+              actual: verifyData.session_id
+            });
+          } else {
+            console.log(`✅ Verified booking ${booking.booking_number} update:`, verifyData);
+          }
+        }
+        
+        return result;
       });
 
       const updateResults = await Promise.all(updatePromises);
       const updateErrors = updateResults.filter(result => result.error);
 
+      console.log('Update results summary:', {
+        totalBookings: pendingBookings.length,
+        successfulUpdates: updateResults.length - updateErrors.length,
+        failedUpdates: updateErrors.length,
+        errors: updateErrors.map(err => err.error?.message)
+      });
+
       if (updateErrors.length > 0) {
         console.error('Error updating pending bookings:', updateErrors);
-        throw updateErrors[0].error;
+        throw new Error(`Failed to update ${updateErrors.length} out of ${pendingBookings.length} bookings: ${updateErrors[0].error?.message}`);
       }
       
       console.log('Successfully updated pending bookings with session_id and contact info:', {
         updatedRows: updateResults.length,
-        reservationGroupId
+        reservationGroupId,
+        sessionId: session.id
       });
       
-      // Verify the update by reading it back
-      const { data: verifyData, error: verifyError } = await supabase
-        .from('pending_bookings')
-        .select('booking_number, session_id, availability_reserved')
-        .eq('session_id', session.id);
+      // Verify the update by reading it back with retry mechanism
+      let verifyData = null;
+      let verifyAttempts = 0;
+      const maxVerifyAttempts = 3;
       
-      console.log('Verification - bookings with session_id:', {
+      while (verifyAttempts < maxVerifyAttempts && (!verifyData || verifyData.length < bookings.length)) {
+        if (verifyAttempts > 0) {
+          console.log(`Verification retry ${verifyAttempts}: found ${verifyData?.length || 0}/${bookings.length} bookings`);
+          await new Promise(resolve => setTimeout(resolve, 500)); // Wait 500ms
+        }
+        
+        const { data, error: verifyError } = await supabase
+          .from('pending_bookings')
+          .select('booking_number, session_id, availability_reserved')
+          .eq('session_id', session.id);
+        
+        if (verifyError) {
+          console.error('Verification error:', verifyError);
+          break;
+        }
+        
+        verifyData = data;
+        verifyAttempts++;
+      }
+      
+      console.log('Final verification - bookings with session_id:', {
         sessionId: session.id,
+        expected: bookings.length,
         found: verifyData?.length || 0,
-        data: verifyData
+        data: verifyData,
+        verificationAttempts: verifyAttempts
       });
+      
+      if (!verifyData || verifyData.length < bookings.length) {
+        console.error('WARNING: Verification failed - not all bookings were updated with session_id');
+      }
     } else {
       // Store the full booking data in your database (fallback for non-reservation flow)
       // Create separate rows for each booking
